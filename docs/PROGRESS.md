@@ -7,7 +7,7 @@
 |---|---|---|---|---|---|---|
 | 0.1 | Процес, репозиторій і каркас документів | Sonnet 5.5 | medium | main | ✅ | — |
 | 0.2 | Специфікація: спільне, Фаза 0 і Фаза 1 | Opus 5.5 | high | docs/spec-phase-0-1 | ✅ | ✅ |
-| 0.3 | Каркас Workers, D1 і CI | Sonnet 5.5 | medium | phase-0/03-scaffold-ci | ⬜ | — |
+| 0.3 | Каркас Workers, D1 і CI | Sonnet 5.5 | medium | phase-0/03-scaffold-ci | ✅ | — |
 | 0.4 | Вебхук, білий список, дедуп і /start | Opus 5.5 | high | phase-0/04-webhook-access | ⬜ | ⬜ |
 | R-0 | Незалежне рев'ю Фази 0 | Opus 5.5 | high | review/phase-0 | ⬜ | — |
 | F-0 | Виправлення за рев'ю Фази 0 | Opus 5.5 | high | fix/phase-0-review | ⬜ | — |
@@ -58,4 +58,4 @@
 ## Нотатка для наступного кроку
 
 - 0.2 закрито: спека `00-common.md`, `phase-0.md`, `phase-1.md`, `phase-1-flow.md`; рев'ю й виправлення — `docs/reviews/0.2.md`.
-- 0.3: `npm run check:docs`, `test:spec` і CI є; `database_id` у `wrangler.jsonc` (preview/production) — `TODO-…`, поки людина не дасть id з `wrangler d1 create`.
+- 0.3: `npm run check:docs`, `test:spec` і CI є; D1 `trener-preview` і `trener-prod` створені, id у `wrangler.jsonc`.
