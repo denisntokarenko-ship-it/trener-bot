@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 describe("Worker", () => {
   it("GET /health → 200 ok", async () => {
     const res = await SELF.fetch("https://example.com/health");
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
   });
 
