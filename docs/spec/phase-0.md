@@ -29,7 +29,7 @@ Worker приймає апдейти лише від Telegram і лише від
 1. Метод і шлях: лише `POST /tg/webhook`. Інший шлях → 404, інший метод на цьому шляху → 405.
 2. Заголовок `X-Telegram-Bot-Api-Secret-Token` порівнюється з `TELEGRAM_WEBHOOK_SECRET` за сталий час. Відсутній чи інший → 401, порожнє тіло.
 3. Тіло — JSON `Update`. Не розібралось або немає `update_id` → 200, нічого не записано.
-4. Відправник: `message.from.id` або `callback_query.from.id`. Немає відправника або його ID не в білому списку → 200, тиша.
+4. Відправник: `message.from.id` або `callback_query.from.id`. Немає відправника, його ID не в білому списку або чат не приватний (`message.chat.type` чи `callback_query.message.chat.type` ≠ `private`) → 200, тиша: відповідь у групу показала б дані власника іншим.
 5. Дедуп: `INSERT INTO processed_updates … ON CONFLICT DO NOTHING`. Вставлено 0 рядків → 200, обробник не викликається.
 6. Обробник. Виняток → лог (N9), 200; рядок дедупу лишається.
 
@@ -58,6 +58,7 @@ Worker приймає апдейти лише від Telegram і лише від
 3. **Given** список із пробілами навколо ID, **When** `/start` від `222`, **Then** апдейт обробляється (пробіли обрізаються).
 4. **Given** `ALLOWED_TELEGRAM_IDS` порожній або не заданий, **When** `/start` від будь-кого, **Then** 200, тиша, 0 записів.
 5. **Given** апдейт без відправника (`channel_post`, `my_chat_member` без `from`), **When** запит, **Then** 200, 0 записів.
+6. **Given** власник із білого списку пише `/start` у груповому чаті (`chat.type = "group"` або `"supergroup"`), **When** запит, **Then** 200, жодного `sendMessage`, 0 записів у `users` і `processed_updates`.
 
 ### P1.3 — Апдейт обробляється один раз
 
@@ -86,7 +87,7 @@ Worker приймає апдейти лише від Telegram і лише від
 **Навіщо:** реєстрація вебхука — повторювана ручна дія з секретом; скрипт робить її однаково й не світить токен.
 **Незалежно тестована:** запуск з мокнутим `fetch` до `api.telegram.org`.
 
-1. **Given** у середовищі процесу `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `WORKER_URL`, **When** людина запускає `npm run set-webhook -- preview`, **Then** скрипт викликає `setWebhook` з `url = {WORKER_URL}/tg/webhook`, `secret_token`, `allowed_updates = ["message","callback_query"]`, `max_connections = 1`, `drop_pending_updates = false`; далі `getWebhookInfo` і друкує лише хост URL, `pending_update_count`, `last_error_message`.
+1. **Given** у середовищі процесу `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `WORKER_URL`, **When** людина запускає `npm run set-webhook -- preview`, **Then** скрипт викликає `setWebhook` з `url = {WORKER_URL}/tg/webhook`, `secret_token`, `allowed_updates = ["message","callback_query"]`, `max_connections = 1`, `drop_pending_updates = false`; далі `getWebhookInfo` і `getMe` і друкує лише середовище з аргументу, `@username` бота, хост URL, `pending_update_count`, `last_error_message`. Аргумент лише підписує вивід — змінні середовища ті самі; за `@username` людина бачить, якого бота оновила.
 2. **Given** вебхук уже встановлено, **When** скрипт запускають удруге, **Then** стан той самий, код виходу 0.
 3. **Given** не задана одна зі змінних, **When** запуск, **Then** код виходу 1 і назва змінної (без значень інших); жодного запиту до Telegram.
 4. **Given** аргумент не `preview` і не `production`, **When** запуск, **Then** код виходу 1.
@@ -115,7 +116,8 @@ Worker приймає апдейти лише від Telegram і лише від
 ## Поза межами
 
 - Будь-які команди, крім `/start` — фаза 1+.
-- Групи, канали, inline-режим, `edited_message` — `allowed_updates` їх не просить.
+- Групи — крок 4 відсікає не-приватні чати (`allowed_updates` фільтрує типи апдейтів, а не чати).
+- Канали, inline-режим, `edited_message` — `allowed_updates` їх не просить.
 - Онбординг інших людей — білий список заміняє реєстрацію до «Після MVP».
 - Rate limiting — для одного власника за білим списком не потрібен.
 - Прибирання `processed_updates` — крон фази 1.
