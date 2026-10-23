@@ -7,7 +7,7 @@
 |---|---|---|---|---|---|---|
 | 0.1 | Процес, репозиторій і каркас документів | Sonnet 5.5 | medium | main | ✅ | — |
 | 0.2 | Специфікація: спільне, Фаза 0 і Фаза 1 | Opus 5.5 | high | docs/spec-phase-0-1 | ✅ | ✅ |
-| 0.3 | Каркас Workers, D1 і CI | Sonnet 5.5 | medium | phase-0/03-scaffold-ci | ⬜ | — |
+| 0.3 | Каркас Workers, D1 і CI | Sonnet 5.5 | medium | phase-0/03-scaffold-ci | ✅ | — |
 | 0.4 | Вебхук, білий список, дедуп і /start | Opus 5.5 | high | phase-0/04-webhook-access | ⬜ | ⬜ |
 | R-0 | Незалежне рев'ю Фази 0 | Opus 5.5 | high | review/phase-0 | ⬜ | — |
 | F-0 | Виправлення за рев'ю Фази 0 | Opus 5.5 | high | fix/phase-0-review | ⬜ | — |
@@ -46,16 +46,16 @@
 
 Формат рядка: `- [id завдання] що доробити — чому відкладено`.
 
-- [0.3] `node scripts/test-spec.mjs` — у npm-скрипт і CI поруч із `check:docs` — `package.json` і CI з'являються лише в 0.3; до того запуск вручну.
 
 ## Рішення
 
 Короткі робочі рішення по ходу. Архітектурні й продуктові — у `docs/spec/decisions.md`.
 
+- 2026-10-23 · 0.3 — версії (перевірено `npm view`): wrangler 4.152.0, vitest **4.1.12** (не 5.0.5), **@cloudflare/vitest-plugin 1.4.7** замість `@cloudflare/vitest-pool-workers` (той 0.23.0 deprecated, README відсилає до plugin; peer plugin — vitest ^4.1 || ^5), drizzle-orm 0.45.4, drizzle-kit 0.31.11, grammy 1.46.0, typescript **6.0.3** (не 7.0.2: typescript-eslint 8.72 вимагає <6.1), eslint 10.13, @cloudflare/workers-types 5.20261023.1. compatibility_date 2026-10-19 (у межах workerd із miniflare 5.20261019). `test:spec` — у npm-скрипті й CI.
 - 2026-10-23 · 0.2 fix — `scripts/test-spec.mjs`: перевірки спеки за id зауважень рев'ю 0.2; таблиця прогресії — оракул (еталон правил + 11 мутантів), тому всі її історії записані формально.
 - 2026-10-23 · 0.1 — `check-docs.sh` перевіряє `docs/spec/*.md`, `CLAUDE.md`, `docs/PROGRESS.md`; `docs/PROMPTS.md` і `docs/prompts/` — ні (читаються зрізами за завданням).
 
 ## Нотатка для наступного кроку
 
 - 0.2 закрито: спека `00-common.md`, `phase-0.md`, `phase-1.md`, `phase-1-flow.md`; рев'ю й виправлення — `docs/reviews/0.2.md`.
-- npm-скрипт `check:docs` і CI додасть 0.3; поки запуск — `bash scripts/check-docs.sh`.
+- 0.3: `npm run check:docs`, `test:spec` і CI є; D1 `trener-preview` і `trener-prod` створені, id у `wrangler.jsonc`.

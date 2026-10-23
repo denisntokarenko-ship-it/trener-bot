@@ -1,0 +1,47 @@
+{
+  // Верхній рівень — лише локальна розробка (`wrangler dev`, тести). Деплой — тільки з --env.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "trener-local",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-19",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "triggers": { "crons": ["*/15 * * * *"] },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "trener-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Блоки env не успадковують bindings і triggers — повторюємо явно.
+  "env": {
+    "preview": {
+      "name": "trener-preview",
+      "observability": { "enabled": true },
+      "triggers": { "crons": ["*/15 * * * *"] },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "trener-preview",
+          "database_id": "74f8de05-6ebb-44f2-9d5f-15d7b2e5f1a8",
+          "migrations_dir": "migrations"
+        }
+      ]
+    },
+    "production": {
+      "name": "trener-prod",
+      "observability": { "enabled": true },
+      "triggers": { "crons": ["*/15 * * * *"] },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "trener-prod",
+          "database_id": "cb3ae401-64af-41ff-a725-73283026f433",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
+}

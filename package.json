@@ -1,0 +1,37 @@
+{
+  "name": "trener",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check:docs": "bash scripts/check-docs.sh",
+    "test:spec": "node scripts/test-spec.mjs",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:preview": "wrangler d1 migrations apply DB --remote --env preview",
+    "db:migrate:prod": "wrangler d1 migrations apply DB --remote --env production",
+    "deploy:preview": "wrangler deploy --env preview",
+    "deploy:prod": "wrangler deploy --env production"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.4",
+    "grammy": "^1.46.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.7",
+    "@cloudflare/workers-types": "^5.20261023.1",
+    "@eslint/js": "^10.0.1",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^10.13.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^4.1.12",
+    "wrangler": "^4.152.0"
+  }
+}
