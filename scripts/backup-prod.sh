@@ -33,7 +33,8 @@ if [ -z "$tables" ]; then
   exit 1
 fi
 for table in $tables; do
-  if ! grep -qiE "CREATE TABLE [\`\"']?${table}[\`\"']?" "$out"; then
+  # export пише і `CREATE TABLE \`users\``, і `CREATE TABLE IF NOT EXISTS "d1_migrations"`.
+  if ! grep -qiE "CREATE TABLE (IF NOT EXISTS )?[\`\"']?${table}[\`\"' (]" "$out"; then
     echo "У бекапі немає CREATE TABLE для $table" >&2
     exit 1
   fi
