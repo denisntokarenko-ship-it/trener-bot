@@ -17,7 +17,9 @@
     "db:migrate:preview": "wrangler d1 migrations apply DB --remote --env preview",
     "db:migrate:prod": "wrangler d1 migrations apply DB --remote --env production",
     "deploy:preview": "wrangler deploy --env preview",
-    "deploy:prod": "wrangler deploy --env production"
+    "deploy:prod": "wrangler deploy --env production",
+    "set-webhook": "node scripts/set-webhook.ts",
+    "backup:prod": "bash scripts/backup-prod.sh production"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.4",

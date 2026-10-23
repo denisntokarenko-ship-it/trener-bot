@@ -1,0 +1,26 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/app.ts"
+old = '''if (!isAllowed(privateSenderId(update), parseAllowedIds(env.ALLOWED_TELEGRAM_IDS))) return ok();'''
+new = '''if (isAllowed(privateSenderId(update), parseAllowedIds(env.ALLOWED_TELEGRAM_IDS))) return ok();'''
+why = "інвертувати перевірку білого списку"
+match = "від чужого ID → 200, жодного sendMessage"
+
+[[mutant]]
+id = "M2"
+file = "src/db/repo.ts"
+old = '''return res.meta.changes === 1;'''
+new = '''return true;'''
+why = "markUpdateProcessed не дивиться на кількість змін"
+match = "той самий update_id двічі"
+
+[[mutant]]
+id = "M3"
+file = "src/app.ts"
+old = '''if (!secretMatches(request.headers.get(SECRET_HEADER), env.TELEGRAM_WEBHOOK_SECRET)) {'''
+new = '''if (false) {'''
+why = "прибрати перевірку секрету"
+match = "→ 401, 0 записів"
