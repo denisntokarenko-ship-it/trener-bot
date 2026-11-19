@@ -19,6 +19,10 @@
     "deploy:preview": "wrangler deploy --env preview",
     "deploy:prod": "wrangler deploy --env production",
     "set-webhook": "node scripts/set-webhook.ts",
+    "seed:sql": "node scripts/seed.ts > .seed.sql",
+    "seed:local": "npm run seed:sql && wrangler d1 execute DB --local --file .seed.sql --yes",
+    "seed:preview": "npm run seed:sql && wrangler d1 execute DB --remote --env preview --file .seed.sql --yes",
+    "seed:prod": "npm run seed:sql && wrangler d1 execute DB --remote --env production --file .seed.sql --yes",
     "backup:prod": "bash scripts/backup-prod.sh production"
   },
   "dependencies": {

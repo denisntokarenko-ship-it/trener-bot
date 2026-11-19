@@ -95,11 +95,25 @@ export function fakeTelegram() {
   return { calls, fetch: fetchFn };
 }
 
-export async function count(table: "users" | "processed_updates"): Promise<number> {
+/** Усі таблиці від дочірніх до батьківських — у такому порядку їх чистить resetDb (FK у D1 увімкнені). */
+export const TABLES = [
+  "workout_sets",
+  "workouts",
+  "program_exercises",
+  "program_days",
+  "programs",
+  "exercise_substitutes",
+  "exercises",
+  "users",
+  "processed_updates",
+] as const;
+export type Table = (typeof TABLES)[number];
+
+export async function count(table: Table): Promise<number> {
   const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first<{ n: number }>();
   return row?.n ?? 0;
 }
 
 export async function resetDb(): Promise<void> {
-  await env.DB.batch([env.DB.prepare("DELETE FROM users"), env.DB.prepare("DELETE FROM processed_updates")]);
+  await env.DB.batch(TABLES.map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
 }
