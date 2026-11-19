@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { seedStatements } from "../scripts/seed-core";
 import { createDb } from "../src/db/client";
+import { nextDayCode } from "../src/domain/progression";
 import { createRepo, type ProgramDay, type SetInput } from "../src/db/repo";
 import { count, env, resetDb } from "./helpers";
 
@@ -269,5 +270,16 @@ describe("getExerciseHistory / getLastDoneWorkout", () => {
     await start(A, dayA, T0);
     await repo.abandonStale(T0 + STALE_AFTER_MS + 1);
     expect(await repo.getLastDoneWorkout(A)).toBeNull();
+  });
+
+  it("P1.2.3: done B, пізніше abandoned A → наступний день A (abandoned черговість не зсуває)", async () => {
+    const days = [dayA, dayB];
+    expect(nextDayCode(await repo.getLastDoneWorkout(A), days)).toBe("A");
+    const b = await start(A, dayB, T0);
+    await repo.finishWorkout(A, b, 3, T0 + 1);
+    expect(nextDayCode(await repo.getLastDoneWorkout(A), days)).toBe("A");
+    await start(A, dayA, T0 + 10);
+    await repo.abandonStale(T0 + 10 + STALE_AFTER_MS + 1);
+    expect(nextDayCode(await repo.getLastDoneWorkout(A), days)).toBe("A");
   });
 });
