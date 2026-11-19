@@ -75,6 +75,22 @@ describe("P1.1 вебхук приймає лише Telegram", () => {
     expect(await count("processed_updates")).toBe(0);
     expect(handler).not.toHaveBeenCalled();
   });
+
+  // Д1 R-0: крок 3 окремо від кроку 4 — тіло проходить білий список, бракує лише update_id.
+  it.each([
+    ["немає", undefined],
+    ["рядок", "1"],
+    ["дробовий", 1.5],
+  ])("приватне повідомлення власника, update_id %s → 200, обробник не викликано, 0 записів", async (_name, updateId) => {
+    const handler = vi.fn<UpdateHandler>();
+    const body: Record<string, unknown> = { ...textUpdate(1, OWNER, "/start") };
+    if (updateId === undefined) delete body.update_id;
+    else body.update_id = updateId;
+    const res = await handleRequest(webhookRequest(body), env, handler);
+    expect(res.status).toBe(200);
+    expect(await count("processed_updates")).toBe(0);
+    expect(handler).not.toHaveBeenCalled();
+  });
 });
 
 describe("P1.2 білий список", () => {

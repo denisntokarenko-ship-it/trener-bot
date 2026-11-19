@@ -2,6 +2,8 @@
   // Верхній рівень — лише локальна розробка (`wrangler dev`, тести). Деплой — тільки з --env.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "trener-local",
+  // Акаунт із D1 trener-preview і trener-prod. Не секрет; без нього wrangler при двох акаунтах падає (В1 R-0).
+  "account_id": "286f73def05d4dd5fb1918dbcee564af",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-19",
   "compatibility_flags": ["nodejs_compat"],

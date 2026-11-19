@@ -7,6 +7,8 @@
 | preview | `trener-preview` | `trener-preview` |
 | production | `trener-prod` | `trener-prod` |
 
+Акаунт Cloudflare пришпилений у `wrangler.jsonc` (`account_id`): його id — це акаунт, у якому `npx wrangler d1 list` показує обидві БД `trener-*` (або з URL дашборда `dash.cloudflare.com/<id>`); без поля wrangler при двох акаунтах у логіні падає в неінтерактивному запуску.
+
 ## Секрети (одноразово на середовище)
 
 ```bash
