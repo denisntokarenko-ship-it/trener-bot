@@ -1,0 +1,116 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+# --- Обов'язкові з промпту 1.1 ---
+
+[[mutant]]
+id = "M1"
+file = "src/db/repo.ts"
+old = '''
+        ON CONFLICT (workout_id, exercise_id, set_no) DO UPDATE SET weight_kg = excluded.weight_kg, reps = excluded.reps, prescribed_weight_kg = excluded.prescribed_weight_kg, prescribed_reps = excluded.prescribed_reps, skipped = excluded.skipped
+          WHERE workout_sets.program_exercise_id = excluded.program_exercise_id`);'''
+new = '''`);'''
+why = "upsertSet — звичайний INSERT замість ON CONFLICT DO UPDATE"
+match = "двічі той самий"
+
+[[mutant]]
+id = "M2"
+file = "src/db/repo.ts"
+old = '''.where(and(eq(workouts.userId, userId), eq(workouts.status, "active")))'''
+new = '''.where(eq(workouts.status, "active"))'''
+why = "getActiveWorkout без фільтра user_id"
+match = "B не бачить і не змінює тренування A"
+
+[[mutant]]
+id = "M3"
+file = "src/db/repo.ts"
+old = '''export const STALE_AFTER_MS = 4 * 60 * 60 * 1000;'''
+new = '''export const STALE_AFTER_MS = 0;'''
+why = "поріг abandonStale 4 год → 0"
+match = "чіпає лише active, старші за 4 год"
+
+# --- Додаткові: ізоляція на запис, ідемпотентність сиду, CHECK ---
+
+[[mutant]]
+id = "X1"
+file = "src/db/repo.ts"
+old = '''WHERE w.id = ${s.workoutId} AND w.user_id = ${userId} AND w.status = 'active' '''
+new = '''WHERE w.id = ${s.workoutId} AND w.status = 'active' '''
+why = "upsertSet пише в чуже тренування"
+match = "B не бачить і не змінює тренування A"
+
+[[mutant]]
+id = "X2"
+file = "src/db/repo.ts"
+old = '''WHERE d.id = ${programDayId} AND p.user_id = ${userId}'''
+new = '''WHERE d.id = ${programDayId}'''
+why = "startWorkout за днем чужої програми"
+match = "B не починає тренування за днем програми A"
+
+[[mutant]]
+id = "X3"
+file = "src/db/repo.ts"
+old = '''.where(and(eq(workouts.id, workoutId), eq(workouts.userId, userId), eq(workouts.status, "active")))'''
+new = '''.where(and(eq(workouts.id, workoutId), eq(workouts.userId, userId)))'''
+why = "finishWorkout переписує оцінку завершеного"
+match = "повторна оцінка"
+
+[[mutant]]
+id = "X4"
+file = "scripts/seed-core.ts"
+old = '''"WHERE NOT EXISTS (SELECT 1 FROM programs p WHERE p.user_id = u.id AND p.active = 1)",'''
+new = '''"WHERE 1",'''
+why = "сид створює програму вдруге"
+match = "сид двічі"
+
+[[mutant]]
+id = "X5"
+file = "migrations/0001_workouts.sql"
+old = '''"workout_sets"."weight_kg" IS NOT NULL AND "workout_sets"."reps" IS NOT NULL AND '''
+new = ''''''
+why = "CHECK workout_sets пропускає непропущений підхід без ваги"
+match = "skipped = 0 без ваги"
+
+# --- Виправлення за рев'ю 1.1 (docs/reviews/1.1.md) ---
+
+[[mutant]]
+id = "R6"
+file = "src/db/repo.ts"
+old = '''WHERE s.exercise_id = ${exerciseId} AND w.id IN ('''
+new = '''WHERE w.id IN ('''
+why = "В1: історія вправи без фільтра s.exercise_id"
+match = "підходи інших вправ того самого тренування"
+
+[[mutant]]
+id = "F1"
+file = "src/db/repo.ts"
+old = '''
+          AND ${s.setNo} <= pe.sets'''
+new = ''''''
+why = "В2: upsertSet приймає set_no понад sets слота"
+match = "set_no понад sets слота"
+
+[[mutant]]
+id = "F2"
+file = "src/db/repo.ts"
+old = '''AND (${s.exerciseId} = pe.exercise_id OR EXISTS'''
+new = '''AND (1 OR EXISTS'''
+why = "В2: upsertSet приймає будь-яку вправу для слота"
+match = "вправа не слота й не його заміна"
+
+[[mutant]]
+id = "F3"
+file = "src/db/repo.ts"
+old = '''
+          WHERE workout_sets.program_exercise_id = excluded.program_exercise_id'''
+new = ''''''
+why = "Д2: повтор підходу з іншим слотом перезаписує рядок"
+match = "з іншим слотом"
+
+[[mutant]]
+id = "F4"
+file = "migrations/0001_workouts.sql"
+old = '''instr("exercises"."cues_uk", char(10) || char(10)) = 0 AND '''
+new = ''''''
+why = "Д1: CHECK підказок пропускає порожній середній рядок"
+match = "порожня підказка"

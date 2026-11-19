@@ -9,3 +9,6 @@ coverage
 вебхук.txt
 *.secret
 *.secret.txt
+
+# Згенерований SQL сиду (npm run seed:sql)
+.seed.sql
