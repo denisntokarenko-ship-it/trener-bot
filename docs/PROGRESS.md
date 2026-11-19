@@ -14,7 +14,7 @@
 | 1.1 | Схема тренувань, сид каталогу й програми, шар даних | Opus 5.5 | high | phase-1/01-workout-data | ✅ | ✅ |
 | 1.2 | Рушій прогресії | Opus 5.5 | high | phase-1/02-progression | ✅ | — |
 | 1.3 | Потік /trening у Telegram | Opus 5.5 | high | phase-1/03-workout-flow | ✅ | — |
-| 1.4 | /progres, /prohrama і крон прибирання | Sonnet 5.5 | medium | phase-1/04-progress-cron | ⬜ | — |
+| 1.4 | /progres, /prohrama і крон прибирання | Sonnet 5.5 | medium | phase-1/04-progress-cron | ✅ | — |
 | 1.5 | Перший деплой у прод | Opus 5.5 | xhigh | phase-1/05-prod-release | ⬜ | ⬜ |
 | R-1 | Незалежне рев'ю Фази 1 | Opus 5.5 | high | review/phase-1 | ⬜ | — |
 | F-1 | Виправлення за рев'ю Фази 1 | Opus 5.5 | high | fix/phase-1-review | ⬜ | — |
@@ -78,6 +78,7 @@
 
 ## Нотатка для наступного кроку
 
+- 1.4 ✅: `/progres` (`repo.getRecentWorkouts`, `getUserTz`; тексти — `src/bot/progress-view.ts`), `/prohrama` (`flow.prohrama`), крон `src/cron.ts` (`runCron(env, scheduledTime)`: `abandonStale` + `purgeProcessedUpdates` старших за 3 доби; нічого не шле), `setMyCommands` у `scripts/set-webhook-core.ts` з `COMMANDS` (`src/bot/texts.ts`). Мутанти `docs/mutants/1.4.md` (7/7). Для 1.5: прод-крон той самий `*/15`; після `set-webhook production` меню команд з'явиться саме.
 - 1.3 ✅: потік `/trening` — `src/bot/{callbacks,workout-view,workout-flow}.ts`; `repo` +`getWorkout`, `getWorkoutSets`, `getExercise`, `getSubstitutes`, `setAwaitInput`. Мутанти `docs/mutants/1.3.md` (3/3). Стан тільки в D1, `set_no` з кнопки. Для 1.4: `/progres`, `/prohrama`, крон (`abandonStale`) — не зроблено; текст «Не розумію…» уже в `NOT_UNDERSTOOD`.
 - 1.2 ✅: `src/domain/progression.ts` — `nextPrescription(history, exercise, slot)` (вхід структурно сумісний з `HistorySession` з `repo.getExerciseHistory`) і `nextDayCode(lastDone, days)`; 27 рядків таблиці + звірка зі спекою в `test/progression.test.ts`, мутанти — `docs/mutants/1.2.md` (6/6). Для 1.3: `reason` ∈ calibration|deload|hold|increase|reps; невідомий код останнього дня → перший день, порожня програма → `RangeError`.
 - 1.1 + рев'ю ✅ (PR #6; F-1.1 закрив В1, В2, Д1, Д2, Д4): міграція `0001_workouts.sql`, сид `npm run seed:local|seed:preview|seed:prod` (RUNBOOK «Сид»), `repo`: `getActiveProgram`, `getProgramDay(userId, code)`, `startWorkout`, `getActiveWorkout`, `upsertSet`, `finishWorkout`, `abandonStale`, `getExerciseHistory`, `getLastDoneWorkout`. `upsertSet` сам відмовляє (false) вправі не слота й не заміни, `set_no` > `sets` і переносу підходу в інший слот. На preview міграції 0001 ще немає (Борг) — перший крок 1.3.
