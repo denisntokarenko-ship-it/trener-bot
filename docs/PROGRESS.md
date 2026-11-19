@@ -8,7 +8,7 @@
 | 0.1 | Процес, репозиторій і каркас документів | Sonnet 5.5 | medium | main | ✅ | — |
 | 0.2 | Специфікація: спільне, Фаза 0 і Фаза 1 | Opus 5.5 | high | docs/spec-phase-0-1 | ✅ | ✅ |
 | 0.3 | Каркас Workers, D1 і CI | Sonnet 5.5 | medium | phase-0/03-scaffold-ci | ✅ | — |
-| 0.4 | Вебхук, білий список, дедуп і /start | Opus 5.5 | high | phase-0/04-webhook-access | ⬜ | ⬜ |
+| 0.4 | Вебхук, білий список, дедуп і /start | Opus 5.5 | high | phase-0/04-webhook-access | ✅ |✅ |
 | R-0 | Незалежне рев'ю Фази 0 | Opus 5.5 | high | review/phase-0 | ⬜ | — |
 | F-0 | Виправлення за рев'ю Фази 0 | Opus 5.5 | high | fix/phase-0-review | ⬜ | — |
 | 1.1 | Схема тренувань, сид каталогу й програми, шар даних | Opus 5.5 | high | phase-1/01-workout-data | ⬜ | ⬜ |
@@ -46,11 +46,20 @@
 
 Формат рядка: `- [id завдання] що доробити — чому відкладено`.
 
+- [0.4] Репетиція `time-travel restore` на preview (P2.2.5: рядок X → bookmark → зміна → restore) — у «Робиш» 0.4 була лише репетиція export; зробити до першої міграції прода.
+- [0.4] Перший виклик холодного ізоляту — 15 мс CPU (> 10 мс ліміту Free; далі 2–4 мс) — повторити замір на проді й стежити за `exceededCpu` у tail; за повторів — `BOT_INFO` у vars замість `getMe`. Наслідок (рев'ю 0.4, Д4): дедуп пишеться до grammY, тож обрив за CPU (1102) губить апдейт мовчки — Telegram повторює, повтор відсікається. На проді шукати `exceededCpu` поряд із «втраченим» `/start`.
+- [0.4] PowerShell-цикл фейків (update_id 900001–900012, людина бачила 12 × 200) у tail не з'явився — з'ясувати, куди йшли запити; замір «чужого» зроблено живим другим акаунтом.
+- [0.4] Рев'ю Д3: другий `Request` і другий `createRepo` на кожен апдейт власника — `bot.handleUpdate(update)` після `bot.init()` прибрав би обидва; відкладено, бо промпт 0.4 прямо вимагав `webhookCallback`. Переглянути разом із повторним заміром CPU на проді.
+
 
 ## Рішення
 
 Короткі робочі рішення по ходу. Архітектурні й продуктові — у `docs/spec/decisions.md`.
 
+- 2026-10-23 · 0.4 — CPU на preview (`wrangler tail --format json`): `/start` власника, n = 10 — медіана **4 мс**, максимум **15 мс** (перший виклик після деплою; решта 3–4), wall ~170 мс; чужий ID (живий другий акаунт через Telegram), n = 10 — медіана **0 мс**, максимум **1 мс**, wall 1–2 мс. Медіана ≤ 5 мс → grammY лишається. У D1 після заміру: `users` = 1, `processed_updates` = 12, від чужого — 0.
+- 2026-10-23 · 0.4 — grammY `webhookCallback(bot, "cloudflare-mod")` (звірено з grammy.dev/hosting/cloudflare-workers-nodejs). Кроки 1–5 — до grammY, бо `bot.init` кличе `getMe`, а кроки 1–4 Telegram не чіпають. `Bot` — на запит, `botInfo` кешується на ізолят після першого `getMe`. Секрет: `crypto.subtle.timingSafeEqual`, нерівна довжина — порівняння з собою. `markUpdateProcessed(updateId)` і `purgeProcessedUpdates` без `userId`: `processed_updates` — службова таблиця Telegram.
+- 2026-11-19 · 0.4 (рев'ю) — у вебхук-режимі grammY не кличе `bot.catch` (лише polling), а кидає `BotError` далі: відповідь власнику N9 — `replyFailure` у `catch` навколо `webhookCallback`, у лог — ім'я `err.error`, не `BotError`.
+- 2026-10-23 · 0.4 — `wrangler tail` маскує `X-Telegram-Bot-Api-Secret-Token` (`REDACTED`); файл tail усе одно видалено після заміру. `wrangler tail <name> --env` дописує суфікс (`trener-preview-preview`) — лише `--env preview`.
 - 2026-10-23 · 0.3 — версії (перевірено `npm view`): wrangler 4.152.0, vitest **4.1.12** (не 5.0.5), **@cloudflare/vitest-plugin 1.4.7** замість `@cloudflare/vitest-pool-workers` (той 0.23.0 deprecated, README відсилає до plugin; peer plugin — vitest ^4.1 || ^5), drizzle-orm 0.45.4, drizzle-kit 0.31.11, grammy 1.46.0, typescript **6.0.3** (не 7.0.2: typescript-eslint 8.72 вимагає <6.1), eslint 10.13, @cloudflare/workers-types 5.20261023.1. compatibility_date 2026-10-19 (у межах workerd із miniflare 5.20261019). `test:spec` — у npm-скрипті й CI.
 - 2026-10-23 · 0.2 fix — `scripts/test-spec.mjs`: перевірки спеки за id зауважень рев'ю 0.2; таблиця прогресії — оракул (еталон правил + 11 мутантів), тому всі її історії записані формально.
 - 2026-10-23 · 0.1 — `check-docs.sh` перевіряє `docs/spec/*.md`, `CLAUDE.md`, `docs/PROGRESS.md`; `docs/PROMPTS.md` і `docs/prompts/` — ні (читаються зрізами за завданням).
@@ -59,3 +68,4 @@
 
 - 0.2 закрито: спека `00-common.md`, `phase-0.md`, `phase-1.md`, `phase-1-flow.md`; рев'ю й виправлення — `docs/reviews/0.2.md`.
 - 0.3: `npm run check:docs`, `test:spec` і CI є; D1 `trener-preview` і `trener-prod` створені, id у `wrangler.jsonc`.
+- 0.4: preview живий (`https://trener-preview.koxbe.workers.dev`), вебхук preview-бота встановлено, міграція 0000 на preview застосована. Секрети прода й вебхук prod-бота — ще ні (реліз фази). Ручні операції — `docs/RUNBOOK.md`.
