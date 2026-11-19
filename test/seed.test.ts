@@ -161,6 +161,20 @@ describe("обмеження БД (P1.1.3–4)", () => {
     ).rejects.toThrow(/CHECK/);
   });
 
+  // Рев'ю 1.1, дрібниця 1: три «рядки», з яких частина порожня, — не три підказки.
+  it("порожня підказка (два \\n поспіль, \\n на краю) → CHECK", async () => {
+    for (const cues of ["a\n\nb", "a\n\n", "\na\nb", "a\nb\n"]) {
+      await expect(
+        env.DB.prepare(
+          "INSERT INTO exercises (slug, name_uk, equipment, weight_step_kg, min_weight_kg, muscle_group, cues_uk) VALUES ('z', 'З', 'cable', 5, 5, 'core', ?)",
+        )
+          .bind(cues)
+          .run(),
+        JSON.stringify(cues),
+      ).rejects.toThrow(/CHECK/);
+    }
+  });
+
   it("підказок не 3 → CHECK", async () => {
     await expect(
       env.DB.prepare(

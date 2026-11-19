@@ -7,7 +7,8 @@ timeout = 300
 id = "M1"
 file = "src/db/repo.ts"
 old = '''
-        ON CONFLICT (workout_id, exercise_id, set_no) DO UPDATE SET program_exercise_id = excluded.program_exercise_id, weight_kg = excluded.weight_kg, reps = excluded.reps, prescribed_weight_kg = excluded.prescribed_weight_kg, prescribed_reps = excluded.prescribed_reps, skipped = excluded.skipped`);'''
+        ON CONFLICT (workout_id, exercise_id, set_no) DO UPDATE SET weight_kg = excluded.weight_kg, reps = excluded.reps, prescribed_weight_kg = excluded.prescribed_weight_kg, prescribed_reps = excluded.prescribed_reps, skipped = excluded.skipped
+          WHERE workout_sets.program_exercise_id = excluded.program_exercise_id`);'''
 new = '''`);'''
 why = "upsertSet — звичайний INSERT замість ON CONFLICT DO UPDATE"
 match = "двічі той самий"
@@ -69,3 +70,47 @@ old = '''"workout_sets"."weight_kg" IS NOT NULL AND "workout_sets"."reps" IS NOT
 new = ''''''
 why = "CHECK workout_sets пропускає непропущений підхід без ваги"
 match = "skipped = 0 без ваги"
+
+# --- Виправлення за рев'ю 1.1 (docs/reviews/1.1.md) ---
+
+[[mutant]]
+id = "R6"
+file = "src/db/repo.ts"
+old = '''WHERE s.exercise_id = ${exerciseId} AND w.id IN ('''
+new = '''WHERE w.id IN ('''
+why = "В1: історія вправи без фільтра s.exercise_id"
+match = "підходи інших вправ того самого тренування"
+
+[[mutant]]
+id = "F1"
+file = "src/db/repo.ts"
+old = '''
+          AND ${s.setNo} <= pe.sets'''
+new = ''''''
+why = "В2: upsertSet приймає set_no понад sets слота"
+match = "set_no понад sets слота"
+
+[[mutant]]
+id = "F2"
+file = "src/db/repo.ts"
+old = '''AND (${s.exerciseId} = pe.exercise_id OR EXISTS'''
+new = '''AND (1 OR EXISTS'''
+why = "В2: upsertSet приймає будь-яку вправу для слота"
+match = "вправа не слота й не його заміна"
+
+[[mutant]]
+id = "F3"
+file = "src/db/repo.ts"
+old = '''
+          WHERE workout_sets.program_exercise_id = excluded.program_exercise_id'''
+new = ''''''
+why = "Д2: повтор підходу з іншим слотом перезаписує рядок"
+match = "з іншим слотом"
+
+[[mutant]]
+id = "F4"
+file = "migrations/0001_workouts.sql"
+old = '''instr("exercises"."cues_uk", char(10) || char(10)) = 0 AND '''
+new = ''''''
+why = "Д1: CHECK підказок пропускає порожній середній рядок"
+match = "порожня підказка"

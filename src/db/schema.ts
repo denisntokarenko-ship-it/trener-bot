@@ -47,8 +47,11 @@ export const exercises = sqliteTable(
       "exercises_step",
       sql`(${t.equipment} = 'bodyweight' AND ${t.weightStepKg} = 0 AND ${t.minWeightKg} = 0) OR (${t.equipment} <> 'bodyweight' AND ${t.weightStepKg} > 0)`,
     ),
-    // Рівно 3 рядки через \n — рівно два символи переводу рядка.
-    check("exercises_cues_3_lines", sql`length(${t.cuesUk}) - length(replace(${t.cuesUk}, char(10), '')) = 2`),
+    // Рівно 3 непорожні рядки через \n: два переводи рядка, не поспіль і не на краях (рев'ю 1.1, дрібниця 1).
+    check(
+      "exercises_cues_3_lines",
+      sql`length(${t.cuesUk}) - length(replace(${t.cuesUk}, char(10), '')) = 2 AND instr(${t.cuesUk}, char(10) || char(10)) = 0 AND substr(${t.cuesUk}, 1, 1) <> char(10) AND substr(${t.cuesUk}, -1, 1) <> char(10)`,
+    ),
   ],
 );
 

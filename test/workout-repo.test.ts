@@ -76,6 +76,44 @@ describe("upsertSet (P1.1.6)", () => {
     expect(await repo.upsertSet(A, set(w, dayA, 0, 1))).toBe(false);
     expect(await count("workout_sets")).toBe(0);
   });
+
+  // Рев'ю 1.1, В2: exerciseId і setNo з кнопки — клієнтські дані.
+  it("вправа не слота й не його заміна → false, без запису", async () => {
+    const w = await start(A, dayA, T0);
+    expect(await repo.upsertSet(A, set(w, dayA, 0, 1, { exerciseId: 17 }))).toBe(false); // бруси для присідань
+    expect(await count("workout_sets")).toBe(0);
+  });
+
+  it("неіснуюча вправа → false без винятку", async () => {
+    const w = await start(A, dayA, T0);
+    expect(await repo.upsertSet(A, set(w, dayA, 0, 1, { exerciseId: 9999 }))).toBe(false);
+    expect(await count("workout_sets")).toBe(0);
+  });
+
+  it("set_no понад sets слота → false; рівно sets і заміна слота — записуються", async () => {
+    const w = await start(A, dayA, T0);
+    const sets = dayA.slots[0]!.sets;
+    expect(await repo.upsertSet(A, set(w, dayA, 0, sets + 1))).toBe(false);
+    expect(await count("workout_sets")).toBe(0);
+    expect(await repo.upsertSet(A, set(w, dayA, 0, sets))).toBe(true);
+    expect(await repo.upsertSet(A, set(w, dayA, 0, 1, { exerciseId: 7 }))).toBe(true); // жим ногами — заміна присідань
+    expect(await count("workout_sets")).toBe(2);
+  });
+
+  // Рев'ю 1.1, дрібниця 2: повтор не переносить записаний підхід в інший слот.
+  it("повтор (workout, вправа, set_no) з іншим слотом → false, рядок без змін", async () => {
+    // Присідання — і вправа слота 0, і (штучно) заміна жиму в слоті 1: перевірка вправи слота пропускає обидва,
+    // тож перенос ловить лише умова ON CONFLICT … WHERE.
+    await env.DB.prepare("INSERT INTO exercise_substitutes (exercise_id, substitute_id) VALUES (?, ?)")
+      .bind(dayA.slots[1]!.exercise.id, dayA.slots[0]!.exercise.id)
+      .run();
+    const w = await start(A, dayA, T0);
+    expect(await repo.upsertSet(A, set(w, dayA, 0, 1, { reps: 8 }))).toBe(true);
+    const moved = set(w, dayA, 0, 1, { reps: 3, programExerciseId: dayA.slots[1]!.id });
+    expect(await repo.upsertSet(A, moved)).toBe(false);
+    const rows = await env.DB.prepare("SELECT program_exercise_id, reps FROM workout_sets").all();
+    expect(rows.results).toEqual([{ program_exercise_id: dayA.slots[0]!.id, reps: 8 }]);
+  });
 });
 
 describe("startWorkout / getActiveWorkout", () => {
@@ -204,6 +242,18 @@ describe("getExerciseHistory / getLastDoneWorkout", () => {
 
     const last = await repo.getLastDoneWorkout(A);
     expect(last).toMatchObject({ id: w3, dayCode: "B", status: "done", effort: 2 });
+  });
+
+  // Рев'ю 1.1, В1: у тренуванні кілька вправ — історія бере лише свою.
+  it("підходи інших вправ того самого тренування в історію не потрапляють", async () => {
+    const squat = dayA.slots[0]!;
+    const w = await start(A, dayA, T0);
+    await repo.upsertSet(A, set(w, dayA, 0, 1, { weightKg: 40, reps: 8 }));
+    await repo.upsertSet(A, set(w, dayA, 1, 1, { weightKg: 30, reps: 10 }));
+    await repo.upsertSet(A, set(w, dayA, 1, 2, { weightKg: 30, reps: 10 }));
+    await repo.finishWorkout(A, w, 3, T0 + 1);
+    const history = await repo.getExerciseHistory(A, squat.exercise.id, 5);
+    expect(history.map((s) => s.sets)).toEqual([[{ setNo: 1, weightKg: 40, reps: 8, skipped: false }]]);
   });
 
   it("заміна йде в історію фактичної вправи, не вправи слота", async () => {

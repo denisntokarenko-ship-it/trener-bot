@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "465184df-6560-4131-b22f-2f8b9b5d563d",
+  "id": "906bc209-c8de-4692-8013-7aea57902d5b",
   "prevId": "25f6048e-f26b-4bac-aa22-12f514d9201e",
   "tables": {
     "exercise_substitutes": {
@@ -170,7 +170,7 @@
         },
         "exercises_cues_3_lines": {
           "name": "exercises_cues_3_lines",
-          "value": "length(\"exercises\".\"cues_uk\") - length(replace(\"exercises\".\"cues_uk\", char(10), '')) = 2"
+          "value": "length(\"exercises\".\"cues_uk\") - length(replace(\"exercises\".\"cues_uk\", char(10), '')) = 2 AND instr(\"exercises\".\"cues_uk\", char(10) || char(10)) = 0 AND substr(\"exercises\".\"cues_uk\", 1, 1) <> char(10) AND substr(\"exercises\".\"cues_uk\", -1, 1) <> char(10)"
         }
       }
     },

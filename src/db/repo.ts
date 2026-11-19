@@ -90,7 +90,7 @@ export interface HistorySession {
   status: Exclude<WorkoutStatus, "active">;
   startedAt: number;
   effort: number | null;
-  /** sets слота, за яким записано підходи. */
+  /** sets слота, за яким записано підходи; один на сесію — upsertSet не переносить підхід між слотами. */
   plannedSets: number;
   /** За set_no. Відсутні підходи обірваного тренування тут не з'являються — їх добудовує рушій. */
   sets: HistorySet[];
@@ -218,8 +218,11 @@ export function createRepo(db: Db) {
 
     /**
      * Записує підхід; повтор того самого (workout, вправа, set_no) перезаписує рядок, а не дублює (N3).
-     * Пише лише в active-тренування користувача й лише в слот його дня; інакше false без змін.
-     * Відмову застарілій кнопці робить потік (1.3), не repo.
+     * Пише лише в active-тренування користувача, лише в слот його дня, лише вправу слота або її заміну
+     * (exercise_substitutes) і лише set_no ≤ sets слота; інакше false без змін і без винятку —
+     * exerciseId і setNo приходять з кнопки (рев'ю 1.1, В2). Повтор з іншим слотом — теж false:
+     * записаний підхід не переїжджає між слотами, тож у сесії один plannedSets.
+     * Решту відмов застарілій кнопці (не наступний підхід, закріплена заміна) робить потік (1.3).
      */
     async upsertSet(userId: number, s: SetInput): Promise<boolean> {
       const res = await db.run(sql`
@@ -227,7 +230,10 @@ export function createRepo(db: Db) {
         SELECT w.id, pe.id, ${s.exerciseId}, ${s.setNo}, ${s.weightKg}, ${s.reps}, ${s.prescribedWeightKg}, ${s.prescribedReps}, ${s.skipped ? 1 : 0}
         FROM workouts w JOIN program_exercises pe ON pe.program_day_id = w.program_day_id
         WHERE w.id = ${s.workoutId} AND w.user_id = ${userId} AND w.status = 'active' AND pe.id = ${s.programExerciseId}
-        ON CONFLICT (workout_id, exercise_id, set_no) DO UPDATE SET program_exercise_id = excluded.program_exercise_id, weight_kg = excluded.weight_kg, reps = excluded.reps, prescribed_weight_kg = excluded.prescribed_weight_kg, prescribed_reps = excluded.prescribed_reps, skipped = excluded.skipped`);
+          AND ${s.setNo} <= pe.sets
+          AND (${s.exerciseId} = pe.exercise_id OR EXISTS (SELECT 1 FROM exercise_substitutes es WHERE es.exercise_id = pe.exercise_id AND es.substitute_id = ${s.exerciseId}))
+        ON CONFLICT (workout_id, exercise_id, set_no) DO UPDATE SET weight_kg = excluded.weight_kg, reps = excluded.reps, prescribed_weight_kg = excluded.prescribed_weight_kg, prescribed_reps = excluded.prescribed_reps, skipped = excluded.skipped
+          WHERE workout_sets.program_exercise_id = excluded.program_exercise_id`);
       return res.meta.changes === 1;
     },
 

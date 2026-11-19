@@ -3,8 +3,8 @@
 // програма, дні й слоти — лише дописує відсутнє, наявне не чіпає. ON CONFLICT DO NOTHING, а не
 // INSERT OR IGNORE: той ковтає й порушення CHECK, тож хибні дані сиду зникли б мовчки.
 
-export type Equipment = "barbell" | "dumbbell" | "machine" | "cable" | "bodyweight";
-export type MuscleGroup = "legs" | "chest" | "back" | "shoulders" | "core";
+// Типи — з enum схеми, одне джерело (рев'ю 1.1, дрібниця 4). `import type` node стирає під час запуску.
+import type { Equipment, MuscleGroup } from "../src/db/repo.ts";
 
 export interface CatalogEntry {
   id: number;

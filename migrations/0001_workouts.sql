@@ -22,7 +22,7 @@ CREATE TABLE `exercises` (
 	CONSTRAINT "exercises_muscle_group" CHECK("exercises"."muscle_group" IN ('legs', 'chest', 'back', 'shoulders', 'core')),
 	CONSTRAINT "exercises_min_weight" CHECK("exercises"."min_weight_kg" >= 0),
 	CONSTRAINT "exercises_step" CHECK(("exercises"."equipment" = 'bodyweight' AND "exercises"."weight_step_kg" = 0 AND "exercises"."min_weight_kg" = 0) OR ("exercises"."equipment" <> 'bodyweight' AND "exercises"."weight_step_kg" > 0)),
-	CONSTRAINT "exercises_cues_3_lines" CHECK(length("exercises"."cues_uk") - length(replace("exercises"."cues_uk", char(10), '')) = 2)
+	CONSTRAINT "exercises_cues_3_lines" CHECK(length("exercises"."cues_uk") - length(replace("exercises"."cues_uk", char(10), '')) = 2 AND instr("exercises"."cues_uk", char(10) || char(10)) = 0 AND substr("exercises"."cues_uk", 1, 1) <> char(10) AND substr("exercises"."cues_uk", -1, 1) <> char(10))
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `exercises_slug_unique` ON `exercises` (`slug`);--> statement-breakpoint

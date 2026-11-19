@@ -11,7 +11,7 @@
 | 0.4 | Вебхук, білий список, дедуп і /start | Opus 5.5 | high | phase-0/04-webhook-access | ✅ | ✅ |
 | R-0 | Незалежне рев'ю Фази 0 | Opus 5.5 | high | review/phase-0 | ✅ | — |
 | F-0 | Виправлення за рев'ю Фази 0 | Opus 5.5 | high | fix/phase-0-review | ✅ | — |
-| 1.1 | Схема тренувань, сид каталогу й програми, шар даних | Opus 5.5 | high | phase-1/01-workout-data | 🟡 | ⬜ |
+| 1.1 | Схема тренувань, сид каталогу й програми, шар даних | Opus 5.5 | high | phase-1/01-workout-data | ✅ | ✅ |
 | 1.2 | Рушій прогресії | Opus 5.5 | high | phase-1/02-progression | ⬜ | — |
 | 1.3 | Потік /trening у Telegram | Opus 5.5 | high | phase-1/03-workout-flow | ⬜ | — |
 | 1.4 | /progres, /prohrama і крон прибирання | Sonnet 5.5 | medium | phase-1/04-progress-cron | ⬜ | — |
@@ -55,7 +55,8 @@
 - [R-0] Д5: після мержу коду preview не деплоївся (виправлення 0.4 крутились лише в `main`) — додати в процес «мерж → `deploy:preview` → smoke» — відкладено: це правка промптів і процесу, не коду фази 0; у F-0 крок виконано вручну.
 - [R-0] Д6: `main` не захищена — GitHub Free для приватного репо не дає branch protection (403); записати в `decisions.md` як прийняте обмеження — відкладено: виправити неможливо без платного тарифу, а запис рішення — поза списком F-0; ворота тримає процес.
 - [F-0] Живі кроки 3–4 R-0 на preview не пройдені: `/start` з чужого акаунта (тиша, 0 рядків) і повтор `update_id` 900100 двічі + фейк 900101 — відкладено: секрет вебхука після ротації ніде не збережений (Б1 0.4), а людина попросила не давати їй завдань; правила тримають юніт-тести й убиті мутанти W1–W3, D1. Пройти в 1.5 разом із першою ротацією секрету прода (скрипт ротації шле фейки в тому самому процесі).
-- [1.1] Міграція 0001 і сид на preview D1 не застосовані — відкладено до ✅ рев'ю 1.1: застосована міграція фактично заморожує `0001_workouts.sql`, а рев'ю може змінити схему. Перевірено локально: `db:migrate:local` + `seed:local` двічі → 18 / 18 / 1 / 2 / 10 рядків. Застосувати в 1.3 перед першим живим `/trening` (`npm run db:migrate:preview`, потім `npm run seed:preview`).
+- [1.1] Міграція 0001 і сид на preview D1 не застосовані (рев'ю 1.1, Д5) — до рев'ю: застосована міграція заморожує `0001_workouts.sql`; у F-1.1 (схему вже змінено — CHECK підказок) запис у віддалену D1 заблокував класифікатор дозволів агентської сесії, тож SQL перевірено лише в pool workers і локальному wrangler, у справжній D1 — не перевірено. Перевірено локально: `db:migrate:local` + `seed:local` двічі → 18 / 18 / 1 / 2 / 10 рядків. Застосувати в 1.3 перед першим живим `/trening` (`npm run db:migrate:preview`, потім `npm run seed:preview`).
+- [R-1.1] Д3: `abandonStale(now)` без `userId` закриває застарілі active **усіх** користувачів; `/trening` у 1.3 викличе саме його — відкладено: дозволено промптом 1.1, для одного власника безпечно, а виклик з потоку — поза F-1.1; у 1.3 вирішити, чи потрібен варіант з `userId`.
 - [1.1] Підказки техніки (`cues_uk`) написані агентом без перевірки тренером — відкладено: правка сида без міграції; переглянути людині на першому тренуванні разом із кроками тренажерів (`open-questions.md`).
 
 
@@ -75,7 +76,7 @@
 
 ## Нотатка для наступного кроку
 
-- 1.1 (🟡, PR відкрито, чекає рев'ю): міграція `0001_workouts.sql`, сид `npm run seed:local|seed:preview|seed:prod` (RUNBOOK «Сид»), `repo`: `getActiveProgram`, `getProgramDay(userId, code)`, `startWorkout`, `getActiveWorkout`, `upsertSet`, `finishWorkout`, `abandonStale`, `getExerciseHistory`, `getLastDoneWorkout`. На preview міграції 0001 ще немає (Борг).
+- 1.1 + рев'ю ✅ (PR #6; F-1.1 закрив В1, В2, Д1, Д2, Д4): міграція `0001_workouts.sql`, сид `npm run seed:local|seed:preview|seed:prod` (RUNBOOK «Сид»), `repo`: `getActiveProgram`, `getProgramDay(userId, code)`, `startWorkout`, `getActiveWorkout`, `upsertSet`, `finishWorkout`, `abandonStale`, `getExerciseHistory`, `getLastDoneWorkout`. `upsertSet` сам відмовляє (false) вправі не слота й не заміни, `set_no` > `sets` і переносу підходу в інший слот. На preview міграції 0001 ще немає (Борг) — перший крок 1.3.
 - 0.2 закрито: спека `00-common.md`, `phase-0.md`, `phase-1.md`, `phase-1-flow.md`; рев'ю й виправлення — `docs/reviews/0.2.md`.
 - 0.3: `npm run check:docs`, `test:spec` і CI є; D1 `trener-preview` і `trener-prod` створені, id у `wrangler.jsonc`.
 - R-0 + F-0: Фаза 0 **закрита** — В1, Д1, Д3 виправлено з тестами; живі кроки 3–4 — у «Борг» (до 1.5). Віддалені `wrangler` працюють без змінних (`account_id` у `wrangler.jsonc`). Preview задеплоєно з гілки F-0 (`4d59a6b4`; src = `main`), вебхук preview з новим секретом відповідає.
