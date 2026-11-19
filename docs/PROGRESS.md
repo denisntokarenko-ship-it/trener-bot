@@ -13,7 +13,7 @@
 | F-0 | Виправлення за рев'ю Фази 0 | Opus 5.5 | high | fix/phase-0-review | ✅ | — |
 | 1.1 | Схема тренувань, сид каталогу й програми, шар даних | Opus 5.5 | high | phase-1/01-workout-data | ✅ | ✅ |
 | 1.2 | Рушій прогресії | Opus 5.5 | high | phase-1/02-progression | ✅ | — |
-| 1.3 | Потік /trening у Telegram | Opus 5.5 | high | phase-1/03-workout-flow | ⬜ | — |
+| 1.3 | Потік /trening у Telegram | Opus 5.5 | high | phase-1/03-workout-flow | ✅ | — |
 | 1.4 | /progres, /prohrama і крон прибирання | Sonnet 5.5 | medium | phase-1/04-progress-cron | ⬜ | — |
 | 1.5 | Перший деплой у прод | Opus 5.5 | xhigh | phase-1/05-prod-release | ⬜ | ⬜ |
 | R-1 | Незалежне рев'ю Фази 1 | Opus 5.5 | high | review/phase-1 | ⬜ | — |
@@ -55,8 +55,10 @@
 - [R-0] Д5: після мержу коду preview не деплоївся (виправлення 0.4 крутились лише в `main`) — додати в процес «мерж → `deploy:preview` → smoke» — відкладено: це правка промптів і процесу, не коду фази 0; у F-0 крок виконано вручну.
 - [R-0] Д6: `main` не захищена — GitHub Free для приватного репо не дає branch protection (403); записати в `decisions.md` як прийняте обмеження — відкладено: виправити неможливо без платного тарифу, а запис рішення — поза списком F-0; ворота тримає процес.
 - [F-0] Живі кроки 3–4 R-0 на preview не пройдені: `/start` з чужого акаунта (тиша, 0 рядків) і повтор `update_id` 900100 двічі + фейк 900101 — відкладено: секрет вебхука після ротації ніде не збережений (Б1 0.4), а людина попросила не давати їй завдань; правила тримають юніт-тести й убиті мутанти W1–W3, D1. Пройти в 1.5 разом із першою ротацією секрету прода (скрипт ротації шле фейки в тому самому процесі).
-- [1.1] Міграція 0001 і сид на preview D1 не застосовані (рев'ю 1.1, Д5) — до рев'ю: застосована міграція заморожує `0001_workouts.sql`; у F-1.1 (схему вже змінено — CHECK підказок) запис у віддалену D1 заблокував класифікатор дозволів агентської сесії, тож SQL перевірено лише в pool workers і локальному wrangler, у справжній D1 — не перевірено. Перевірено локально: `db:migrate:local` + `seed:local` двічі → 18 / 18 / 1 / 2 / 10 рядків. Застосувати в 1.3 перед першим живим `/trening` (`npm run db:migrate:preview`, потім `npm run seed:preview`).
-- [R-1.1] Д3: `abandonStale(now)` без `userId` закриває застарілі active **усіх** користувачів; `/trening` у 1.3 викличе саме його — відкладено: дозволено промптом 1.1, для одного власника безпечно, а виклик з потоку — поза F-1.1; у 1.3 вирішити, чи потрібен варіант з `userId`.
+- [1.3] Міграція 0001 і сид на preview D1 звірено віддаленим запитом (закрито борг 1.1/Д5): `d1_migrations` → `0001_workouts.sql`, 18 замін, 2 дні, 10 слотів, 1 програма, 0 тренувань; `db:migrate:preview` — «No migrations to apply».
+- [R-1.1] Д3: `abandonStale(now)` без `userId` закриває active **усіх** користувачів; `/trening` (1.3) кличе саме його — рішення 1.3: лишено глобальним (один власник, крон 1.4 кличе той самий), варіант з `userId` — коли з'явиться другий користувач.
+- [1.3] Живий прохід тренування A з телефона на preview (деплой `9107b28d`) і `cpuTime` натискання кнопки з `wrangler tail` (медіана, максимум; N1 ≤ 5 / ≤ 10 мс) — не перевірено: агент не має секрету вебхука й Telegram-клієнта. Зробити людині: `npx wrangler tail --env preview --format json > tail.log`, пройти `/trening` до підсумку, `/trening` ще раз після рестарту клієнта, заміна, ⚖️ Вага; цифри — сюди.
+- [1.3] Екран вправи робить 4–6 запитів D1 на натискання (`getWorkout`, `getProgramDay`, `getWorkoutSets`, `getExerciseHistory`, при потребі `getSubstitutes`) — оптимізувати лише якщо `cpuTime` у tail перевищить N1.
 - [1.1] Підказки техніки (`cues_uk`) написані агентом без перевірки тренером — відкладено: правка сида без міграції; переглянути людині на першому тренуванні разом із кроками тренажерів (`open-questions.md`).
 
 
@@ -76,6 +78,7 @@
 
 ## Нотатка для наступного кроку
 
+- 1.3 ✅: потік `/trening` — `src/bot/{callbacks,workout-view,workout-flow}.ts`; `repo` +`getWorkout`, `getWorkoutSets`, `getExercise`, `getSubstitutes`, `setAwaitInput`. Мутанти `docs/mutants/1.3.md` (3/3). Стан тільки в D1, `set_no` з кнопки. Для 1.4: `/progres`, `/prohrama`, крон (`abandonStale`) — не зроблено; текст «Не розумію…» уже в `NOT_UNDERSTOOD`.
 - 1.2 ✅: `src/domain/progression.ts` — `nextPrescription(history, exercise, slot)` (вхід структурно сумісний з `HistorySession` з `repo.getExerciseHistory`) і `nextDayCode(lastDone, days)`; 27 рядків таблиці + звірка зі спекою в `test/progression.test.ts`, мутанти — `docs/mutants/1.2.md` (6/6). Для 1.3: `reason` ∈ calibration|deload|hold|increase|reps; невідомий код останнього дня → перший день, порожня програма → `RangeError`.
 - 1.1 + рев'ю ✅ (PR #6; F-1.1 закрив В1, В2, Д1, Д2, Д4): міграція `0001_workouts.sql`, сид `npm run seed:local|seed:preview|seed:prod` (RUNBOOK «Сид»), `repo`: `getActiveProgram`, `getProgramDay(userId, code)`, `startWorkout`, `getActiveWorkout`, `upsertSet`, `finishWorkout`, `abandonStale`, `getExerciseHistory`, `getLastDoneWorkout`. `upsertSet` сам відмовляє (false) вправі не слота й не заміни, `set_no` > `sets` і переносу підходу в інший слот. На preview міграції 0001 ще немає (Борг) — перший крок 1.3.
 - 0.2 закрито: спека `00-common.md`, `phase-0.md`, `phase-1.md`, `phase-1-flow.md`; рев'ю й виправлення — `docs/reviews/0.2.md`.
