@@ -2,7 +2,9 @@
 import { Bot, BotError } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import type { Repo } from "../db/repo";
-import { ONLY_START, SOMETHING_WRONG, greeting } from "./texts";
+import { SOMETHING_WRONG, greeting } from "./texts";
+import { createWorkoutFlow } from "./workout-flow";
+import { NOT_UNDERSTOOD } from "./workout-view";
 
 export interface BotOptions {
   botInfo?: UserFromGetMe;
@@ -23,9 +25,20 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
     await next();
   });
 
+  const flow = createWorkoutFlow(repo, now);
+
+  // Будь-яка команда знімає очікування ваги й виконується далі (phase-1-flow.md, «Введення ваги», п. 5).
+  bot.use(async (ctx, next) => {
+    if (ctx.message?.entities?.some((e) => e.type === "bot_command" && e.offset === 0)) await flow.clearAwait(ctx);
+    await next();
+  });
+
   bot.command("start", (ctx) => ctx.reply(greeting(ctx.from?.first_name ?? "")));
-  bot.on("message", (ctx) => ctx.reply(ONLY_START));
+  bot.command("trening", (ctx) => flow.trening(ctx));
+  bot.on("callback_query:data", (ctx) => flow.callback(ctx));
   bot.on("callback_query", (ctx) => ctx.answerCallbackQuery());
+  bot.on("message:text", (ctx) => flow.text(ctx));
+  bot.on("message", (ctx) => ctx.reply(NOT_UNDERSTOOD));
 
   return bot;
 }

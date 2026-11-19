@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type UpdateHandler, handleRequest, telegramHandler } from "../src/app";
-import { ONLY_START, SOMETHING_WRONG } from "../src/bot/texts";
+import { SOMETHING_WRONG } from "../src/bot/texts";
+import { NOT_UNDERSTOOD } from "../src/bot/workout-view";
 import {
   OWNER,
   SECRET,
@@ -228,7 +229,7 @@ describe("P1.4 /start", () => {
     const { tg, handler } = realHandler();
     await handleRequest(webhookRequest(textUpdate(3, OWNER, "привіт")), env, handler);
     expect(await count("users")).toBe(1);
-    expect(tg.calls.map((c) => c.payload.text)).toEqual([ONLY_START]);
+    expect(tg.calls.map((c) => c.payload.text)).toEqual([NOT_UNDERSTOOD]);
   });
 
   it("first_name довший за 64 символи обрізається", async () => {

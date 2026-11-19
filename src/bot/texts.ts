@@ -8,5 +8,4 @@ export function greeting(firstName: string): string {
   return `Привіт, ${firstName}! Я записую твої тренування.\n${list}`;
 }
 
-export const ONLY_START = "Поки що я вмію лише /start.";
 export const SOMETHING_WRONG = "Щось пішло не так, спробуй ще раз";

@@ -3,7 +3,7 @@
 // processed_updates (службова, ключ — update_id) і abandonStale (крон по всіх користувачах).
 import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
 import type { Db } from "./client";
-import { exercises, processedUpdates, programDays, programExercises, programs, users, workouts } from "./schema";
+import { exerciseSubstitutes, exercises, processedUpdates, programDays, programExercises, programs, users, workoutSets, workouts } from "./schema";
 
 export const FIRST_NAME_MAX = 64;
 /** active старше за цей вік закривається як abandoned (phase-1-flow.md). */
@@ -94,6 +94,18 @@ export interface HistorySession {
   plannedSets: number;
   /** За set_no. Відсутні підходи обірваного тренування тут не з'являються — їх добудовує рушій. */
   sets: HistorySet[];
+}
+
+/** Підхід тренування як його бачить потік: слот, фактична вправа, факт і знімок призначення. */
+export interface WorkoutSetRow {
+  programExerciseId: number;
+  exerciseId: number;
+  setNo: number;
+  weightKg: number | null;
+  reps: number | null;
+  skipped: boolean;
+  prescribedWeightKg: number;
+  prescribedReps: number;
 }
 
 const workoutColumns = {
@@ -187,6 +199,66 @@ export function createRepo(db: Db) {
         exercise: toExercise(exercise),
       }));
       return { ...day, slots };
+    },
+
+    /** Тренування користувача за id (будь-який статус); чуже чи неіснуюче — null. */
+    async getWorkout(userId: number, workoutId: number): Promise<Workout | null> {
+      const row = await db
+        .select(workoutColumns)
+        .from(workouts)
+        .innerJoin(programDays, eq(programDays.id, workouts.programDayId))
+        .where(and(eq(workouts.id, workoutId), eq(workouts.userId, userId)))
+        .get();
+      return row ?? null;
+    },
+
+    /** Усі підходи тренування користувача за порядком запису; чуже чи неіснуюче — []. */
+    async getWorkoutSets(userId: number, workoutId: number): Promise<WorkoutSetRow[]> {
+      const rows = await db
+        .select({
+          programExerciseId: workoutSets.programExerciseId,
+          exerciseId: workoutSets.exerciseId,
+          setNo: workoutSets.setNo,
+          weightKg: workoutSets.weightKg,
+          reps: workoutSets.reps,
+          skipped: workoutSets.skipped,
+          prescribedWeightKg: workoutSets.prescribedWeightKg,
+          prescribedReps: workoutSets.prescribedReps,
+        })
+        .from(workoutSets)
+        .innerJoin(workouts, eq(workouts.id, workoutSets.workoutId))
+        .where(and(eq(workoutSets.workoutId, workoutId), eq(workouts.userId, userId)))
+        .orderBy(asc(workoutSets.id))
+        .all();
+      return rows.map((r) => ({ ...r, skipped: r.skipped === 1 }));
+    },
+
+    /** Вправа каталогу за id (каталог спільний, лише читання); немає — null. */
+    async getExercise(exerciseId: number): Promise<Exercise | null> {
+      const row = await db.select().from(exercises).where(eq(exercises.id, exerciseId)).get();
+      return row ? toExercise(row) : null;
+    },
+
+    /** Чим можна замінити вправу (exercise_substitutes), у порядку каталогу заміни. */
+    async getSubstitutes(exerciseId: number): Promise<Exercise[]> {
+      const rows = await db
+        .select({ exercise: exercises })
+        .from(exerciseSubstitutes)
+        .innerJoin(exercises, eq(exercises.id, exerciseSubstitutes.substituteId))
+        .where(eq(exerciseSubstitutes.exerciseId, exerciseId))
+        .orderBy(sql`exercise_substitutes.rowid`) // порядок каталогу: сид вставляє заміни за таблицею спеки
+        .all();
+      return rows.map((r) => toExercise(r.exercise));
+    },
+
+    /** Ставить чи знімає (null) стан очікування ваги; лише для active-тренування користувача, інакше false. */
+    async setAwaitInput(userId: number, workoutId: number, value: string | null): Promise<boolean> {
+      const res = await db
+        .update(workouts)
+        .set({ awaitInput: value })
+        .where(and(eq(workouts.id, workoutId), eq(workouts.userId, userId), eq(workouts.status, "active")))
+        .run();
+      return res.meta.changes === 1;
     },
 
     /** Поточне active-тренування користувача; немає — null. */
