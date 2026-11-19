@@ -4,3 +4,8 @@ node_modules
 backups/
 .mutate-backup/
 coverage
+
+# Локальні нотатки із секретами — ніколи не в git (рев'ю 0.4, Б1)
+вебхук.txt
+*.secret
+*.secret.txt

@@ -8,10 +8,10 @@ export const FIRST_NAME_MAX = 64;
 
 export function createRepo(db: Db) {
   return {
-    /** Створює профіль або оновлює first_name; tz і created_at не чіпає. Без зміни імені — 0 записаних рядків. */
-    async upsertUser(userId: number, firstName: string, now: number): Promise<void> {
+    /** Створює профіль або оновлює first_name; tz і created_at не чіпає. Повертає кількість записаних рядків: без зміни імені — 0. */
+    async upsertUser(userId: number, firstName: string, now: number): Promise<number> {
       const name = [...firstName].slice(0, FIRST_NAME_MAX).join("");
-      await db
+      const res = await db
         .insert(users)
         .values({ id: userId, firstName: name, createdAt: now })
         .onConflictDoUpdate({
@@ -20,6 +20,7 @@ export function createRepo(db: Db) {
           setWhere: sql`${users.firstName} <> excluded.first_name`,
         })
         .run();
+      return res.meta.changes;
     },
 
     /** true — апдейт новий і щойно записаний; false — уже оброблявся. */

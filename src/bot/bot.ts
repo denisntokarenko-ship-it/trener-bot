@@ -1,5 +1,5 @@
 // Обробники grammY. Сюди доходять лише апдейти власника з приватного чату, уже після дедупу.
-import { Bot } from "grammy";
+import { Bot, BotError } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import type { Repo } from "../db/repo";
 import { ONLY_START, SOMETHING_WRONG, greeting } from "./texts";
@@ -27,18 +27,18 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
   bot.on("message", (ctx) => ctx.reply(ONLY_START));
   bot.on("callback_query", (ctx) => ctx.answerCallbackQuery());
 
-  // N9: у лог — лише update_id і тип помилки (без тексту повідомлень і секретів).
-  bot.catch(async (err) => {
-    const name = err.error instanceof Error ? err.error.name : typeof err.error;
-    console.error("handler error", { update_id: err.ctx.update.update_id, error: name });
-    if (err.ctx.chat) {
-      try {
-        await err.ctx.reply(SOMETHING_WRONG);
-      } catch {
-        // відправка неможлива — лишаємо лог
-      }
-    }
-  });
-
   return bot;
+}
+
+/**
+ * N9: власнику — «Щось пішло не так», якщо відправка можлива. У вебхук-режимі grammY не кличе bot.catch
+ * (лише handleUpdates для polling), а кидає BotError далі — тому цю функцію кличе код, що ловить помилку.
+ */
+export async function replyFailure(err: unknown): Promise<void> {
+  if (!(err instanceof BotError) || !err.ctx.chat) return;
+  try {
+    await err.ctx.reply(SOMETHING_WRONG);
+  } catch {
+    // відправка неможлива — лишається лог
+  }
 }

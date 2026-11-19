@@ -1,8 +1,8 @@
 // Порядок обробки запиту — phase-0.md, «Порядок обробки запиту». Кроки 1–4 не пишуть у БД і не кличуть Telegram.
-import { webhookCallback } from "grammy";
+import { BotError, webhookCallback } from "grammy";
 import type { Update, UserFromGetMe } from "grammy/types";
 import { isAllowed, parseAllowedIds, privateSenderId, secretMatches } from "./access";
-import { createBot } from "./bot/bot";
+import { createBot, replyFailure } from "./bot/bot";
 import { createDb } from "./db/client";
 import { createRepo } from "./db/repo";
 import type { Env } from "./env";
@@ -14,6 +14,12 @@ const SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
 export type UpdateHandler = (update: Update, body: string) => Promise<void>;
 
 const ok = () => new Response(null, { status: 200 });
+
+/** Для логу — лише ім'я помилки; BotError grammY розгортаємо до справжньої причини. */
+function errorName(err: unknown): string {
+  const cause = err instanceof BotError ? err.error : err;
+  return cause instanceof Error ? cause.name : typeof cause;
+}
 
 export async function handleRequest(request: Request, env: Env, handler: UpdateHandler): Promise<Response> {
   const { pathname } = new URL(request.url);
@@ -40,8 +46,14 @@ export async function handleRequest(request: Request, env: Env, handler: UpdateH
   }
   if (typeof update !== "object" || update === null || !Number.isSafeInteger(update.update_id)) return ok();
 
-  // 4. Відправник: білий список і лише приватний чат.
-  if (!isAllowed(privateSenderId(update), parseAllowedIds(env.ALLOWED_TELEGRAM_IDS))) return ok();
+  // 4. Відправник: білий список і лише приватний чат. Тіло нестандартної форми ({"message":1}) — як чужий.
+  let sender: number | undefined;
+  try {
+    sender = privateSenderId(update);
+  } catch {
+    return ok();
+  }
+  if (!isAllowed(sender, parseAllowedIds(env.ALLOWED_TELEGRAM_IDS))) return ok();
 
   // 5. Дедуп (at-most-once): рядок лишається, навіть якщо обробник упаде.
   const repo = createRepo(createDb(env.DB));
@@ -51,7 +63,7 @@ export async function handleRequest(request: Request, env: Env, handler: UpdateH
   try {
     await handler(update, body);
   } catch (err) {
-    console.error("update failed", { update_id: update.update_id, error: err instanceof Error ? err.name : typeof err });
+    console.error("update failed", { update_id: update.update_id, error: errorName(err) });
   }
   return ok();
 }
@@ -71,13 +83,18 @@ export function telegramHandler(
       now: opts.now,
     });
     const callback = webhookCallback(bot, "cloudflare-mod");
-    await callback(
-      new Request("https://bot.internal" + WEBHOOK_PATH, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body,
-      }),
-    );
+    try {
+      await callback(
+        new Request("https://bot.internal" + WEBHOOK_PATH, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body,
+        }),
+      );
+    } catch (err) {
+      await replyFailure(err);
+      throw err; // лог — у handleRequest (крок 6)
+    }
     if (!opts.botInfo && bot.isInited()) cachedBotInfo = bot.botInfo;
   };
 }

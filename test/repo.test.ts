@@ -23,12 +23,12 @@ describe("repo", () => {
     expect(rows.results).toEqual([{ update_id: 2 }, { update_id: 3 }]);
   });
 
-  it("upsertUser з тим самим іменем не записує рядків", async () => {
-    await repo.upsertUser(111, "Денис", 1);
-    const res = await env.DB.prepare(
-      "INSERT INTO users (id, first_name, created_at) VALUES (111, 'Денис', 2) ON CONFLICT(id) DO UPDATE SET first_name = excluded.first_name WHERE users.first_name <> excluded.first_name",
-    ).run();
-    expect(res.meta.changes).toBe(0);
+  it("upsertUser: новий — 1 рядок, те саме ім'я — 0, нове ім'я — 1", async () => {
+    expect(await repo.upsertUser(111, "Денис", 1)).toBe(1);
+    expect(await repo.upsertUser(111, "Денис", 2)).toBe(0);
+    expect(await repo.upsertUser(111, "Ден", 3)).toBe(1);
+    const row = await env.DB.prepare("SELECT first_name, created_at FROM users WHERE id = 111").first();
+    expect(row).toEqual({ first_name: "Ден", created_at: 1 });
   });
 
   it("CHECK: first_name понад 64 символи БД не приймає", async () => {

@@ -55,7 +55,12 @@ export function textUpdate(
   } as Update;
 }
 
-export function callbackUpdate(updateId: number, fromId: number): Update {
+export function callbackUpdate(
+  updateId: number,
+  fromId: number,
+  opts: { chatType?: "private" | "group" | "supergroup" } = {},
+): Update {
+  const chatType = opts.chatType ?? "private";
   return {
     update_id: updateId,
     callback_query: {
@@ -66,7 +71,10 @@ export function callbackUpdate(updateId: number, fromId: number): Update {
       message: {
         message_id: 1,
         date: 1_700_000_000,
-        chat: { id: fromId, type: "private", first_name: "Хтось" },
+        chat:
+          chatType === "private"
+            ? { id: fromId, type: "private", first_name: "Хтось" }
+            : { id: -100, type: chatType, title: "Група" },
         text: "кнопки",
       },
     },

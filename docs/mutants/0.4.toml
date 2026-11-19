@@ -4,8 +4,8 @@ timeout = 300
 [[mutant]]
 id = "M1"
 file = "src/app.ts"
-old = '''if (!isAllowed(privateSenderId(update), parseAllowedIds(env.ALLOWED_TELEGRAM_IDS))) return ok();'''
-new = '''if (isAllowed(privateSenderId(update), parseAllowedIds(env.ALLOWED_TELEGRAM_IDS))) return ok();'''
+old = '''if (!isAllowed(sender, parseAllowedIds(env.ALLOWED_TELEGRAM_IDS))) return ok();'''
+new = '''if (isAllowed(sender, parseAllowedIds(env.ALLOWED_TELEGRAM_IDS))) return ok();'''
 why = "інвертувати перевірку білого списку"
 match = "від чужого ID → 200, жодного sendMessage"
 
@@ -24,3 +24,59 @@ old = '''if (!secretMatches(request.headers.get(SECRET_HEADER), env.TELEGRAM_WEB
 new = '''if (false) {'''
 why = "прибрати перевірку секрету"
 match = "→ 401, 0 записів"
+
+# --- Виправлення за рев'ю 0.4 (docs/reviews/0.4.md) ---
+
+[[mutant]]
+id = "R1"
+file = "src/access.ts"
+old = '''return update.callback_query.message?.chat.type === "private" ? update.callback_query.from.id : undefined;'''
+new = '''return update.callback_query.from.id;'''
+why = "В3: callback без перевірки приватного чату"
+match = "callback_query власника з групи"
+
+[[mutant]]
+id = "R6"
+file = "src/bot/bot.ts"
+old = '''await err.ctx.reply(SOMETHING_WRONG);'''
+new = '''void 0;'''
+why = "В1: власник не отримує «Щось пішло не так»"
+match = "збій D1 в обробнику"
+
+[[mutant]]
+id = "V1b"
+file = "src/app.ts"
+old = '''await replyFailure(err);'''
+new = '''void replyFailure;'''
+why = "В1: помилку обробника не передано у replyFailure"
+match = "збій D1 в обробнику"
+
+[[mutant]]
+id = "V2"
+file = "src/app.ts"
+old = '''const cause = err instanceof BotError ? err.error : err;'''
+new = '''const cause = err;'''
+why = "В2: лог без розгортання BotError"
+match = "у лозі справжня причина"
+
+[[mutant]]
+id = "V4"
+file = "src/db/repo.ts"
+old = '''setWhere: sql`${users.firstName} <> excluded.first_name`,'''
+new = ''''''
+why = "В4: upsertUser перезаписує рядок без зміни імені"
+match = "те саме ім'я"
+
+[[mutant]]
+id = "D1"
+file = "src/app.ts"
+old = '''    sender = privateSenderId(update);
+  } catch {
+    return ok();
+  }'''
+new = '''    sender = privateSenderId(update);
+  } finally {
+    // без catch
+  }'''
+why = "Д1: нестандартний message кладе Worker"
+match = "message.:1"

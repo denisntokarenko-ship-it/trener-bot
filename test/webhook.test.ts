@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type UpdateHandler, handleRequest, telegramHandler } from "../src/app";
-import { ONLY_START } from "../src/bot/texts";
+import { ONLY_START, SOMETHING_WRONG } from "../src/bot/texts";
 import {
   OWNER,
   SECRET,
@@ -61,7 +61,14 @@ describe("P1.1 вебхук приймає лише Telegram", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
-  it.each([["not json"], ['{"message":{}}'], ["null"]])("тіло %s → 200 і 0 записів", async (body) => {
+  it.each([
+    ["not json"],
+    ['{"message":{}}'],
+    ["null"],
+    ['{"update_id":5,"message":1}'],
+    ['{"update_id":6,"message":{"chat":null}}'],
+    ['{"update_id":7,"callback_query":{"message":1}}'],
+  ])("тіло %s → 200 і 0 записів", async (body) => {
     const handler = vi.fn<UpdateHandler>();
     const res = await handleRequest(webhookRequest(body), env, handler);
     expect(res.status).toBe(200);
@@ -86,6 +93,22 @@ describe("P1.2 білий список", () => {
     expect(res.status).toBe(200);
     expect(tg.calls).toHaveLength(0);
     expect(await count("processed_updates")).toBe(0);
+  });
+
+  it("callback_query власника з групи → 0 записів, answerCallbackQuery не викликається", async () => {
+    const { tg, handler } = realHandler();
+    const res = await handleRequest(webhookRequest(callbackUpdate(8, OWNER, { chatType: "group" })), env, handler);
+    expect(res.status).toBe(200);
+    expect(tg.calls).toHaveLength(0);
+    expect(await count("users")).toBe(0);
+    expect(await count("processed_updates")).toBe(0);
+  });
+
+  it("callback_query власника з приватного чату → answerCallbackQuery рівно один раз", async () => {
+    const { tg, handler } = realHandler();
+    await handleRequest(webhookRequest(callbackUpdate(9, OWNER)), env, handler);
+    expect(tg.calls.map((c) => c.method)).toEqual(["answerCallbackQuery"]);
+    expect(await count("processed_updates")).toBe(1);
   });
 
   it("пробіли навколо ID обрізаються: /start від 222 обробляється", async () => {
@@ -196,5 +219,44 @@ describe("P1.4 /start", () => {
     const { handler } = realHandler();
     await handleRequest(webhookRequest(textUpdate(4, OWNER, "/start", { firstName: "я".repeat(70) })), env, handler);
     expect(await userRow(OWNER)).toMatchObject({ first_name: "я".repeat(64) });
+  });
+});
+
+describe("N9 помилка обробника", () => {
+  class D1Down extends Error {
+    override name = "D1Down";
+  }
+  // D1, що падає на будь-якому запиті: збій у upsertUser усередині обробника grammY.
+  const brokenDb = {
+    prepare() {
+      throw new D1Down("D1 недоступна");
+    },
+  } as unknown as D1Database;
+
+  it("збій D1 в обробнику /start → 200, власнику «Щось пішло не так», у лозі справжня причина", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const tg = fakeTelegram();
+    const handler = telegramHandler({ ...env, DB: brokenDb }, { fetch: tg.fetch, botInfo, now: () => NOW });
+    const res = await handleRequest(webhookRequest(textUpdate(2000, OWNER, "/start")), env, handler);
+    expect(res.status).toBe(200);
+    expect(tg.calls.map((c) => [c.method, c.payload.text])).toEqual([["sendMessage", SOMETHING_WRONG]]);
+    expect(tg.calls[0]!.payload.chat_id).toBe(OWNER);
+    const logged = JSON.stringify(errors.mock.calls);
+    expect(logged).toContain("D1Down");
+    expect(logged).not.toContain("BotError");
+    expect(logged).not.toContain("/start");
+    errors.mockRestore();
+  });
+
+  it("відправка «Щось пішло не так» теж упала → 200, лише лог", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failing = (async () => {
+      throw new Error("network");
+    }) as typeof fetch;
+    const handler = telegramHandler({ ...env, DB: brokenDb }, { fetch: failing, botInfo, now: () => NOW });
+    const res = await handleRequest(webhookRequest(textUpdate(2001, OWNER, "/start")), env, handler);
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(errors.mock.calls)).toContain("D1Down");
+    errors.mockRestore();
   });
 });
