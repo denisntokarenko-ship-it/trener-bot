@@ -12,7 +12,7 @@
 | R-0 | Незалежне рев'ю Фази 0 | Opus 5.5 | high | review/phase-0 | ✅ | — |
 | F-0 | Виправлення за рев'ю Фази 0 | Opus 5.5 | high | fix/phase-0-review | ✅ | — |
 | 1.1 | Схема тренувань, сид каталогу й програми, шар даних | Opus 5.5 | high | phase-1/01-workout-data | ✅ | ✅ |
-| 1.2 | Рушій прогресії | Opus 5.5 | high | phase-1/02-progression | ⬜ | — |
+| 1.2 | Рушій прогресії | Opus 5.5 | high | phase-1/02-progression | ✅ | — |
 | 1.3 | Потік /trening у Telegram | Opus 5.5 | high | phase-1/03-workout-flow | ⬜ | — |
 | 1.4 | /progres, /prohrama і крон прибирання | Sonnet 5.5 | medium | phase-1/04-progress-cron | ⬜ | — |
 | 1.5 | Перший деплой у прод | Opus 5.5 | xhigh | phase-1/05-prod-release | ⬜ | ⬜ |
@@ -76,6 +76,7 @@
 
 ## Нотатка для наступного кроку
 
+- 1.2 ✅: `src/domain/progression.ts` — `nextPrescription(history, exercise, slot)` (вхід структурно сумісний з `HistorySession` з `repo.getExerciseHistory`) і `nextDayCode(lastDone, days)`; 27 рядків таблиці + звірка зі спекою в `test/progression.test.ts`, мутанти — `docs/mutants/1.2.md` (6/6). Для 1.3: `reason` ∈ calibration|deload|hold|increase|reps; невідомий код останнього дня → перший день, порожня програма → `RangeError`.
 - 1.1 + рев'ю ✅ (PR #6; F-1.1 закрив В1, В2, Д1, Д2, Д4): міграція `0001_workouts.sql`, сид `npm run seed:local|seed:preview|seed:prod` (RUNBOOK «Сид»), `repo`: `getActiveProgram`, `getProgramDay(userId, code)`, `startWorkout`, `getActiveWorkout`, `upsertSet`, `finishWorkout`, `abandonStale`, `getExerciseHistory`, `getLastDoneWorkout`. `upsertSet` сам відмовляє (false) вправі не слота й не заміни, `set_no` > `sets` і переносу підходу в інший слот. На preview міграції 0001 ще немає (Борг) — перший крок 1.3.
 - 0.2 закрито: спека `00-common.md`, `phase-0.md`, `phase-1.md`, `phase-1-flow.md`; рев'ю й виправлення — `docs/reviews/0.2.md`.
 - 0.3: `npm run check:docs`, `test:spec` і CI є; D1 `trener-preview` і `trener-prod` створені, id у `wrangler.jsonc`.
