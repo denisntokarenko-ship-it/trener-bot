@@ -1,4 +1,5 @@
 import { handleRequest, telegramHandler } from "./app";
+import { runCron } from "./cron";
 import type { Env } from "./env";
 
 export default {
@@ -6,7 +7,7 @@ export default {
     return handleRequest(request, env, telegramHandler(env));
   },
 
-  async scheduled(): Promise<void> {
-    // no-op: крон фази 1 (прибирання processed_updates).
+  async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    await runCron(env, controller.scheduledTime);
   },
 } satisfies ExportedHandler<Env>;

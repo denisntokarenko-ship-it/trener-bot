@@ -1,0 +1,62 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/cron.ts"
+old = '''await repo.abandonStale(now);'''
+new = '''void now;'''
+why = "крон не закриває старі active"
+match = "scheduled\\(\\): abandonStale"
+
+[[mutant]]
+id = "M2"
+file = "src/cron.ts"
+old = '''now - PROCESSED_UPDATES_TTL_MS'''
+new = '''now'''
+why = "дедуп чиститься з нульовим віком (видаляє й свіже)"
+match = "scheduled\\(\\): purgeProcessedUpdates"
+
+[[mutant]]
+id = "M3"
+file = "src/db/repo.ts"
+old = '''ORDER BY w.started_at DESC, w.id DESC
+        LIMIT ${n}`);
+      if (heads.length'''
+new = '''ORDER BY w.started_at ASC, w.id ASC
+        LIMIT ${n}`);
+      if (heads.length'''
+why = "/progres бере найстаріші замість найновіших"
+match = "7 тренувань"
+
+[[mutant]]
+id = "M4"
+file = "src/bot/progress-view.ts"
+old = '''const make = (timeZone: string) => new Intl.DateTimeFormat("uk-UA", { timeZone,'''
+new = '''const make = (timeZone: string) => new Intl.DateTimeFormat("uk-UA", { timeZone: "UTC",'''
+why = "дата в UTC, а не за поясом користувача"
+match = "fmtLocalDate"
+
+[[mutant]]
+id = "M5"
+file = "src/bot/progress-view.ts"
+old = '''last.w === w'''
+new = '''false'''
+why = "підходи з однаковою вагою не групуються"
+match = "fmtSets"
+
+[[mutant]]
+id = "M6"
+file = "src/bot/progress-view.ts"
+old = '''blocks.pop();'''
+new = '''blocks.shift();'''
+why = "при переповненні відкидається найновіше, а не найстаріше"
+match = "відкидаються найстаріші"
+
+[[mutant]]
+id = "M7"
+file = "src/bot/workout-flow.ts"
+old = '''activeDayCode: active?.dayCode ?? null'''
+new = '''activeDayCode: null'''
+why = "/prohrama не показує поточне тренування"
+match = "є active"

@@ -36,13 +36,21 @@ describe("P2.1 set-webhook", () => {
   it("викликає setWebhook з потрібними параметрами, далі getWebhookInfo і getMe", async () => {
     const h = harness();
     expect(await runSetWebhook(["preview"], h.io)).toBe(0);
-    expect(h.calls.map((c) => c.method)).toEqual(["setWebhook", "getWebhookInfo", "getMe"]);
+    expect(h.calls.map((c) => c.method)).toEqual(["setWebhook", "setMyCommands", "getWebhookInfo", "getMe"]);
     expect(h.calls[0]!.body).toEqual({
       url: "https://trener-preview.example.workers.dev/tg/webhook",
       secret_token: SECRET,
       allowed_updates: ["message", "callback_query"],
       max_connections: 1,
       drop_pending_updates: false,
+    });
+    expect(h.calls[1]!.body).toEqual({
+      commands: [
+        { command: "start", description: "Почати" },
+        { command: "trening", description: "Тренування: почати або продовжити" },
+        { command: "progres", description: "Останні тренування" },
+        { command: "prohrama", description: "Програма й наступне тренування" },
+      ],
     });
     expect(h.out).toContain("Середовище: preview");
     expect(h.out).toContain("Бот: @trener_preview_bot");
@@ -53,7 +61,7 @@ describe("P2.1 set-webhook", () => {
     const h = harness();
     expect(await runSetWebhook(["preview"], h.io)).toBe(0);
     expect(await runSetWebhook(["preview"], h.io)).toBe(0);
-    expect(h.calls[3]!.body).toEqual(h.calls[0]!.body);
+    expect(h.calls[4]!.body).toEqual(h.calls[0]!.body);
   });
 
   it.each(["TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET", "WORKER_URL"])("без %s → код 1, назва змінної, жодного запиту", async (name) => {

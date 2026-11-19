@@ -214,7 +214,7 @@ describe("P1.4 /start", () => {
     expect(await userRow(OWNER)).toEqual({ id: OWNER, first_name: "Денис", tz: "Europe/Kyiv", created_at: NOW });
     expect(tg.calls).toHaveLength(1);
     expect(tg.calls[0]!.method).toBe("sendMessage");
-    expect(tg.calls[0]!.payload.text).toBe("Привіт, Денис! Я записую твої тренування.\n/start — привітання й список команд");
+    expect(tg.calls[0]!.payload.text).toBe("Привіт, Денис! Я записую твої тренування.\n/start — Почати\n/trening — Тренування: почати або продовжити\n/progres — Останні тренування\n/prohrama — Програма й наступне тренування");
   });
 
   it("наявний рядок: first_name оновлено, tz і created_at не змінені", async () => {
