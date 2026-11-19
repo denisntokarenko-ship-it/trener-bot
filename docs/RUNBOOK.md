@@ -94,3 +94,14 @@ bash scripts/backup-prod.sh preview
 ```
 
 Той самий export, файл `backups/preview-YYYYMMDD-HHMMSS.sql`. `backups/` у `.gitignore`.
+
+## Перший реліз прода — факти (2026-11-19)
+
+Worker `https://trener-prod.koxbe.workers.dev`, D1 `trener-prod` (`cb3ae401-…`), крон `*/15 * * * *`. Що відрізнялось від написаного вище:
+
+- **Бекап порожньої БД.** `backup:prod` на БД без таблиць раніше падав («Не вдалося прочитати список таблиць») — export порожньої БД це один рядок `PRAGMA defer_foreign_keys=TRUE;` (32 байти). Тепер порожній список таблиць дозволений, лише якщо в export немає `CREATE TABLE` (інакше — помилка); скрипт друкує, що перевірку пропущено. Для БД із таблицями поведінка незмінна.
+- **Порядок «міграція → сид → деплой» і сид без профілю.** Сид до першого `/start` кладе лише каталог (18 вправ, 18 замін), програму отримує профіль з `users`. Тому після `set-webhook production` і першого `/start` власника — ще раз `npm run seed:prod` (ідемпотентний), і лише тоді `/trening`.
+- **Worker без секретів — fail-closed.** Після `deploy:prod`, до секретів, будь-який POST на `/tg/webhook` дає 401 (з секретом і без) — прод безпечно лишати так.
+- **Секрети й вебхук — одним скриптом**, бо секрет вебхука ніде не зберігається: запуск `powershell -ExecutionPolicy Bypass -File <шлях>` (політика виконання блокує голий `.ps1`). Скрипт: токен через `Read-Host -AsSecureString` → новий випадковий секрет → `wrangler secret put` ×3 (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `ALLOWED_TELEGRAM_IDS`) → перевірка 200 на `{}` з секретом (до 12 спроб по 5 с — нова версія підхоплюється не миттєво) → три фейки від чужого id (дедуп, тиша) → `npm run set-webhook -- production` у тому ж процесі → `finally` чистить змінні. Ротація секрету = той самий скрипт.
+- **Time Travel репетиція (preview, 2026-11-19).** Тимчасова таблиця: рядок X=`before` → `time-travel info` (bookmark) → X=`after` → `time-travel restore … --bookmark=<bm>` → X=`before`. Restore друкує bookmark для скасування самого restore. Між bookmark і restore не пиши в БД нічого, що шкода втратити.
+- **tail у файл.** `npx wrangler tail --env production --format json > файл` у фоні; `&` усередині Bash-інструмента процес не тримає — запускати окремим фоновим завданням.

@@ -29,8 +29,12 @@ tables=$(npx wrangler d1 execute "$db" --remote --env "$env_name" --json \
   --command "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'" \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const r of JSON.parse(s)[0].results)console.log(r.name)})')
 if [ -z "$tables" ]; then
-  echo "Не вдалося прочитати список таблиць" >&2
-  exit 1
+  # Порожня БД (перший реліз прода) — легітимно; але якщо export таблиці містить, список прочитано хибно.
+  if grep -qi "CREATE TABLE" "$out"; then
+    echo "Список таблиць порожній, хоча export містить CREATE TABLE" >&2
+    exit 1
+  fi
+  echo "БД порожня (таблиць немає): перевірку CREATE TABLE пропущено, файл бекапу — лише для репетиції" >&2
 fi
 for table in $tables; do
   # export пише і `CREATE TABLE \`users\``, і `CREATE TABLE IF NOT EXISTS "d1_migrations"`.
