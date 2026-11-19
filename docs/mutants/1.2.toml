@@ -1,0 +1,52 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+# --- Обов'язкові з промпту 1.2 ---
+
+[[mutant]]
+id = "M1"
+file = "src/domain/progression.ts"
+old = '''x.reps >= slot.repMax'''
+new = '''x.reps > slot.repMax'''
+why = "успіх: >= rep_max → > rep_max"
+match = "рядок 4: рівно rep_max"
+
+[[mutant]]
+id = "M2"
+file = "src/domain/progression.ts"
+old = '''prev && last.failure && prev.failure && prev.w === last.w'''
+new = '''last.failure && counted.slice(0, -1).some((a) => a.failure && a.w === last.w)'''
+why = "лічильник невдач не скидається успіхом між ними (рахує невдачі не поспіль)"
+match = "рядок 9: невдача, норма, невдача"
+
+[[mutant]]
+id = "M3"
+file = "src/domain/progression.ts"
+old = '''Math.floor((last.w * 9) / 10)'''
+new = '''Math.floor((last.w * 95) / 100)'''
+why = "розвантаження 0,9 → 0,95"
+match = "рядок 8: дві невдачі поспіль"
+
+[[mutant]]
+id = "M4"
+file = "src/domain/progression.ts"
+old = '''Math.floor(g / stepG) * stepG'''
+new = '''g'''
+why = "без округлення вниз до кроку"
+match = "рядок 23: W поза кроком"
+
+[[mutant]]
+id = "M5"
+file = "src/domain/progression.ts"
+old = '''last.effort === 5 && !(prev'''
+new = '''last.effort === 99 && !(prev'''
+why = "оцінка 5 не утримує вагу"
+match = "рядок 12: оцінка 5"
+
+[[mutant]]
+id = "M6"
+file = "src/domain/progression.ts"
+old = '''failure: working.some((x) => x.reps < slot.repMin),'''
+new = '''failure: working.some((x) => x.reps < slot.repMin) || done.length < s.plannedSets,'''
+why = "пропущений підхід рахується як невдача"
+match = "рядок 15: пропущений підхід — не невдача"
