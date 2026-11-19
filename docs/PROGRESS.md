@@ -8,8 +8,8 @@
 | 0.1 | Процес, репозиторій і каркас документів | Sonnet 5.5 | medium | main | ✅ | — |
 | 0.2 | Специфікація: спільне, Фаза 0 і Фаза 1 | Opus 5.5 | high | docs/spec-phase-0-1 | ✅ | ✅ |
 | 0.3 | Каркас Workers, D1 і CI | Sonnet 5.5 | medium | phase-0/03-scaffold-ci | ✅ | — |
-| 0.4 | Вебхук, білий список, дедуп і /start | Opus 5.5 | high | phase-0/04-webhook-access | ✅ |✅ |
-| R-0 | Незалежне рев'ю Фази 0 | Opus 5.5 | high | review/phase-0 | ⬜ | — |
+| 0.4 | Вебхук, білий список, дедуп і /start | Opus 5.5 | high | phase-0/04-webhook-access | ✅ | ✅ |
+| R-0 | Незалежне рев'ю Фази 0 | Opus 5.5 | high | review/phase-0 | ✅ | — |
 | F-0 | Виправлення за рев'ю Фази 0 | Opus 5.5 | high | fix/phase-0-review | ⬜ | — |
 | 1.1 | Схема тренувань, сид каталогу й програми, шар даних | Opus 5.5 | high | phase-1/01-workout-data | ⬜ | ⬜ |
 | 1.2 | Рушій прогресії | Opus 5.5 | high | phase-1/02-progression | ⬜ | — |
@@ -50,6 +50,10 @@
 - [0.4] Перший виклик холодного ізоляту — 15 мс CPU (> 10 мс ліміту Free; далі 2–4 мс) — повторити замір на проді й стежити за `exceededCpu` у tail; за повторів — `BOT_INFO` у vars замість `getMe`. Наслідок (рев'ю 0.4, Д4): дедуп пишеться до grammY, тож обрив за CPU (1102) губить апдейт мовчки — Telegram повторює, повтор відсікається. На проді шукати `exceededCpu` поряд із «втраченим» `/start`.
 - [0.4] PowerShell-цикл фейків (update_id 900001–900012, людина бачила 12 × 200) у tail не з'явився — з'ясувати, куди йшли запити; замір «чужого» зроблено живим другим акаунтом.
 - [0.4] Рев'ю Д3: другий `Request` і другий `createRepo` на кожен апдейт власника — `bot.handleUpdate(update)` після `bot.init()` прибрав би обидва; відкладено, бо промпт 0.4 прямо вимагав `webhookCallback`. Переглянути разом із повторним заміром CPU на проді.
+- [R-0] Д2: зв'язку `src/index.ts` → `telegramHandler(env)` не тестує жоден тест (мутант I1 вижив) — тест через `SELF.fetch` з наслідком (лог `update failed`, рядок дедупу); відкладено, бо зламану зв'язку ловить smoke preview.
+- [R-0] Д4: `"/tg/webhook"` у `app.ts` і `set-webhook-core.ts`, 64 у `repo.ts` і CHECK `schema.ts` — по одному джерелу; зараз збігаються.
+- [R-0] Д5: після мержу коду preview не деплоївся (виправлення 0.4 крутились лише в `main`) — додати в процес «мерж → `deploy:preview` → smoke».
+- [R-0] Д6: `main` не захищена — GitHub Free для приватного репо не дає branch protection (403); записати в `decisions.md` як прийняте обмеження.
 
 
 ## Рішення
@@ -68,4 +72,5 @@
 
 - 0.2 закрито: спека `00-common.md`, `phase-0.md`, `phase-1.md`, `phase-1-flow.md`; рев'ю й виправлення — `docs/reviews/0.2.md`.
 - 0.3: `npm run check:docs`, `test:spec` і CI є; D1 `trener-preview` і `trener-prod` створені, id у `wrangler.jsonc`.
+- R-0: Фаза 0 **НЕ ЗАКРИТА** — список для F-0 у `docs/reviews/phase-0.md` (В1 `account_id`, Д1 тест кроку 3, Д3 `/health` у спеці, живі кроки на preview). Preview задеплоєно з `78f9673`. До F-0 віддалені `wrangler` на цій машині — лише з `CLOUDFLARE_ACCOUNT_ID` акаунта, де лежать D1 `trener-*`.
 - 0.4: preview живий (`https://trener-preview.koxbe.workers.dev`), вебхук preview-бота встановлено, міграція 0000 на preview застосована. Секрети прода й вебхук prod-бота — ще ні (реліз фази). Ручні операції — `docs/RUNBOOK.md`.
