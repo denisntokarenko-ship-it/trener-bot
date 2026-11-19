@@ -63,6 +63,16 @@ export interface Workout {
   awaitInput: string | null;
 }
 
+/** Тренування для /progres: підходи згруповано за слотами (за position), вправа — фактично виконана. */
+export interface WorkoutSummaryRow {
+  id: number;
+  dayCode: string;
+  status: Exclude<WorkoutStatus, "active">;
+  startedAt: number;
+  effort: number | null;
+  exercises: { nameUk: string; sets: HistorySet[] }[];
+}
+
 export interface SetInput {
   workoutId: number;
   programExerciseId: number;
@@ -259,6 +269,56 @@ export function createRepo(db: Db) {
         .where(and(eq(workouts.id, workoutId), eq(workouts.userId, userId), eq(workouts.status, "active")))
         .run();
       return res.meta.changes === 1;
+    },
+
+    /** Часовий пояс користувача (IANA); профілю немає — null. */
+    async getUserTz(userId: number): Promise<string | null> {
+      const row = await db.select({ tz: users.tz }).from(users).where(eq(users.id, userId)).get();
+      return row?.tz ?? null;
+    },
+
+    /** Останні n тренувань done і abandoned користувача, від нових до старих, з підходами за слотами. */
+    async getRecentWorkouts(userId: number, n: number): Promise<WorkoutSummaryRow[]> {
+      if (n <= 0) return [];
+      const heads = await db.all<{ id: number; day_code: string; status: "done" | "abandoned"; started_at: number; effort: number | null }>(sql`
+        SELECT w.id, d.code AS day_code, w.status, w.started_at, w.effort
+        FROM workouts w JOIN program_days d ON d.id = w.program_day_id
+        WHERE w.user_id = ${userId} AND w.status IN ('done', 'abandoned')
+        ORDER BY w.started_at DESC, w.id DESC
+        LIMIT ${n}`);
+      if (heads.length === 0) return [];
+      const rows = await db.all<{
+        workout_id: number;
+        program_exercise_id: number;
+        name_uk: string;
+        set_no: number;
+        weight_kg: number | null;
+        reps: number | null;
+        skipped: number;
+      }>(sql`
+        SELECT s.workout_id, s.program_exercise_id, e.name_uk, s.set_no, s.weight_kg, s.reps, s.skipped
+        FROM workout_sets s
+        JOIN program_exercises pe ON pe.id = s.program_exercise_id
+        JOIN exercises e ON e.id = s.exercise_id
+        WHERE s.workout_id IN (
+          SELECT w.id FROM workouts w
+          WHERE w.user_id = ${userId} AND w.status IN ('done', 'abandoned')
+          ORDER BY w.started_at DESC, w.id DESC
+          LIMIT ${n})
+        ORDER BY s.workout_id, pe.position, s.set_no`);
+      return heads.map((h) => {
+        const exs: WorkoutSummaryRow["exercises"] = [];
+        let lastSlot = -1;
+        for (const r of rows) {
+          if (r.workout_id !== h.id) continue;
+          if (r.program_exercise_id !== lastSlot) {
+            exs.push({ nameUk: r.name_uk, sets: [] });
+            lastSlot = r.program_exercise_id;
+          }
+          exs[exs.length - 1]!.sets.push({ setNo: r.set_no, weightKg: r.weight_kg, reps: r.reps, skipped: r.skipped === 1 });
+        }
+        return { id: h.id, dayCode: h.day_code, status: h.status, startedAt: h.started_at, effort: h.effort, exercises: exs };
+      });
     },
 
     /** Поточне active-тренування користувача; немає — null. */

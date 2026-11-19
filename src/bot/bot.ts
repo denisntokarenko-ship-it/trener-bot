@@ -35,6 +35,8 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
 
   bot.command("start", (ctx) => ctx.reply(greeting(ctx.from?.first_name ?? "")));
   bot.command("trening", (ctx) => flow.trening(ctx));
+  bot.command("progres", (ctx) => flow.progres(ctx));
+  bot.command("prohrama", (ctx) => flow.prohrama(ctx));
   bot.on("callback_query:data", (ctx) => flow.callback(ctx));
   bot.on("callback_query", (ctx) => ctx.answerCallbackQuery());
   bot.on("message:text", (ctx) => flow.text(ctx));

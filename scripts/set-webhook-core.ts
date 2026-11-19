@@ -1,4 +1,6 @@
 // Логіка scripts/set-webhook.ts без process — тестується з мокнутим fetch (phase-0.md, P2.1).
+import { COMMANDS } from "../src/bot/texts.ts";
+
 export const REQUIRED_ENV = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET", "WORKER_URL"] as const;
 export const TARGETS = ["preview", "production"] as const;
 
@@ -62,6 +64,9 @@ export async function runSetWebhook(args: string[], io: SetWebhookIo): Promise<n
       allowed_updates: ["message", "callback_query"],
       max_connections: 1,
       drop_pending_updates: false,
+    });
+    await call<boolean>("setMyCommands", {
+      commands: COMMANDS.map((c) => ({ command: c.command.slice(1), description: c.description })),
     });
     const info = await call<{ url: string; pending_update_count: number; last_error_message?: string }>("getWebhookInfo");
     const me = await call<{ username?: string }>("getMe");

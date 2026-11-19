@@ -4,6 +4,7 @@ import { GrammyError, type Context } from "grammy";
 import type { Exercise, ProgramDay, Repo, Slot, Workout, WorkoutSetRow } from "../db/repo";
 import { nextDayCode, nextPrescription, type Prescription } from "../domain/progression";
 import { MAX_WEIGHT_KG, parseCb, type Cb } from "./callbacks";
+import { programText, progressText } from "./progress-view";
 import {
   ANSWER,
   NOT_UNDERSTOOD,
@@ -354,6 +355,42 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
   }
 
   return {
+    /** /prohrama: обидва дні, наступний день із призначеннями й, якщо є, поточне тренування. */
+    async prohrama(ctx: Context): Promise<void> {
+      const userId = ctx.from!.id;
+      await repo.abandonStale(now());
+      const program = await repo.getActiveProgram(userId);
+      if (!program || program.days.length === 0) {
+        await ctx.reply(NO_PROGRAM);
+        return;
+      }
+      const days: ProgramDay[] = [];
+      for (const d of program.days) {
+        const day = await repo.getProgramDay(userId, d.code);
+        if (day) days.push(day);
+      }
+      const nextCode = nextDayCode(await repo.getLastDoneWorkout(userId), program.days);
+      const nextDay = days.find((d) => d.code === nextCode);
+      if (!nextDay) {
+        await ctx.reply(NO_PROGRAM);
+        return;
+      }
+      const lines = [];
+      for (const slot of nextDay.slots) {
+        const p = await prescribe(userId, slot.exercise, slot);
+        lines.push({ nameUk: slot.exercise.nameUk, bodyweight: slot.exercise.equipment === "bodyweight", weightKg: p.weightKg, targetReps: p.targetReps });
+      }
+      const active = await repo.getActiveWorkout(userId);
+      await ctx.reply(programText({ days, next: { dayCode: nextCode, lines }, activeDayCode: active?.dayCode ?? null }));
+    },
+
+    /** /progres: останні 5 завершених чи обірваних тренувань. */
+    async progres(ctx: Context): Promise<void> {
+      const userId = ctx.from!.id;
+      const [workouts, tz] = await Promise.all([repo.getRecentWorkouts(userId, 5), repo.getUserTz(userId)]);
+      await ctx.reply(progressText(workouts, tz ?? "Europe/Kyiv"));
+    },
+
     /** /trening: старт наступного дня або продовження active — завжди новим повідомленням-екраном. */
     async trening(ctx: Context): Promise<void> {
       const userId = ctx.from!.id;
