@@ -97,6 +97,8 @@ export function fakeTelegram() {
 
 /** Усі таблиці від дочірніх до батьківських — у такому порядку їх чистить resetDb (FK у D1 увімкнені). */
 export const TABLES = [
+  "reminders_sent",
+  "cron_state",
   "body_weights",
   "workout_sets",
   "start_weights",
@@ -169,4 +171,26 @@ export function outgoingProblems(calls: readonly { method: string; payload: Reco
     }
   }
   return out;
+}
+
+/** Крок сценарію для scriptedTelegram: "ok" — прийняв (message_id 100, 101, …); число — відповідь зі статусом; "throw" — обрив мережі; "hang" — висить до abort. */
+export type TelegramStep = "ok" | number | "throw" | "hang";
+
+/** Фейковий Telegram для крону: кроки беруться по черзі, далі — "ok". Записує звернення в формі calls fakeTelegram. */
+export function scriptedTelegram(steps: TelegramStep[] = []) {
+  const calls: { method: string; payload: Record<string, unknown> }[] = [];
+  let nextId = 100;
+  const queue = [...steps];
+  const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input instanceof Request ? input.url : input);
+    calls.push({ method: url.slice(url.lastIndexOf("/") + 1), payload: init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : {} });
+    const step = queue.shift() ?? "ok";
+    if (step === "throw") throw new TypeError("network down");
+    if (step === "hang") {
+      return new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))));
+    }
+    if (typeof step === "number") return new Response(JSON.stringify({ ok: false, error_code: step, description: "err" }), { status: step });
+    return new Response(JSON.stringify({ ok: true, result: { message_id: nextId++, date: 0, chat: { id: 1, type: "private" } } }), { status: 200 });
+  }) as typeof fetch;
+  return { calls, fetch: fetchFn, texts: () => calls.map((c) => String(c.payload.text)) };
 }

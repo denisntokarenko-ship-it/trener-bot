@@ -1,0 +1,1476 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "fe49ddca-e3aa-43b4-916b-fa5f10923f9a",
+  "prevId": "a2627425-7ca9-44f8-8559-2de52aa4a6c5",
+  "tables": {
+    "body_weights": {
+      "name": "body_weights",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "local_date": {
+          "name": "local_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "weight_dg": {
+          "name": "weight_dg",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "body_weights_user_id_users_id_fk": {
+          "name": "body_weights_user_id_users_id_fk",
+          "tableFrom": "body_weights",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "body_weights_user_id_local_date_pk": {
+          "columns": [
+            "user_id",
+            "local_date"
+          ],
+          "name": "body_weights_user_id_local_date_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "body_weights_dg": {
+          "name": "body_weights_dg",
+          "value": "\"body_weights\".\"weight_dg\" BETWEEN 300 AND 3000"
+        },
+        "body_weights_date": {
+          "name": "body_weights_date",
+          "value": "\"body_weights\".\"local_date\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        }
+      }
+    },
+    "cron_state": {
+      "name": "cron_state",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_tick_at": {
+          "name": "last_tick_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "cron_state_single": {
+          "name": "cron_state_single",
+          "value": "\"cron_state\".\"id\" = 1"
+        }
+      }
+    },
+    "exercise_substitutes": {
+      "name": "exercise_substitutes",
+      "columns": {
+        "exercise_id": {
+          "name": "exercise_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "substitute_id": {
+          "name": "substitute_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "exercise_substitutes_exercise_id_exercises_id_fk": {
+          "name": "exercise_substitutes_exercise_id_exercises_id_fk",
+          "tableFrom": "exercise_substitutes",
+          "tableTo": "exercises",
+          "columnsFrom": [
+            "exercise_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "exercise_substitutes_substitute_id_exercises_id_fk": {
+          "name": "exercise_substitutes_substitute_id_exercises_id_fk",
+          "tableFrom": "exercise_substitutes",
+          "tableTo": "exercises",
+          "columnsFrom": [
+            "substitute_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "exercise_substitutes_exercise_id_substitute_id_pk": {
+          "columns": [
+            "exercise_id",
+            "substitute_id"
+          ],
+          "name": "exercise_substitutes_exercise_id_substitute_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "exercise_substitutes_not_self": {
+          "name": "exercise_substitutes_not_self",
+          "value": "\"exercise_substitutes\".\"exercise_id\" <> \"exercise_substitutes\".\"substitute_id\""
+        }
+      }
+    },
+    "exercises": {
+      "name": "exercises",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name_uk": {
+          "name": "name_uk",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "equipment": {
+          "name": "equipment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "weight_step_kg": {
+          "name": "weight_step_kg",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "min_weight_kg": {
+          "name": "min_weight_kg",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "muscle_group": {
+          "name": "muscle_group",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "cues_uk": {
+          "name": "cues_uk",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "video_url": {
+          "name": "video_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pattern": {
+          "name": "pattern",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "place": {
+          "name": "place",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "min_level": {
+          "name": "min_level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "stress": {
+          "name": "stress",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "exercises_slug_unique": {
+          "name": "exercises_slug_unique",
+          "columns": [
+            "slug"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "exercises_slug_kebab": {
+          "name": "exercises_slug_kebab",
+          "value": "\"exercises\".\"slug\" <> '' AND \"exercises\".\"slug\" NOT GLOB '*[^a-z0-9-]*'"
+        },
+        "exercises_equipment": {
+          "name": "exercises_equipment",
+          "value": "\"exercises\".\"equipment\" IN ('barbell', 'dumbbell', 'machine', 'cable', 'bodyweight')"
+        },
+        "exercises_muscle_group": {
+          "name": "exercises_muscle_group",
+          "value": "\"exercises\".\"muscle_group\" IN ('legs', 'chest', 'back', 'shoulders', 'core')"
+        },
+        "exercises_min_weight": {
+          "name": "exercises_min_weight",
+          "value": "\"exercises\".\"min_weight_kg\" >= 0"
+        },
+        "exercises_step": {
+          "name": "exercises_step",
+          "value": "(\"exercises\".\"equipment\" = 'bodyweight' AND \"exercises\".\"weight_step_kg\" = 0 AND \"exercises\".\"min_weight_kg\" = 0) OR (\"exercises\".\"equipment\" <> 'bodyweight' AND \"exercises\".\"weight_step_kg\" > 0)"
+        },
+        "exercises_cues_3_lines": {
+          "name": "exercises_cues_3_lines",
+          "value": "length(\"exercises\".\"cues_uk\") - length(replace(\"exercises\".\"cues_uk\", char(10), '')) = 2 AND instr(\"exercises\".\"cues_uk\", char(10) || char(10)) = 0 AND substr(\"exercises\".\"cues_uk\", 1, 1) <> char(10) AND substr(\"exercises\".\"cues_uk\", -1, 1) <> char(10)"
+        }
+      }
+    },
+    "onboarding_state": {
+      "name": "onboarding_state",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "step": {
+          "name": "step",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sub": {
+          "name": "sub",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "msg_id": {
+          "name": "msg_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "plan_variant": {
+          "name": "plan_variant",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "onboarding_state_user_id_users_id_fk": {
+          "name": "onboarding_state_user_id_users_id_fk",
+          "tableFrom": "onboarding_state",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "onboarding_state_status": {
+          "name": "onboarding_state_status",
+          "value": "\"onboarding_state\".\"status\" IN ('active', 'done')"
+        },
+        "onboarding_state_step": {
+          "name": "onboarding_state_step",
+          "value": "\"onboarding_state\".\"step\" IN ('welcome', 'goal', 'goal_note', 'level', 'days', 'minutes', 'place', 'limits', 'limits_note', 'lifts', 'sex', 'birth', 'height', 'weight', 'meals', 'diet', 'sleep', 'activity', 'plan')"
+        },
+        "onboarding_state_sub": {
+          "name": "onboarding_state_sub",
+          "value": "\"onboarding_state\".\"sub\" BETWEEN 0 AND 3"
+        },
+        "onboarding_state_variant": {
+          "name": "onboarding_state_variant",
+          "value": "\"onboarding_state\".\"plan_variant\" BETWEEN 0 AND 2"
+        }
+      }
+    },
+    "processed_updates": {
+      "name": "processed_updates",
+      "columns": {
+        "update_id": {
+          "name": "update_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "processed_updates_created_at": {
+          "name": "processed_updates_created_at",
+          "columns": [
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "program_days": {
+      "name": "program_days",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "program_id": {
+          "name": "program_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "program_days_program_code": {
+          "name": "program_days_program_code",
+          "columns": [
+            "program_id",
+            "code"
+          ],
+          "isUnique": true
+        },
+        "program_days_program_position": {
+          "name": "program_days_program_position",
+          "columns": [
+            "program_id",
+            "position"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "program_days_program_id_programs_id_fk": {
+          "name": "program_days_program_id_programs_id_fk",
+          "tableFrom": "program_days",
+          "tableTo": "programs",
+          "columnsFrom": [
+            "program_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "program_days_code_len": {
+          "name": "program_days_code_len",
+          "value": "length(\"program_days\".\"code\") BETWEEN 1 AND 8"
+        }
+      }
+    },
+    "program_exercises": {
+      "name": "program_exercises",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "program_day_id": {
+          "name": "program_day_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "exercise_id": {
+          "name": "exercise_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sets": {
+          "name": "sets",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rep_min": {
+          "name": "rep_min",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "rep_max": {
+          "name": "rep_max",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "program_exercises_day_position": {
+          "name": "program_exercises_day_position",
+          "columns": [
+            "program_day_id",
+            "position"
+          ],
+          "isUnique": true
+        },
+        "program_exercises_day_exercise": {
+          "name": "program_exercises_day_exercise",
+          "columns": [
+            "program_day_id",
+            "exercise_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "program_exercises_program_day_id_program_days_id_fk": {
+          "name": "program_exercises_program_day_id_program_days_id_fk",
+          "tableFrom": "program_exercises",
+          "tableTo": "program_days",
+          "columnsFrom": [
+            "program_day_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "program_exercises_exercise_id_exercises_id_fk": {
+          "name": "program_exercises_exercise_id_exercises_id_fk",
+          "tableFrom": "program_exercises",
+          "tableTo": "exercises",
+          "columnsFrom": [
+            "exercise_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "program_exercises_sets": {
+          "name": "program_exercises_sets",
+          "value": "\"program_exercises\".\"sets\" BETWEEN 1 AND 10"
+        },
+        "program_exercises_rep_min": {
+          "name": "program_exercises_rep_min",
+          "value": "\"program_exercises\".\"rep_min\" >= 1"
+        },
+        "program_exercises_rep_max": {
+          "name": "program_exercises_rep_max",
+          "value": "\"program_exercises\".\"rep_max\" >= \"program_exercises\".\"rep_min\" AND \"program_exercises\".\"rep_max\" <= 50"
+        }
+      }
+    },
+    "programs": {
+      "name": "programs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "active": {
+          "name": "active",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "programs_one_active": {
+          "name": "programs_one_active",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": true,
+          "where": "active = 1"
+        }
+      },
+      "foreignKeys": {
+        "programs_user_id_users_id_fk": {
+          "name": "programs_user_id_users_id_fk",
+          "tableFrom": "programs",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "programs_active": {
+          "name": "programs_active",
+          "value": "\"programs\".\"active\" IN (0, 1)"
+        }
+      }
+    },
+    "reminders_sent": {
+      "name": "reminders_sent",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "local_date": {
+          "name": "local_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "reminders_sent_user_id_users_id_fk": {
+          "name": "reminders_sent_user_id_users_id_fk",
+          "tableFrom": "reminders_sent",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "reminders_sent_user_id_kind_local_date_pk": {
+          "columns": [
+            "user_id",
+            "kind",
+            "local_date"
+          ],
+          "name": "reminders_sent_user_id_kind_local_date_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "reminders_sent_kind": {
+          "name": "reminders_sent_kind",
+          "value": "\"reminders_sent\".\"kind\" IN ('train', 'weigh', 'report')"
+        },
+        "reminders_sent_date": {
+          "name": "reminders_sent_date",
+          "value": "\"reminders_sent\".\"local_date\" GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+        }
+      }
+    },
+    "start_weights": {
+      "name": "start_weights",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "exercise_id": {
+          "name": "exercise_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "weight_kg": {
+          "name": "weight_kg",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reps": {
+          "name": "reps",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "start_weights_user_id_users_id_fk": {
+          "name": "start_weights_user_id_users_id_fk",
+          "tableFrom": "start_weights",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "start_weights_exercise_id_exercises_id_fk": {
+          "name": "start_weights_exercise_id_exercises_id_fk",
+          "tableFrom": "start_weights",
+          "tableTo": "exercises",
+          "columnsFrom": [
+            "exercise_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "start_weights_user_id_exercise_id_pk": {
+          "columns": [
+            "user_id",
+            "exercise_id"
+          ],
+          "name": "start_weights_user_id_exercise_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "start_weights_weight": {
+          "name": "start_weights_weight",
+          "value": "\"start_weights\".\"weight_kg\" >= 0"
+        },
+        "start_weights_reps": {
+          "name": "start_weights_reps",
+          "value": "\"start_weights\".\"reps\" BETWEEN 1 AND 30"
+        }
+      }
+    },
+    "user_profiles": {
+      "name": "user_profiles",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "goal": {
+          "name": "goal",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "goal_note": {
+          "name": "goal_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "level": {
+          "name": "level",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "days_per_week": {
+          "name": "days_per_week",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "session_min": {
+          "name": "session_min",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "place": {
+          "name": "place",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "limits": {
+          "name": "limits",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "limits_note": {
+          "name": "limits_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sex": {
+          "name": "sex",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "birth_year": {
+          "name": "birth_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "height_cm": {
+          "name": "height_cm",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "weight_kg": {
+          "name": "weight_kg",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "meals_per_day": {
+          "name": "meals_per_day",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "diet_note": {
+          "name": "diet_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sleep_band": {
+          "name": "sleep_band",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "activity": {
+          "name": "activity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "user_profiles_user_id_users_id_fk": {
+          "name": "user_profiles_user_id_users_id_fk",
+          "tableFrom": "user_profiles",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "user_profiles_goal": {
+          "name": "user_profiles_goal",
+          "value": "\"user_profiles\".\"goal\" IS NULL OR \"user_profiles\".\"goal\" IN ('lose_fat', 'muscle', 'recomp', 'strength', 'health', 'other')"
+        },
+        "user_profiles_goal_note": {
+          "name": "user_profiles_goal_note",
+          "value": "\"user_profiles\".\"goal_note\" IS NULL OR length(\"user_profiles\".\"goal_note\") <= 300"
+        },
+        "user_profiles_level": {
+          "name": "user_profiles_level",
+          "value": "\"user_profiles\".\"level\" IS NULL OR \"user_profiles\".\"level\" IN ('novice', 'mid', 'adv')"
+        },
+        "user_profiles_days": {
+          "name": "user_profiles_days",
+          "value": "\"user_profiles\".\"days_per_week\" IS NULL OR \"user_profiles\".\"days_per_week\" BETWEEN 2 AND 5"
+        },
+        "user_profiles_session_min": {
+          "name": "user_profiles_session_min",
+          "value": "\"user_profiles\".\"session_min\" IS NULL OR \"user_profiles\".\"session_min\" IN (30, 45, 60, 90)"
+        },
+        "user_profiles_place": {
+          "name": "user_profiles_place",
+          "value": "\"user_profiles\".\"place\" IS NULL OR \"user_profiles\".\"place\" IN ('gym', 'home')"
+        },
+        "user_profiles_limits": {
+          "name": "user_profiles_limits",
+          "value": "\"user_profiles\".\"limits\" IS NULL OR \"user_profiles\".\"limits\" = '' OR (\"user_profiles\".\"limits\" NOT LIKE ',%' AND \"user_profiles\".\"limits\" NOT LIKE '%,' AND \"user_profiles\".\"limits\" NOT LIKE '%,,%' AND replace(replace(replace(replace(replace(\"user_profiles\".\"limits\", 'knee', ''), 'back', ''), 'shoulder', ''), 'wrist', ''), ',', '') = '')"
+        },
+        "user_profiles_limits_note": {
+          "name": "user_profiles_limits_note",
+          "value": "\"user_profiles\".\"limits_note\" IS NULL OR length(\"user_profiles\".\"limits_note\") <= 300"
+        },
+        "user_profiles_sex": {
+          "name": "user_profiles_sex",
+          "value": "\"user_profiles\".\"sex\" IS NULL OR \"user_profiles\".\"sex\" IN ('m', 'f')"
+        },
+        "user_profiles_birth_year": {
+          "name": "user_profiles_birth_year",
+          "value": "\"user_profiles\".\"birth_year\" IS NULL OR \"user_profiles\".\"birth_year\" BETWEEN 1930 AND 2020"
+        },
+        "user_profiles_height": {
+          "name": "user_profiles_height",
+          "value": "\"user_profiles\".\"height_cm\" IS NULL OR \"user_profiles\".\"height_cm\" BETWEEN 120 AND 230"
+        },
+        "user_profiles_weight": {
+          "name": "user_profiles_weight",
+          "value": "\"user_profiles\".\"weight_kg\" IS NULL OR \"user_profiles\".\"weight_kg\" BETWEEN 30 AND 300"
+        },
+        "user_profiles_meals": {
+          "name": "user_profiles_meals",
+          "value": "\"user_profiles\".\"meals_per_day\" IS NULL OR \"user_profiles\".\"meals_per_day\" BETWEEN 1 AND 5"
+        },
+        "user_profiles_diet_note": {
+          "name": "user_profiles_diet_note",
+          "value": "\"user_profiles\".\"diet_note\" IS NULL OR length(\"user_profiles\".\"diet_note\") <= 300"
+        },
+        "user_profiles_sleep": {
+          "name": "user_profiles_sleep",
+          "value": "\"user_profiles\".\"sleep_band\" IS NULL OR \"user_profiles\".\"sleep_band\" IN ('lt6', '6_7', '7_8', '8p')"
+        },
+        "user_profiles_activity": {
+          "name": "user_profiles_activity",
+          "value": "\"user_profiles\".\"activity\" IS NULL OR \"user_profiles\".\"activity\" IN ('low', 'mid', 'high')"
+        }
+      }
+    },
+    "users": {
+      "name": "users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "first_name": {
+          "name": "first_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "tz": {
+          "name": "tz",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'Europe/Kyiv'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "training_days": {
+          "name": "training_days",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'1,3,5'"
+        },
+        "remind_time": {
+          "name": "remind_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "'08:00'"
+        },
+        "weigh_time": {
+          "name": "weigh_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": "'07:30'"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "users_first_name_len": {
+          "name": "users_first_name_len",
+          "value": "length(\"users\".\"first_name\") <= 64"
+        }
+      }
+    },
+    "workout_sets": {
+      "name": "workout_sets",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "workout_id": {
+          "name": "workout_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "program_exercise_id": {
+          "name": "program_exercise_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "exercise_id": {
+          "name": "exercise_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "set_no": {
+          "name": "set_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "weight_kg": {
+          "name": "weight_kg",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reps": {
+          "name": "reps",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "prescribed_weight_kg": {
+          "name": "prescribed_weight_kg",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "prescribed_reps": {
+          "name": "prescribed_reps",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "skipped": {
+          "name": "skipped",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "workout_sets_exercise_workout": {
+          "name": "workout_sets_exercise_workout",
+          "columns": [
+            "exercise_id",
+            "workout_id"
+          ],
+          "isUnique": false
+        },
+        "workout_sets_workout_exercise_set": {
+          "name": "workout_sets_workout_exercise_set",
+          "columns": [
+            "workout_id",
+            "exercise_id",
+            "set_no"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "workout_sets_workout_id_workouts_id_fk": {
+          "name": "workout_sets_workout_id_workouts_id_fk",
+          "tableFrom": "workout_sets",
+          "tableTo": "workouts",
+          "columnsFrom": [
+            "workout_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "workout_sets_program_exercise_id_program_exercises_id_fk": {
+          "name": "workout_sets_program_exercise_id_program_exercises_id_fk",
+          "tableFrom": "workout_sets",
+          "tableTo": "program_exercises",
+          "columnsFrom": [
+            "program_exercise_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "workout_sets_exercise_id_exercises_id_fk": {
+          "name": "workout_sets_exercise_id_exercises_id_fk",
+          "tableFrom": "workout_sets",
+          "tableTo": "exercises",
+          "columnsFrom": [
+            "exercise_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "workout_sets_set_no": {
+          "name": "workout_sets_set_no",
+          "value": "\"workout_sets\".\"set_no\" BETWEEN 1 AND 10"
+        },
+        "workout_sets_skipped": {
+          "name": "workout_sets_skipped",
+          "value": "\"workout_sets\".\"skipped\" IN (0, 1)"
+        },
+        "workout_sets_values": {
+          "name": "workout_sets_values",
+          "value": "(\"workout_sets\".\"skipped\" = 1 AND \"workout_sets\".\"weight_kg\" IS NULL AND \"workout_sets\".\"reps\" IS NULL) OR (\"workout_sets\".\"skipped\" = 0 AND \"workout_sets\".\"weight_kg\" IS NOT NULL AND \"workout_sets\".\"reps\" IS NOT NULL AND \"workout_sets\".\"weight_kg\" >= 0 AND \"workout_sets\".\"reps\" BETWEEN 0 AND 50)"
+        }
+      }
+    },
+    "workouts": {
+      "name": "workouts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "program_day_id": {
+          "name": "program_day_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "finished_at": {
+          "name": "finished_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "effort": {
+          "name": "effort",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "await_input": {
+          "name": "await_input",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "workouts_one_active": {
+          "name": "workouts_one_active",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": true,
+          "where": "status = 'active'"
+        },
+        "workouts_user_started": {
+          "name": "workouts_user_started",
+          "columns": [
+            "user_id",
+            "started_at"
+          ],
+          "isUnique": false
+        },
+        "workouts_status_started": {
+          "name": "workouts_status_started",
+          "columns": [
+            "status",
+            "started_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "workouts_user_id_users_id_fk": {
+          "name": "workouts_user_id_users_id_fk",
+          "tableFrom": "workouts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "workouts_program_day_id_program_days_id_fk": {
+          "name": "workouts_program_day_id_program_days_id_fk",
+          "tableFrom": "workouts",
+          "tableTo": "program_days",
+          "columnsFrom": [
+            "program_day_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "workouts_status": {
+          "name": "workouts_status",
+          "value": "\"workouts\".\"status\" IN ('active', 'done', 'abandoned')"
+        },
+        "workouts_effort": {
+          "name": "workouts_effort",
+          "value": "\"workouts\".\"effort\" BETWEEN 1 AND 5"
+        },
+        "workouts_finished_iff_not_active": {
+          "name": "workouts_finished_iff_not_active",
+          "value": "(\"workouts\".\"status\" = 'active') = (\"workouts\".\"finished_at\" IS NULL)"
+        },
+        "workouts_done_iff_effort": {
+          "name": "workouts_done_iff_effort",
+          "value": "(\"workouts\".\"status\" = 'done') = (\"workouts\".\"effort\" IS NOT NULL)"
+        },
+        "workouts_await_only_active": {
+          "name": "workouts_await_only_active",
+          "value": "\"workouts\".\"await_input\" IS NULL OR \"workouts\".\"status\" = 'active'"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

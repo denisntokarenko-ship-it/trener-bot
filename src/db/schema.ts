@@ -9,6 +9,12 @@ export const users = sqliteTable(
     firstName: text("first_name").notNull(),
     tz: text("tz").notNull().default("Europe/Kyiv"),
     createdAt: integer("created_at").notNull(),
+    // Фаза 2 (0005): розклад нагадувань. CHECK — лише в SQL міграції (ADD COLUMN), схема їх не бачить.
+    /** ISO-дні 1 (Пн)…7 (Нд) через кому, зростаюче, без повторів, ≥ 1 день; порядок перевіряє домен. */
+    trainingDays: text("training_days").notNull().default("1,3,5"),
+    /** `HH:MM`, кратне 15 хв, 05:00–22:00; NULL — вимкнено. */
+    remindTime: text("remind_time").default("08:00"),
+    weighTime: text("weigh_time").default("07:30"),
   },
   (t) => [check("users_first_name_len", sql`length(${t.firstName}) <= 64`)],
 );
@@ -292,4 +298,35 @@ export const bodyWeights = sqliteTable(
     check("body_weights_dg", sql`${t.weightDg} BETWEEN 300 AND 3000`),
     check("body_weights_date", sql`${t.localDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`),
   ],
+);
+
+export const REMINDER_KINDS = ["train", "weigh", "report"] as const;
+export type ReminderKind = (typeof REMINDER_KINDS)[number];
+
+/** Заявка на нагадування: ключ ідемпотентності (user, kind, local_date). Не чиститься (≈ 3 рядки на день). */
+export const remindersSent = sqliteTable(
+  "reminders_sent",
+  {
+    userId: integer("user_id").notNull().references(() => users.id),
+    kind: text("kind", { enum: REMINDER_KINDS }).notNull(),
+    localDate: text("local_date").notNull(),
+    sentAt: integer("sent_at").notNull(),
+    /** message_id повідомлення Telegram; NULL — ще не надіслано або доля невідома (крах / таймаут). */
+    messageId: integer("message_id"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.kind, t.localDate] }),
+    check("reminders_sent_kind", sql`${t.kind} IN ('train', 'weigh', 'report')`),
+    check("reminders_sent_date", sql`${t.localDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`),
+  ],
+);
+
+/** Один рядок (id = 1): коли востаннє відпрацював крон. `/health` показує вік. */
+export const cronState = sqliteTable(
+  "cron_state",
+  {
+    id: integer("id").primaryKey(),
+    lastTickAt: integer("last_tick_at").notNull(),
+  },
+  (t) => [check("cron_state_single", sql`${t.id} = 1`)],
 );
