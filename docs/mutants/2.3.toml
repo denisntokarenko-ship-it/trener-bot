@@ -18,8 +18,8 @@ match = "другий тік|два виклики|гонка"
 [[mutant]]
 id = "M2"
 file = "src/domain/time.ts"
-old = '''{ timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(nowUtcMs))'''
-new = '''{ timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(nowUtcMs))'''
+old = '''formatter("minute", tz).formatToParts(new Date(nowUtcMs))'''
+new = '''formatter("minute", "UTC").formatToParts(new Date(nowUtcMs))'''
 why = "локальний час нагадування за UTC замість tz — 08:00 за Києвом збігається з 08:00Z, переходи часу ламаються"
 match = "переходи часу|25\\.10\\.2026|вікно тіка|localParts"
 
@@ -188,3 +188,29 @@ old = '''    await c.repo.releaseReminder(user.id, kind, date); // до відп
 new = '''    throw e;'''
 why = "помилка побудови тексту лишає заявку — нагадування губиться без відправки"
 match = "помилка побудови тексту"
+
+# --- Виправлення за рев'ю 2.3 ---
+
+[[mutant]]
+id = "M21"
+file = "src/reminders.ts"
+old = '''date = localDate(now, user.tz);'''
+new = '''date = new Date(now).toISOString().slice(0, 10);'''
+why = "В2: локальна дата заявки за UTC замість tz — для Нью-Йорка/Токіо local_date хибна"
+match = "В2 рев'ю"
+
+[[mutant]]
+id = "M22"
+file = "src/cron.ts"
+old = '''await repo.touchCron(now, counters.errors === 0);'''
+new = '''await repo.touchCron(now, true);'''
+why = "В1: last_ok_at оновлюється й для тіку з помилками — /health «живий» при мовчазному збої"
+match = "В1|тік, що впав|помилка в одній парі|невизначена доля"
+
+[[mutant]]
+id = "M23"
+file = "src/bot/texts.ts"
+old = '''m.planned > 0 ? `${m.workouts} з ${m.planned}` : m.workouts'''
+new = '''`${m.workouts} з ${m.planned}`'''
+why = "Д3: «1 з 0» у звіті при битому training_days"
+match = "planned = 0"

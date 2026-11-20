@@ -96,13 +96,20 @@ describe("reminders_sent і cron_state", () => {
     expect(await repo.claimReminder(OWNER, "weigh", "2026-10-19", 2)).toBe(true);
   });
 
-  it("cron_state: один рядок (id = 1), upsert; CHECK id = 1", async () => {
+  it("cron_state: один рядок (id = 1), upsert; last_ok_at оновлюється лише для ok-тіку; CHECK id = 1", async () => {
     expect(await repo.getCronTick()).toBeNull();
     await repo.touchCron(100);
     await repo.touchCron(200);
-    expect(await repo.getCronTick()).toBe(200);
+    expect(await repo.getCronTick()).toEqual({ tickAt: 200, okAt: 200 });
+    await repo.touchCron(300, false);
+    expect(await repo.getCronTick()).toEqual({ tickAt: 300, okAt: 200 });
     expect(await count("cron_state")).toBe(1);
     await expect(env.DB.prepare("INSERT INTO cron_state (id, last_tick_at) VALUES (2, 1)").run()).rejects.toThrow();
+  });
+
+  it("перший тік із помилкою: last_ok_at = NULL", async () => {
+    await repo.touchCron(100, false);
+    expect(await repo.getCronTick()).toEqual({ tickAt: 100, okAt: null });
   });
 
   it("hasHistory: порожньо → false; лише active-тренування → false; done → true; або запис ваги → true", async () => {
@@ -176,6 +183,12 @@ describe("тексти нагадувань", () => {
     expect(weekRangeLabel("2026-10-28", "2026-11-03")).toBe("28 жовтня – 3 листопада");
     expect(weekRangeLabel("2026-12-28", "2027-01-03")).toBe("28 грудня – 3 січня");
     expect(weekRangeLabel("2027-03-01", "2027-03-07")).toBe("1–7 березня");
+  });
+
+  it("звіт: planned = 0 (битий training_days) — без «з 0»", () => {
+    const t = weeklyReportText({ weekStart: "2026-10-19", weekEnd: "2026-10-25", workouts: 1, planned: 0, sets: 3, volumeKg: 480, records: [], weight: null, next: null });
+    expect(t).toContain("Тренувань: <b>1</b> · Підходів");
+    expect(t).not.toContain(" з 0");
   });
 
   it("звіт: примітка (n зваж.) при < 3 записів; без зміни — без дужки; нуль тренувань без «далі» закінчується крапкою", () => {

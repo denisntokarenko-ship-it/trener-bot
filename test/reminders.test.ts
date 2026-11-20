@@ -429,7 +429,7 @@ describe("P2.3.7 і P2.3.11 крон: незалежні збої, cron_state", 
     const broken = { ...repo, purgeProcessedUpdates: () => Promise.reject(new Error("збій")) };
     const c = await runCron(env, MON_0800, { repo: broken as typeof repo, fetch: tg.fetch });
     expect(c).toMatchObject({ sent: 1, errors: 1 });
-    expect(await repo.getCronTick()).toBe(MON_0800);
+    expect((await repo.getCronTick())?.tickAt).toBe(MON_0800);
   });
 
   it("нагадування кидають — прибирання працює (abandonStale), cron_state оновлено", async () => {
@@ -441,20 +441,20 @@ describe("P2.3.7 і P2.3.11 крон: незалежні збої, cron_state", 
     expect(c.errors).toBe(1);
     const row = await env.DB.prepare("SELECT status FROM workouts WHERE started_at = ?").bind(stale).first<{ status: string }>();
     expect(row?.status).toBe("abandoned");
-    expect(await repo.getCronTick()).toBe(MON_0800);
+    expect((await repo.getCronTick())?.tickAt).toBe(MON_0800);
   });
 
   it("без токена — помилка в лозі, але cron_state й прибирання працюють", async () => {
     const c = await runCron({ ...env, TELEGRAM_BOT_TOKEN: undefined }, MON_0800, { fetch: tg.fetch });
     expect(c.errors).toBe(1);
-    expect(await repo.getCronTick()).toBe(MON_0800);
+    expect((await repo.getCronTick())?.tickAt).toBe(MON_0800);
   });
 
   it("кожен тік пише last_tick_at = now (навіть без нагадувань), один рядок", async () => {
     await tick(at("2026-10-20T12:00:00Z"));
-    expect(await repo.getCronTick()).toBe(at("2026-10-20T12:00:00Z"));
+    expect((await repo.getCronTick())?.tickAt).toBe(at("2026-10-20T12:00:00Z"));
     await tick(at("2026-10-20T12:15:00Z"));
-    expect(await repo.getCronTick()).toBe(at("2026-10-20T12:15:00Z"));
+    expect((await repo.getCronTick())?.tickAt).toBe(at("2026-10-20T12:15:00Z"));
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM cron_state").first<{ n: number }>())!.n).toBe(1);
   });
 
@@ -465,25 +465,83 @@ describe("P2.3.7 і P2.3.11 крон: незалежні збої, cron_state", 
   });
 });
 
-describe("P2.3.11 /health: вік тіку", () => {
+describe("P2.3.11 /health: вік тіку й тіку без помилок (В1 рев'ю)", () => {
   const health = async (now: number): Promise<{ status: number; body: string }> => {
     const res = await handleRequest(new Request("https://example.com/health"), env, async () => {}, () => now);
     return { status: res.status, body: await res.text() };
   };
 
-  it("тіку не було — `ok cron=?`", async () => {
-    expect(await health(MON_0800)).toEqual({ status: 200, body: "ok cron=?" });
+  it("тіку не було — `ok cron=? ok=?`", async () => {
+    expect(await health(MON_0800)).toEqual({ status: 200, body: "ok cron=? ok=?" });
   });
   it("вік у хвилинах (округлення вниз)", async () => {
     await repo.touchCron(MON_0800);
-    expect(await health(MON_0800 + 7 * MIN + 59_000)).toEqual({ status: 200, body: "ok cron=7m" });
-    expect(await health(MON_0800)).toEqual({ status: 200, body: "ok cron=0m" });
+    expect(await health(MON_0800 + 7 * MIN + 59_000)).toEqual({ status: 200, body: "ok cron=7m ok=7m" });
+    expect(await health(MON_0800)).toEqual({ status: 200, body: "ok cron=0m ok=0m" });
   });
   it("годинник «назад» не дає від'ємного віку", async () => {
     await repo.touchCron(MON_0800);
-    expect((await health(MON_0800 - MIN)).body).toBe("ok cron=0m");
+    expect((await health(MON_0800 - MIN)).body).toBe("ok cron=0m ok=0m");
   });
   it("тіло починається з `ok` (моніторингу, що чекає «ok», достатньо)", async () => {
     expect((await health(MON_0800)).body.startsWith("ok")).toBe(true);
+  });
+
+  it("тік, що впав (немає токена): cron свіжий, ok не оновлюється — видно мовчазну відмову", async () => {
+    await runCron(env, MON_0800, { fetch: tg.fetch }); // успішний тік
+    await runCron({ ...env, TELEGRAM_BOT_TOKEN: undefined }, MON_0800 + 15 * MIN, { fetch: tg.fetch });
+    await runCron({ ...env, TELEGRAM_BOT_TOKEN: undefined }, MON_0800 + 30 * MIN, { fetch: tg.fetch });
+    expect(await repo.getCronTick()).toEqual({ tickAt: MON_0800 + 30 * MIN, okAt: MON_0800 });
+    expect((await health(MON_0800 + 31 * MIN)).body).toBe("ok cron=1m ok=31m");
+  });
+  it("помилка в одній парі (Bad/Zone) теж не дає ok; після одужання ok знову оновлюється", async () => {
+    await env.DB.prepare("INSERT INTO users (id, first_name, tz, created_at) VALUES (?, 'Хтось', 'Bad/Zone', 0)").bind(OTHER).run();
+    await tick(MON_0800);
+    expect(await repo.getCronTick()).toEqual({ tickAt: MON_0800, okAt: null });
+    expect((await health(MON_0800)).body).toBe("ok cron=0m ok=?");
+    await env.DB.prepare("UPDATE users SET tz = 'Europe/Kyiv' WHERE id = ?").bind(OTHER).run();
+    await tick(MON_0800 + 15 * MIN);
+    expect((await repo.getCronTick())?.okAt).toBe(MON_0800 + 15 * MIN);
+  });
+  it("таймаут Telegram (невизначена доля) теж рахується помилкою тіку", async () => {
+    await tick(MON_0800, ["hang"]);
+    expect((await repo.getCronTick())?.okAt).toBeNull();
+  });
+});
+
+describe("В2 рев'ю: локальна дата за tz користувача, не за UTC (пояси поза Києвом)", () => {
+  const setTz = (tz: string, extra = "") => env.DB.prepare(`UPDATE users SET tz = ?${extra}`).bind(tz).run();
+
+  it("Нью-Йорк, Нд 20:30 EDT = Пн 00:30Z: звіт із local_date неділі й тижнем 19–25 жовтня", async () => {
+    await setTz("America/New_York", ", weigh_time = NULL, remind_time = NULL");
+    await repo.upsertBodyWeight(OWNER, "2026-10-20", 790, 1);
+    await tick(at("2026-10-26T00:30:00Z"));
+    expect(tg.texts()).toHaveLength(1);
+    expect(tg.texts()[0]).toContain("Тиждень 19–25 жовтня");
+    expect((await sentRows())[0]).toMatchObject({ kind: "report", local_date: "2026-10-25" });
+  });
+
+  it("Токіо, Пн 08:00 JST = Нд 23:00Z: train із local_date понеділка (UTC-дата була б неділею)", async () => {
+    await setTz("Asia/Tokyo", ", weigh_time = NULL");
+    await tick(at("2026-10-18T23:00:00Z"));
+    expect(tg.texts()[0]).toContain("Сьогодні тренування");
+    expect((await sentRows())[0]).toMatchObject({ kind: "train", local_date: "2026-10-19" });
+  });
+
+  it("Токіо, 07:30 JST = Нд 22:30Z: weigh із local_date понеділка; вага «сьогодні» — за локальною датою", async () => {
+    await setTz("Asia/Tokyo", ", remind_time = NULL");
+    await repo.upsertBodyWeight(OWNER, "2026-10-18", 790, 1); // локально це «вчора»: не блокує
+    await tick(at("2026-10-18T22:30:00Z"));
+    expect(tg.calls).toHaveLength(1);
+    expect((await sentRows())[0]).toMatchObject({ kind: "weigh", local_date: "2026-10-19" });
+  });
+
+  it("Нью-Йорк: тренування сьогодні за локальною добою (Пн 21:00 EDT = Вт 01:00Z) блокує нагадування Пн", async () => {
+    await setTz("America/New_York", ", weigh_time = NULL, remind_time = '09:00'");
+    const dayA = (await repo.getProgramDay(OWNER, "A"))!;
+    // Пн 2026-10-19 07:00 EDT = 11:00Z — тренування; нагадування Пн 09:15 EDT = 13:15Z має мовчати.
+    await env.DB.prepare("INSERT INTO workouts (user_id, program_day_id, status, started_at, finished_at, effort) VALUES (?, ?, 'done', ?, ?, 3)").bind(OWNER, dayA.id, at("2026-10-19T11:00:00Z"), at("2026-10-19T12:00:00Z")).run();
+    await tick(at("2026-10-19T13:15:00Z"));
+    expect(tg.calls).toHaveLength(0);
   });
 });

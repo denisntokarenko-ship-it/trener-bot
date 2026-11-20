@@ -701,7 +701,7 @@ export function weeklyReportText(m: WeeklyReportTextModel): string {
   if (m.workouts === 0) {
     lines.push(`Цього тижня тренувань не було. Нічого страшного${next ? ` — далі: ${next}` : "."}`);
   } else {
-    lines.push(`Тренувань: <b>${m.workouts} з ${m.planned}</b> · Підходів: <b>${m.sets}</b> · Обсяг: <b>${fmtInt(m.volumeKg)} кг</b>`);
+    lines.push(`Тренувань: <b>${m.planned > 0 ? `${m.workouts} з ${m.planned}` : m.workouts}</b> · Підходів: <b>${m.sets}</b> · Обсяг: <b>${fmtInt(m.volumeKg)} кг</b>`);
     if (m.records.length > 0) lines.push(`🏆 Нові рекорди: ${m.records.join("; ")}`);
   }
   if (m.weight) {

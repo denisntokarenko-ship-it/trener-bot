@@ -27,13 +27,14 @@ export async function runCron(env: Env, now: number, deps: { repo?: Repo } & Rem
     counters.errors++;
     console.error("cron reminders failed", { error: errorName(e) });
   }
+  counters.errors += cleanupErrors;
   try {
-    await repo.touchCron(now);
+    // last_ok_at — лише для тіку без помилок (В1 рев'ю 2.3): інакше «крон живий» при мовчазному збої нагадувань.
+    await repo.touchCron(now, counters.errors === 0);
   } catch (e) {
-    cleanupErrors++;
+    counters.errors++;
     console.error("cron_state failed", { error: errorName(e) });
   }
-  counters.errors += cleanupErrors;
   console.log("cron tick", counters);
   return counters;
 }

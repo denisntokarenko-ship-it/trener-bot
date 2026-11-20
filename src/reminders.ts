@@ -3,7 +3,7 @@
 import { prescribeSlot } from "./bot/prescribe";
 import { WEIGH_REMINDER, dayLabel, recordReps, recordWeight, trainReminderText, weeklyReportText, type TrainReminderLine } from "./bot/texts";
 import { TELEGRAM_SEND_TIMEOUT_MS } from "./config";
-import type { Repo } from "./db/repo";
+import type { ActiveProgram, ProgramDay, Repo } from "./db/repo";
 import type { ReminderKind } from "./db/schema";
 import { nextDayCode } from "./domain/progression";
 import { dueReminders, parseTrainingDays } from "./domain/reminders";
@@ -70,11 +70,15 @@ interface UserRow {
   trainingDays: string;
 }
 
-/** Текст нагадування про тренування; null — немає чого показати (програма зникла між перевіркою й побудовою). */
-async function buildTrain(repo: Repo, userId: number): Promise<string | null> {
-  const program = await repo.getActiveProgram(userId);
+/** Наступний день активної програми (останнє `done` активної програми → `nextDayCode` → день зі слотами); немає — null. */
+async function nextProgramDay(repo: Repo, userId: number, program: ActiveProgram | null): Promise<ProgramDay | null> {
   if (!program || program.days.length === 0) return null;
-  const day = await repo.getProgramDay(userId, nextDayCode(await repo.getLastDoneWorkout(userId), program.days));
+  return repo.getProgramDay(userId, nextDayCode(await repo.getLastDoneWorkout(userId), program.days));
+}
+
+/** Текст нагадування про тренування; null — немає чого показати (програма зникла між перевіркою й побудовою). */
+async function buildTrain(repo: Repo, userId: number, program: ActiveProgram | null): Promise<string | null> {
+  const day = await nextProgramDay(repo, userId, program);
   if (!day) return null;
   const lines: TrainReminderLine[] = await Promise.all(
     day.slots.map(async (slot) => {
@@ -85,17 +89,14 @@ async function buildTrain(repo: Repo, userId: number): Promise<string | null> {
   return trainReminderText({ dayLabel: dayLabel(day), lines });
 }
 
-async function buildReport(repo: Repo, user: UserRow, date: string): Promise<string> {
+async function buildReport(repo: Repo, user: UserRow, date: string, program: ActiveProgram | null): Promise<string> {
   const fromUtc = localDayStartUtc(addDays(date, -6), user.tz);
   const toUtc = localDayStartUtc(addDays(date, 1), user.tz);
-  const program = await repo.getActiveProgram(user.id);
   const [stats, rows, weights, nextDay] = await Promise.all([
     repo.getWeekStats(user.id, fromUtc, toUtc),
     repo.getProgressSets(user.id),
     repo.getWeights(user.id, addDays(date, -13), date),
-    program && program.days.length > 0
-      ? repo.getLastDoneWorkout(user.id).then((last) => repo.getProgramDay(user.id, nextDayCode(last, program.days)))
-      : Promise.resolve(null),
+    nextProgramDay(repo, user.id, program),
   ]);
   const r = buildWeeklyReport({
     weekEnd: date,
@@ -120,11 +121,10 @@ async function buildReport(repo: Repo, user: UserRow, date: string): Promise<str
   });
 }
 
-/** Умови даних для kind (розклад уже перевірено): false — нагадування не потрібне й заявки не буде. */
-async function wanted(repo: Repo, user: UserRow, kind: ReminderKind, date: string): Promise<boolean> {
+/** Умови даних для kind (розклад уже перевірено): false — нагадування не потрібне й заявки не буде. `program` — активна програма, прочитана один раз на пару. */
+async function wanted(repo: Repo, user: UserRow, kind: ReminderKind, date: string, program: ActiveProgram | null): Promise<boolean> {
   if (kind === "weigh") return (await repo.getWeights(user.id, date, date)).length === 0;
   if (kind === "train") {
-    const program = await repo.getActiveProgram(user.id);
     if (!program || program.days.length === 0) return false;
     return !(await repo.hasWorkoutBetween(user.id, localDayStartUtc(date, user.tz), localDayStartUtc(addDays(date, 1), user.tz)));
   }
@@ -133,12 +133,13 @@ async function wanted(repo: Repo, user: UserRow, kind: ReminderKind, date: strin
 
 async function processPair(c: PairCtx, user: UserRow, kind: ReminderKind, date: string): Promise<Outcome> {
   if (await c.repo.hasReminder(user.id, kind, date)) return "skipped";
-  if (!(await wanted(c.repo, user, kind, date))) return "skipped";
+  const program = kind === "weigh" ? null : await c.repo.getActiveProgram(user.id);
+  if (!(await wanted(c.repo, user, kind, date, program))) return "skipped";
   // 1. Заявка: 0 рядків — інший тік уже взяв.
   if (!(await c.repo.claimReminder(user.id, kind, date, c.now))) return "skipped";
   let text: string | null;
   try {
-    text = kind === "weigh" ? WEIGH_REMINDER : kind === "train" ? await buildTrain(c.repo, user.id) : await buildReport(c.repo, user, date);
+    text = kind === "weigh" ? WEIGH_REMINDER : kind === "train" ? await buildTrain(c.repo, user.id, program) : await buildReport(c.repo, user, date, program);
   } catch (e) {
     await c.repo.releaseReminder(user.id, kind, date); // до відправки — недоставка визначена
     throw e;

@@ -744,19 +744,19 @@ export function createRepo(db: Db) {
       return row[0]?.n === 1;
     },
 
-    /** Кінець кожного тіку (навіть якщо нагадування кидали): `/health` бере звідси вік крону. */
-    async touchCron(now: number): Promise<void> {
+    /** Кінець кожного тіку (навіть якщо нагадування кидали): `/health` бере звідси вік крону. `ok` — тік без помилок: лише тоді оновлюється last_ok_at. */
+    async touchCron(now: number, ok = true): Promise<void> {
       await db
         .insert(cronState)
-        .values({ id: 1, lastTickAt: now })
-        .onConflictDoUpdate({ target: cronState.id, set: { lastTickAt: now } })
+        .values({ id: 1, lastTickAt: now, lastOkAt: ok ? now : null })
+        .onConflictDoUpdate({ target: cronState.id, set: ok ? { lastTickAt: now, lastOkAt: now } : { lastTickAt: now } })
         .run();
     },
 
-    /** Момент останнього тіку (UTC мс); тіку ще не було — null. */
-    async getCronTick(): Promise<number | null> {
-      const row = await db.select({ at: cronState.lastTickAt }).from(cronState).where(eq(cronState.id, 1)).get();
-      return row?.at ?? null;
+    /** Момент останнього тіку й останнього тіку без помилок (UTC мс); тіку ще не було — null. */
+    async getCronTick(): Promise<{ tickAt: number; okAt: number | null } | null> {
+      const row = await db.select({ tickAt: cronState.lastTickAt, okAt: cronState.lastOkAt }).from(cronState).where(eq(cronState.id, 1)).get();
+      return row ?? null;
     },
   };
 }

@@ -327,6 +327,8 @@ export const cronState = sqliteTable(
   {
     id: integer("id").primaryKey(),
     lastTickAt: integer("last_tick_at").notNull(),
+    /** Останній тік без помилок (0006); NULL — таких ще не було. `/health` показує обидва віки. */
+    lastOkAt: integer("last_ok_at"),
   },
   (t) => [check("cron_state_single", sql`${t.id} = 1`)],
 );
