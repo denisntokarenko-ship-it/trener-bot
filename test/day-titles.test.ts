@@ -3,7 +3,7 @@ import { seedStatements } from "../scripts/seed-core";
 import { createDb } from "../src/db/client";
 import { createRepo } from "../src/db/repo";
 import { DAY_TITLES, type Plan } from "../src/domain/plan";
-import { dayName } from "../src/bot/workout-view";
+import { dayHint, dayLabel, dayName } from "../src/bot/workout-view";
 import { env, resetDb } from "./helpers";
 
 const repo = createRepo(createDb(env.DB));
@@ -60,5 +60,19 @@ describe("міграція 0003: назви для днів із title IS NULL",
     expect(t.ZZ).toBeNull();
     await run();
     expect(await titles()).toEqual(t);
+  });
+});
+
+describe("підказка складу дня (код, з muscle_group каталогу)", () => {
+  const slot = (muscleGroup: string) => ({ exercise: { muscleGroup } });
+  it("до 3 різних груп за порядком вправ, без повторів і невідомих груп", () => {
+    expect(dayHint([slot("legs"), slot("chest"), slot("chest"), slot("back"), slot("core")])).toBe("ноги, груди, спина");
+    expect(dayHint([slot("shoulders"), slot("shoulders"), slot("xx")])).toBe("плечі");
+    expect(dayHint([])).toBe("");
+  });
+  it("dayLabel: «Назва (підказка)»; без слотів або без підказки — лише назва", () => {
+    expect(dayLabel({ code: "FA", title: "Все тіло A", slots: [slot("legs"), slot("chest")] })).toBe("Все тіло A (ноги, груди)");
+    expect(dayLabel({ code: "FA", title: "Все тіло A" })).toBe("Все тіло A");
+    expect(dayLabel({ code: "FA", title: "Все тіло A", slots: [] })).toBe("Все тіло A");
   });
 });

@@ -2,6 +2,7 @@
 import { InlineKeyboard } from "grammy";
 import type { Exercise } from "../db/repo";
 import { MAX_REPS, encodeCb } from "./callbacks";
+import { MUSCLE_UK } from "./texts";
 
 /** N6: ліміт тексту повідомлення Telegram. */
 export const TELEGRAM_TEXT_MAX = 4096;
@@ -42,6 +43,22 @@ export interface ScreenModel {
 /** Назва дня для показу: `title`, інакше «День <code>». Код у callback_data лишається, назва туди не йде. */
 export function dayName(d: { code: string; title: string | null }): string {
   return d.title && d.title.trim() !== "" ? d.title : `День ${d.code}`;
+}
+
+/** Підказка складу дня: до 3 різних груп мʼязів за порядком вправ (детерміновано, з каталогу; у БД не зберігається). */
+export function dayHint(slots: readonly { exercise: { muscleGroup: string } }[]): string {
+  const seen: string[] = [];
+  for (const s of slots) {
+    const g = MUSCLE_UK[s.exercise.muscleGroup];
+    if (g && !seen.includes(g)) seen.push(g);
+  }
+  return seen.slice(0, 3).join(", ");
+}
+
+/** Самодостатня назва дня: «Все тіло A (ноги, груди, спина)»; без слотів — лише назва. */
+export function dayLabel(d: { code: string; title: string | null; slots?: readonly { exercise: { muscleGroup: string } }[] }): string {
+  const h = d.slots ? dayHint(d.slots) : "";
+  return h ? `${dayName(d)} (${h})` : dayName(d);
 }
 
 const isBodyweight = (e: Exercise): boolean => e.equipment === "bodyweight";

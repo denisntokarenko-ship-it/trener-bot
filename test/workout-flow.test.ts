@@ -161,7 +161,7 @@ describe("P1.3 записати тренування", () => {
     expect(text).toContain("Підходів: 14 з 14");
     expect(text).toContain("Тяжкість: 4/5");
     expect(text).not.toContain("Рекорди");
-    expect(text).toContain("Наступного разу: Все тіло B");
+    expect(text).toContain("Наступного разу: Все тіло B (ноги, спина, груди)");
     expect(view().buttons).toHaveLength(0);
     // P1.5.6: кожне натискання — рівно один answerCallbackQuery.
     expect(answers()).toHaveLength(presses + 1);
@@ -592,8 +592,8 @@ describe("1b.3: назви тренувань (P3.2, P3.3)", () => {
   it("день без title → «День A» на екрані, у підсумку й у /prohrama", async () => {
     await env.DB.prepare("UPDATE program_days SET title = NULL").run();
     await say("/prohrama");
-    expect(view().text).toContain("День A\n1.");
-    expect(view().text).toContain("➡️ Наступне: День A");
+    expect(view().text).toContain("<b>День A</b> · ноги, груди, спина\n1.");
+    expect(view().text).toContain("➡️ Наступне тренування: День A (ноги, груди, спина)");
     await say("/trening");
     expect(view().text).toContain("День A · вправа 1/5");
     await say("/prohrama");
@@ -610,7 +610,7 @@ describe("1b.3: назви тренувань (P3.2, P3.3)", () => {
       expect(b.callback_data).not.toContain(LONG);
     }
     await say("/prohrama");
-    expect(view().text).toContain(`${LONG}\n1.`);
+    expect(view().text).toContain(`<b>${LONG}</b> · ноги, груди, спина\n1.`);
     expect(view().text).toContain(`Зараз триває: ${LONG}`);
     // Підсумок і /progres: закриваємо тренування A.
     const w = await workoutRow();

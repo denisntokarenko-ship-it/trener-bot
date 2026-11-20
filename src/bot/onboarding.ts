@@ -14,7 +14,7 @@ import {
   resumeScreen, welcomeScreen, type Screen,
 } from "./onboarding-view";
 import { SOMETHING_WRONG, esc, greeting } from "./texts";
-import { dayName } from "./workout-view";
+import { dayLabel } from "./workout-view";
 
 const HTML = "HTML" as const;
 const isNotModified = (e: unknown): boolean => e instanceof GrammyError && /not modified/i.test(e.description);
@@ -293,8 +293,8 @@ export function createOnboardingFlow(repo: Repo, now: () => number) {
     await save(userId, st, { status: "done" });
     const program = await repo.getActiveProgram(userId);
     const code = program ? nextDayCode(await repo.getLastDoneWorkout(userId), program.days) : null;
-    const day = program?.days.find((d) => d.code === code);
-    const nextName = day ? dayName(day) : "—";
+    const day = program?.days.some((d) => d.code === code) && code ? await repo.getProgramDay(userId, code) : null;
+    const nextName = day ? dayLabel(day) : "—";
     await editTapped(ctx, userId, st, { text: planAcceptedText(built.plan.name, nextName) });
     return undefined;
   }

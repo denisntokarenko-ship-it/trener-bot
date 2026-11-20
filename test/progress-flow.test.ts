@@ -86,16 +86,16 @@ describe("/progres", () => {
 describe("/prohrama", () => {
   it("без done — день A, обидва дні зі слотами, калібрування без active", async () => {
     const text = await say("/prohrama");
-    expect(text).toContain("Все тіло A\n1. Присідання зі штангою — 3 × 6–10");
-    expect(text).toContain("Все тіло B\n1. Румунська тяга зі штангою");
-    expect(text).toContain("➡️ Наступне: Все тіло A\n");
+    expect(text).toContain("<b>Все тіло A</b> · ноги, груди, спина\n1. Присідання зі штангою — 3 × 6–10");
+    expect(text).toContain("<b>Все тіло B</b> · ноги, спина, груди\n1. Румунська тяга зі штангою");
+    expect(text).toContain("➡️ Наступне тренування: Все тіло A (ноги, груди, спина)\n");
     expect(text).not.toContain("Зараз триває");
   });
 
   it("після done A — наступний B з призначеними вагами", async () => {
     await seedWorkout("A", T0, "done", () => [20, 8]);
     const text = await say("/prohrama");
-    expect(text).toContain("➡️ Наступне: Все тіло B");
+    expect(text).toContain("➡️ Наступне тренування: Все тіло B (ноги, спина, груди)");
     const next = text.slice(text.indexOf("➡️"));
     expect(next).toMatch(/Румунська тяга зі штангою — \d+(,\d+)? кг × \d+/);
   });
