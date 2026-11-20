@@ -52,6 +52,7 @@ describe("P2.1 set-webhook", () => {
         { command: "progres", description: "Прогрес: вага, рекорди, e1RM" },
         { command: "vaga", description: "Записати вагу тіла" },
         { command: "profil", description: "Профіль і план" },
+        { command: "nalashtuvannia", description: "Дні, час нагадувань, часовий пояс" },
       ],
     });
     expect(h.out).toContain("Середовище: preview");

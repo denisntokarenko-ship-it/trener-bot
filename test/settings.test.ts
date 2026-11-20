@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Update } from "grammy/types";
 import { seedStatements } from "../scripts/seed-core";
 import { handleRequest, telegramHandler } from "../src/app";
-import { parseSettingsCb } from "../src/bot/settings-flow";
+import { isSettingsCb, parseSettingsCb } from "../src/bot/settings-flow";
 import { BOT_COMMANDS, settingsText } from "../src/bot/texts";
 import { createDb } from "../src/db/client";
 import { createRepo } from "../src/db/repo";
@@ -138,11 +138,15 @@ describe("P2.4 екран і кнопки", () => {
 
   it("P2.4.4: застарілі й підроблені callback-и нічого не пишуть", async () => {
     const before = await settings();
-    for (const bad of ["s:t:07:11", "s:t:r:07:11", "s:t:r:04", "s:t:r:23", "s:t:x:08", "s:t:r:08:15:00", "s:t:r:off:1", "s:d:0", "s:d:8", "s:d:1:2", "s:x", "s:", "s:t:r:8:15", "s:t:r:08:5"]) {
+    for (const bad of ["s:t:07:11", "s:t:r:07:11", "s:t:r:04", "s:t:r:23", "s:t:x:08", "s:t:r:off:1", "s:d:0", "s:d:8", "s:d:1:2", "s:x", "s:", "s:t:r:8:15", "s:t:r:08:5"]) {
       await tap(bad);
     }
     expect(await settings()).toEqual(before);
     expect(answers().every((a) => a === "Це вже неактуально")).toBe(true);
+    await tap("s:t:r:08:15:00"); // 6 сегментів — уже не налаштування; без запису
+    expect(await settings()).toEqual(before);
+    expect(isSettingsCb("s:1:2:3:4:5:6")).toBe(false); // дія «підхід» потоку /trening
+    expect(isSettingsCb("s:t:r:08:15")).toBe(true);
     expect(parseSettingsCb("s:t:r:08:15")).toEqual({ a: "t", kind: "r", hour: 8, minute: 15 });
   });
 

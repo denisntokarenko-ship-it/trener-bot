@@ -39,6 +39,12 @@ export function parseSettingsCb(data: string): SettingsCb | null {
   return null;
 }
 
+/**
+ * `s:` займає і дія «підхід» потоку /trening (`s:w:p:e:n:r:g`, 7 полів). Налаштування — щонайбільше 5 сегментів,
+ * тому розрізняємо за довжиною: 5 і менше — сюди (навіть битий формат отримує «неактуально» без запису), 7 — у /trening.
+ */
+export const isSettingsCb = (data: string): boolean => data.startsWith("s:") && data.split(":").length <= 5;
+
 const isNotModified = (e: unknown): boolean => e instanceof GrammyError && /not modified/i.test(e.description);
 
 function mainKeyboard(): InlineKeyboard {

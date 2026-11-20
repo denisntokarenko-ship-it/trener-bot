@@ -3,7 +3,7 @@ import { Bot, BotError } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import type { Repo } from "../db/repo";
 import { createOnboardingFlow } from "./onboarding";
-import { createSettingsFlow } from "./settings-flow";
+import { createSettingsFlow, isSettingsCb } from "./settings-flow";
 import { NOT_UNDERSTOOD, SOMETHING_WRONG } from "./texts";
 import { createWeightFlow } from "./weight-flow";
 import { createWorkoutFlow } from "./workout-flow";
@@ -54,7 +54,7 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
   bot.command("nalashtuvannia", (ctx) => settings.command(ctx));
   bot.on("callback_query:data", (ctx) => {
     const d = ctx.callbackQuery.data;
-    return d.startsWith("o:") ? onboarding.callback(ctx) : d.startsWith("s:") ? settings.callback(ctx) : flow.callback(ctx);
+    return d.startsWith("o:") ? onboarding.callback(ctx) : isSettingsCb(d) ? settings.callback(ctx) : flow.callback(ctx);
   });
   bot.on("callback_query", (ctx) => ctx.answerCallbackQuery());
   // Текст, число — порядок із phase-2.md, розділ 2 (перший збіг виграє): 1) reply на нагадування про вагу; 2) вага підходу, що
