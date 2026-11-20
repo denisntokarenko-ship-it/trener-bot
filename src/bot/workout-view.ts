@@ -23,7 +23,8 @@ export interface ScreenSet {
 
 export interface ScreenModel {
   workoutId: number;
-  dayCode: string;
+  /** Назва дня для показу (`dayName`), не код. */
+  dayName: string;
   slotIndex: number;
   slotCount: number;
   programExerciseId: number;
@@ -38,12 +39,17 @@ export interface ScreenModel {
   showCues: boolean;
 }
 
+/** Назва дня для показу: `title`, інакше «День <code>». Код у callback_data лишається, назва туди не йде. */
+export function dayName(d: { code: string; title: string | null }): string {
+  return d.title && d.title.trim() !== "" ? d.title : `День ${d.code}`;
+}
+
 const isBodyweight = (e: Exercise): boolean => e.equipment === "bodyweight";
 
 export function screenText(m: ScreenModel): string {
   const load = isBodyweight(m.exercise) ? "власна вага" : `${fmtKg(m.weightKg)} кг`;
   const lines = [
-    `День ${m.dayCode} · вправа ${m.slotIndex + 1}/${m.slotCount}`,
+    `${m.dayName} · вправа ${m.slotIndex + 1}/${m.slotCount}`,
     m.exercise.nameUk,
     `${load} × ${m.reps} · підхід ${m.setNo}/${m.sets}`,
   ];
@@ -99,7 +105,7 @@ export function badWeight(e: Exercise): string {
 }
 
 export interface SummaryModel {
-  dayCode: string;
+  dayName: string;
   minutes: number;
   setsTotal: number;
   setsDone: number;
@@ -108,18 +114,18 @@ export interface SummaryModel {
   effort: number;
   /** Рекорди: «Назва — 60 кг × 8» (для ваги тіла — «12 повт.»). */
   records: string[];
-  nextDayCode: string;
+  nextDayName: string;
 }
 
 export function summaryText(m: SummaryModel): string {
   const lines = [
-    `🏁 Тренування ${m.dayCode} · ${m.minutes} хв`,
+    `🏁 ${m.dayName} · ${m.minutes} хв`,
     m.setsSkipped > 0 ? `Підходів: ${m.setsDone} з ${m.setsTotal} (пропущено ${m.setsSkipped})` : `Підходів: ${m.setsDone} з ${m.setsTotal}`,
     `Обсяг: ${fmtInt(m.volumeKg)} кг`,
     `Тяжкість: ${m.effort}/5`,
   ];
   if (m.records.length > 0) lines.push("🏆 Рекорди:", ...m.records.map((r) => `• ${r}`));
-  lines.push(`Наступного разу: день ${m.nextDayCode}`);
+  lines.push(`Наступного разу: ${m.nextDayName}`);
   return clip(lines.join("\n"));
 }
 

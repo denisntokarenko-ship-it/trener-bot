@@ -22,4 +22,12 @@ describe("архітектура", () => {
     }
     expect(FORBIDDEN.some((re) => re.test('import type { Repo } from "../db/repo";'))).toBe(false);
   });
+
+  it("P3.2: у src/bot/** немає літералів «День A»/«День B» (назва — з БД)", () => {
+    const LITERAL = /День\s+[AB]\b/;
+    const offenders = Object.entries(botFiles).filter(([, src]) => LITERAL.test(src));
+    expect(offenders.map(([path]) => path)).toEqual([]);
+    expect(LITERAL.test('const x = "День A";')).toBe(true); // позитивний контроль
+    expect(LITERAL.test("`День ${d.code}`")).toBe(false);
+  });
 });

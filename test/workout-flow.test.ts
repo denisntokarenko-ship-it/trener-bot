@@ -130,7 +130,7 @@ describe("P1.3 записати тренування", () => {
     const w = await workoutRow();
     expect(w?.status).toBe("active");
     expect(view().method).toBe("sendMessage");
-    expect(view().text).toContain("День A · вправа 1/5");
+    expect(view().text).toContain("Все тіло A · вправа 1/5");
     expect(view().text).toContain("Присідання зі штангою");
     expect(view().text).toContain("20 кг × 6 · підхід 1/3");
     expect(view().text).toContain("Калібрування: підбери робочу вагу кнопкою ⚖️");
@@ -157,11 +157,11 @@ describe("P1.3 записати тренування", () => {
     expect(w?.finished_at).toBe(T0);
     expect(w?.await_input).toBeNull();
     const text = view().text;
-    expect(text).toContain("🏁 Тренування A · 0 хв");
+    expect(text).toContain("🏁 Все тіло A · 0 хв");
     expect(text).toContain("Підходів: 14 з 14");
     expect(text).toContain("Тяжкість: 4/5");
     expect(text).not.toContain("Рекорди");
-    expect(text).toContain("Наступного разу: день B");
+    expect(text).toContain("Наступного разу: Все тіло B");
     expect(view().buttons).toHaveLength(0);
     // P1.5.6: кожне натискання — рівно один answerCallbackQuery.
     expect(answers()).toHaveLength(presses + 1);
@@ -237,7 +237,7 @@ describe("P1.4 введення ваги", () => {
     ]);
     await seedDone("B", T0 - 86_400_000, [{ slot: 0, weight: 40, reps: 8 }]);
     await say("/trening");
-    expect(view().text).toContain("День A · вправа 1/5");
+    expect(view().text).toContain("Все тіло A · вправа 1/5");
     expect(view().text).toContain("50 кг × 9 · підхід 1/3");
   });
 });
@@ -306,7 +306,7 @@ describe("P1.5 повтори, застарілі кнопки й продовж
     tg.calls.length = 0;
     await say("/trening");
     expect(view().method).toBe("sendMessage");
-    expect(view().text).toContain("День A · вправа 3/5");
+    expect(view().text).toContain("Все тіло A · вправа 3/5");
     expect(view().text).toContain("підхід 1/3");
     expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM workouts").first("n")).toBe(1);
     expect((await workoutRow())!.await_input).toBeNull();
@@ -320,7 +320,7 @@ describe("P1.5 повтори, застарілі кнопки й продовж
     await say("/trening");
     const rows = (await env.DB.prepare("SELECT status FROM workouts ORDER BY id").all()).results.map((r) => r.status);
     expect(rows).toEqual(["abandoned", "active"]);
-    expect(view().text).toContain("День A · вправа 1/5");
+    expect(view().text).toContain("Все тіло A · вправа 1/5");
   });
 
   it("чужий чи неіснуючий workout → «вже завершене»", async () => {
@@ -358,7 +358,7 @@ describe("P2.1 заміна вправи", () => {
   async function startDayB(history: Parameters<typeof seedDone>[2] = [{ slot: 0, weight: 40, reps: 8 }]): Promise<void> {
     await seedDone("A", T0 - 86_400_000, history);
     await say("/trening");
-    expect(view().text).toContain("День B");
+    expect(view().text).toContain("Все тіло B");
   }
 
   it("P2.1.1–3 меню замін, екран заміни, закріплення першим підходом і продовження", async () => {
@@ -421,7 +421,7 @@ describe("P2.1 заміна вправи", () => {
     await press("3");
     await seedDone("A", T0 + 86_400_000, [{ slot: 0, weight: 40, reps: 8 }]);
     await say("/trening");
-    expect(view().text).toContain("День B · вправа 1/5");
+    expect(view().text).toContain("Все тіло B · вправа 1/5");
     for (let i = 0; i < 3; i++) await press("✅");
     expect(view().text).toContain("Жим ногами");
   });
@@ -536,7 +536,7 @@ describe("F-1 В1: призначення через БД на ≥ 2 сесія�
     await seedDone("A", T0 - DAY * 2, [{ slot: 0, weight: 60, reps: 6 }, { slot: 0, weight: 60, reps: 5 }, { slot: 0, weight: 60, reps: 5 }], 4);
     await seedDone("B", T0 - DAY, [{ slot: 0, weight: 40, reps: 8 }]);
     await say("/trening");
-    expect(view().text).toContain("День A · вправа 1/5");
+    expect(view().text).toContain("Все тіло A · вправа 1/5");
     expect(view().text).toContain("50 кг × 6 · підхід 1/3");
   });
 
@@ -583,5 +583,40 @@ describe("F-1 В3: дві вимоги спеки", () => {
     await tap(encodeCb("s", { ...cb, n: 3 }));
     expect(lastAnswer()).toBe("Кнопка застаріла — показую поточний підхід");
     expect(await setCount()).toBe(0);
+  });
+});
+
+describe("1b.3: назви тренувань (P3.2, P3.3)", () => {
+  const LONG = "Ш".repeat(40); // ліміт назви ≤ 40; кирилиця — 2 байти на символ
+
+  it("день без title → «День A» на екрані, у підсумку й у /prohrama", async () => {
+    await env.DB.prepare("UPDATE program_days SET title = NULL").run();
+    await say("/prohrama");
+    expect(view().text).toContain("День A\n1.");
+    expect(view().text).toContain("➡️ Наступне: День A");
+    await say("/trening");
+    expect(view().text).toContain("День A · вправа 1/5");
+    await say("/prohrama");
+    expect(view().text).toContain("Зараз триває: День A");
+  });
+
+  it("довга назва: екран, /prohrama, підсумок і /progres показують її; callback_data ≤ 64 байти і без назви", async () => {
+    await env.DB.prepare("UPDATE program_days SET title = ? WHERE code = 'A'").bind(LONG).run();
+    await say("/trening");
+    expect(view().text).toContain(`${LONG} · вправа 1/5`);
+    expect(view().text.length).toBeLessThanOrEqual(4096);
+    for (const b of view().buttons) {
+      expect(new TextEncoder().encode(b.callback_data).length, b.callback_data).toBeLessThanOrEqual(64);
+      expect(b.callback_data).not.toContain(LONG);
+    }
+    await say("/prohrama");
+    expect(view().text).toContain(`${LONG}\n1.`);
+    expect(view().text).toContain(`Зараз триває: ${LONG}`);
+    // Підсумок і /progres: закриваємо тренування A.
+    const w = await workoutRow();
+    await repo.finishWorkout(OWNER, w!.id, 3, T0 + 1);
+    await say("/progres");
+    expect(view().text).toContain(`· ${LONG} · 3/5`);
+    expect(view().text.length).toBeLessThanOrEqual(4096);
   });
 });

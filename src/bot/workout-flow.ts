@@ -11,6 +11,7 @@ import {
   NO_PROGRAM,
   RATING_TEXT,
   badWeight,
+  dayName,
   fmtKg,
   ratingKeyboard,
   screenKeyboard,
@@ -130,7 +131,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
     const lastWorked = rows.filter((r) => !r.skipped).at(-1);
     return {
       workoutId: w.id,
-      dayCode: day.code,
+      dayName: dayName(day),
       slotIndex: index,
       slotCount: day.slots.length,
       programExerciseId: slot.id,
@@ -195,8 +196,10 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
         }
       }
     }
+    const nextCode = program && program.days.length > 0 ? nextDayCode({ dayCode: w.dayCode }, program.days) : w.dayCode;
+    const nextDay = program?.days.find((d) => d.code === nextCode);
     const model: SummaryModel = {
-      dayCode: w.dayCode,
+      dayName: dayName(day),
       minutes: Math.floor(((w.finishedAt ?? now()) - w.startedAt) / 60000),
       setsTotal: day.slots.reduce((a, s) => a + s.sets, 0),
       setsDone: worked.length,
@@ -204,7 +207,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       volumeKg: worked.reduce((a, s) => a + (s.weightKg ?? 0) * (s.reps ?? 0), 0),
       effort: w.effort ?? 0,
       records,
-      nextDayCode: program && program.days.length > 0 ? nextDayCode({ dayCode: w.dayCode }, program.days) : w.dayCode,
+      nextDayName: nextDay ? dayName(nextDay) : dayName(day),
     };
     return summaryText(model);
   }
@@ -397,7 +400,8 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
         lines.push({ nameUk: slot.exercise.nameUk, bodyweight: slot.exercise.equipment === "bodyweight", weightKg: p.weightKg, targetReps: p.targetReps });
       }
       const active = await repo.getActiveWorkout(userId);
-      await ctx.reply(programText({ days, next: { dayCode: nextCode, lines }, activeDayCode: active?.dayCode ?? null }));
+      const activeDay = active ? days.find((d) => d.code === active.dayCode) : undefined;
+      await ctx.reply(programText({ days, next: { dayName: dayName(nextDay), lines }, activeDayName: activeDay ? dayName(activeDay) : null }));
     },
 
     /** /progres: останні 5 завершених чи обірваних тренувань. */

@@ -1,6 +1,6 @@
 // Тексти /progres і /prohrama — чисті функції (phase-1-flow.md, P2.5).
 import type { ProgramDay, WorkoutSummaryRow } from "../db/repo";
-import { TELEGRAM_TEXT_MAX, clip, fmtKg } from "./workout-view";
+import { TELEGRAM_TEXT_MAX, clip, dayName, fmtKg } from "./workout-view";
 
 export const NO_WORKOUTS = "Ще немає тренувань. Почни: /trening";
 
@@ -33,7 +33,7 @@ export function fmtSets(sets: WorkoutSummaryRow["exercises"][number]["sets"]): s
 }
 
 function workoutBlock(w: WorkoutSummaryRow, tz: string): string {
-  const head = `${fmtLocalDate(w.startedAt, tz)} · ${w.dayCode} · ${w.status === "done" && w.effort !== null ? `${w.effort}/5` : "не завершене"}`;
+  const head = `${fmtLocalDate(w.startedAt, tz)} · ${dayName({ code: w.dayCode, title: w.dayTitle })} · ${w.status === "done" && w.effort !== null ? `${w.effort}/5` : "не завершене"}`;
   const body = w.exercises.map((e) => `${e.nameUk} ${fmtSets(e.sets)}`).join(" · ");
   return body ? `${head}\n${body}` : head;
 }
@@ -55,19 +55,19 @@ export interface NextSlotLine {
 
 export interface ProgramModel {
   days: ProgramDay[];
-  next: { dayCode: string; lines: NextSlotLine[] };
-  /** Код дня активного тренування, якщо воно є. */
-  activeDayCode: string | null;
+  next: { dayName: string; lines: NextSlotLine[] };
+  /** Назва дня активного тренування, якщо воно є. */
+  activeDayName: string | null;
 }
 
 export function programText(m: ProgramModel): string {
   const parts: string[] = [];
   for (const d of m.days) {
     const slots = d.slots.map((s, i) => `${i + 1}. ${s.exercise.nameUk} — ${s.sets} × ${s.repMin}–${s.repMax}`);
-    parts.push([`День ${d.code}`, ...slots].join("\n"));
+    parts.push([dayName(d), ...slots].join("\n"));
   }
   const next = m.next.lines.map((l) => `${l.nameUk} — ${l.bodyweight ? "власна вага" : `${fmtKg(l.weightKg)} кг`} × ${l.targetReps}`);
-  parts.push([`➡️ Наступне: день ${m.next.dayCode}`, ...next].join("\n"));
-  if (m.activeDayCode) parts.push(`Зараз триває: день ${m.activeDayCode} — /trening, щоб продовжити`);
+  parts.push([`➡️ Наступне: ${m.next.dayName}`, ...next].join("\n"));
+  if (m.activeDayName) parts.push(`Зараз триває: ${m.activeDayName} — /trening, щоб продовжити`);
   return clip(parts.join("\n\n"));
 }
