@@ -184,30 +184,28 @@ export function createRepo(db: Db) {
       return { ...program, days };
     },
 
-    /** День активної програми користувача за кодом (A, B) зі слотами й вправами; немає — null. */
+    /** День активної програми користувача за кодом (A, B) зі слотами й вправами одним запитом; немає — null. */
     async getProgramDay(userId: number, code: string): Promise<ProgramDay | null> {
-      const day = await db
-        .select({ id: programDays.id, programId: programDays.programId, code: programDays.code, position: programDays.position })
+      const rows = await db
+        .select({
+          day: { id: programDays.id, programId: programDays.programId, code: programDays.code, position: programDays.position },
+          slot: programExercises,
+          exercise: exercises,
+        })
         .from(programDays)
         .innerJoin(programs, eq(programs.id, programDays.programId))
+        .leftJoin(programExercises, eq(programExercises.programDayId, programDays.id))
+        .leftJoin(exercises, eq(exercises.id, programExercises.exerciseId))
         .where(and(eq(programs.userId, userId), eq(programs.active, 1), eq(programDays.code, code)))
-        .get();
-      if (!day) return null;
-      const rows = await db
-        .select({ slot: programExercises, exercise: exercises })
-        .from(programExercises)
-        .innerJoin(exercises, eq(exercises.id, programExercises.exerciseId))
-        .where(eq(programExercises.programDayId, day.id))
         .orderBy(asc(programExercises.position))
         .all();
-      const slots = rows.map(({ slot, exercise }) => ({
-        id: slot.id,
-        position: slot.position,
-        sets: slot.sets,
-        repMin: slot.repMin,
-        repMax: slot.repMax,
-        exercise: toExercise(exercise),
-      }));
+      const day = rows[0]?.day;
+      if (!day) return null;
+      const slots = rows.flatMap(({ slot, exercise }) =>
+        slot && exercise
+          ? [{ id: slot.id, position: slot.position, sets: slot.sets, repMin: slot.repMin, repMax: slot.repMax, exercise: toExercise(exercise) }]
+          : [],
+      );
       return { ...day, slots };
     },
 
@@ -391,7 +389,8 @@ export function createRepo(db: Db) {
 
     /**
      * Останні n сесій вправи (фактично виконаної — exercise_id) з тренувань done і abandoned користувача,
-     * від старшої до новішої. Тренування без жодного рядка цієї вправи сесією не є.
+     * від старшої до новішої. Сесія — лише тренування з ≥ 1 непропущеним підходом цієї вправи (спека: повністю
+     * пропущена не зараховується), тож пропуски не витісняють зараховані сесії з вікна n (рев'ю Фази 1, В1).
      */
     async getExerciseHistory(userId: number, exerciseId: number, n: number): Promise<HistorySession[]> {
       if (n <= 0) return [];
@@ -414,7 +413,7 @@ export function createRepo(db: Db) {
         WHERE s.exercise_id = ${exerciseId} AND w.id IN (
           SELECT w2.id FROM workouts w2
           WHERE w2.user_id = ${userId} AND w2.status IN ('done', 'abandoned')
-            AND EXISTS (SELECT 1 FROM workout_sets s2 WHERE s2.workout_id = w2.id AND s2.exercise_id = ${exerciseId})
+            AND EXISTS (SELECT 1 FROM workout_sets s2 WHERE s2.workout_id = w2.id AND s2.exercise_id = ${exerciseId} AND s2.skipped = 0)
           ORDER BY w2.started_at DESC, w2.id DESC
           LIMIT ${n})
         ORDER BY w.started_at, w.id, s.set_no`);

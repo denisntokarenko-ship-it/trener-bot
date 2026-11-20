@@ -283,3 +283,32 @@ describe("getExerciseHistory / getLastDoneWorkout", () => {
     expect(nextDayCode(await repo.getLastDoneWorkout(A), days)).toBe("A");
   });
 });
+
+describe("рев'ю Фази 1: вікно історії рахує лише зараховані сесії", () => {
+  it("повністю пропущені сесії не витісняють зараховані з вікна n (В1)", async () => {
+    const squat = dayA.slots[0]!;
+    const w1 = await start(A, dayA, T0);
+    await repo.upsertSet(A, set(w1, dayA, 0, 1, { weightKg: 60, reps: 6 }));
+    await repo.finishWorkout(A, w1, 4, T0 + 1);
+    for (const [i, t] of [T0 + 100, T0 + 200].entries()) {
+      const w = await start(A, dayA, t);
+      for (let n = 1; n <= squat.sets; n++) await repo.upsertSet(A, set(w, dayA, 0, n, { skipped: true, weightKg: null, reps: null }));
+      await repo.finishWorkout(A, w, 3, t + 1 + i);
+    }
+    const w4 = await start(A, dayA, T0 + 300);
+    await repo.upsertSet(A, set(w4, dayA, 0, 1, { weightKg: 60, reps: 5 }));
+    await repo.upsertSet(A, set(w4, dayA, 0, 2, { skipped: true, weightKg: null, reps: null }));
+    await repo.finishWorkout(A, w4, 4, T0 + 301);
+
+    const two = await repo.getExerciseHistory(A, squat.exercise.id, 2);
+    expect(two.map((s) => s.workoutId)).toEqual([w1, w4]);
+    expect(two[1]!.sets).toHaveLength(2); // зарахована сесія лишається з пропущеним підходом
+  });
+
+  it("getWorkoutSets чужого тренування → [] (P1.1.5, N8)", async () => {
+    const w = await start(A, dayA, T0);
+    await repo.upsertSet(A, set(w, dayA, 0, 1));
+    expect(await repo.getWorkoutSets(A, w)).toHaveLength(1);
+    expect(await repo.getWorkoutSets(B, w)).toEqual([]);
+  });
+});
