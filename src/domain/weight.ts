@@ -25,7 +25,7 @@ export function parseWeightDg(raw: string): number | null {
   return dg >= MIN_WEIGHT_DG && dg <= MAX_WEIGHT_DG ? dg : null;
 }
 
-/** Голе число 30–300 (до округлення діапазон не важливий: 29,96 → 30,0 теж вага). */
+/** Чи схоже на вагу: формат і діапазон перевіряються після округлення (29,96 → 30,0 — вага; 29,94 — ні). */
 export const isWeightLike = (raw: string): boolean => parseWeightDg(raw) !== null;
 
 export interface WeightEntry {

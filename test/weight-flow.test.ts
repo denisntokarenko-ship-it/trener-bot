@@ -49,7 +49,8 @@ describe("P2.1.1 /vaga: запис і перезапис", () => {
     const r = await rows();
     expect(r).toHaveLength(1);
     expect(r[0]).toMatchObject({ weight_dg: 780, updated_at: nowMs });
-    expect(reply()).toContain("78,0 кг записано, замінило 78,4");
+    // В1 рев'ю: сьогоднішнє старе значення не входить у середнє вдруге
+    expect(reply()).toBe("⚖️ 78,0 кг записано, замінило 78,4 (середнє за 7 днів: 78,0 кг (1 зваж.))");
   });
 
   it("«78,4» і «78.4» дають однаковий запис; 78,45 → 78,5", async () => {
@@ -208,6 +209,10 @@ describe("репо й меню", () => {
   it("upsertBodyWeight повертає попереднє значення дня", async () => {
     expect(await repo.upsertBodyWeight(OWNER, "2026-11-20", 784, 1)).toBeNull();
     expect(await repo.upsertBodyWeight(OWNER, "2026-11-20", 780, 2)).toBe(784);
+    // В2 рев'ю (N8): чужий рядок за ту саму дату не видно як «попереднє»
+    await repo.upsertUser(STRANGER, "Інший", 0);
+    expect(await repo.upsertBodyWeight(STRANGER, "2026-11-20", 700, 3)).toBeNull();
+    expect(await repo.getLastWeight(OWNER)).toEqual({ localDate: "2026-11-20", weightDg: 780 });
   });
 
   it("/vaga у BOT_COMMANDS", () => {

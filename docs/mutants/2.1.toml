@@ -77,3 +77,23 @@ old = '''await flow.text(ctx, awaits ? undefined : weight.hintFor(ctx));'''
 new = '''await flow.text(ctx, undefined);'''
 why = "голе число без підказки /vaga (крок 5)"
 match = "голе число"
+
+# --- З рев'ю 2.1 (В1, В2): мутанти, що вижили на коміті 849b322 ---
+
+[[mutant]]
+id = "M10"
+file = "src/bot/weight-flow.ts"
+old = '''before.filter((e) => e.localDate !== today), '''
+new = '''before, '''
+why = "В1: при перезаписі дня старе значення сьогодні лишається в середньому (n = 2)"
+match = "замінило 78,4"
+
+[[mutant]]
+id = "M11"
+file = "src/db/repo.ts"
+old = '''        .where(and(eq(bodyWeights.userId, userId), eq(bodyWeights.localDate, localDate)))
+        .get();'''
+new = '''        .where(eq(bodyWeights.localDate, localDate))
+        .get();'''
+why = "В2 (N8): попереднє значення дня читається без userId — видно чужу вагу"
+match = "повертає попереднє"
