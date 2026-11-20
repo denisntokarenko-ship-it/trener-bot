@@ -97,6 +97,12 @@ export function fakeTelegram() {
 
 /** Усі таблиці від дочірніх до батьківських — у такому порядку їх чистить resetDb (FK у D1 увімкнені). */
 export const TABLES = [
+  "meal_items",
+  "meals",
+  "food_aliases",
+  "foods",
+  "nutrition_targets",
+  "ai_usage",
   "reminders_sent",
   "cron_state",
   "body_weights",

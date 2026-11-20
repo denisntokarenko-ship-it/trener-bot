@@ -50,6 +50,13 @@
       "when": 1795509035469,
       "tag": "0006_cron_ok",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1795595435469,
+      "tag": "0007_nutrition",
+      "breakpoints": true
     }
   ]
 }

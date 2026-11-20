@@ -25,6 +25,10 @@
     "seed:local": "npm run seed:sql && wrangler d1 execute DB --local --file .seed.sql --yes",
     "seed:preview": "npm run seed:sql && wrangler d1 execute DB --remote --env preview --file .seed.sql --yes",
     "seed:prod": "npm run seed:sql && wrangler d1 execute DB --remote --env production --file .seed.sql --yes",
+    "seed:foods:sql": "node scripts/seed-foods.ts > .seed-foods.sql",
+    "seed:foods:local": "npm run seed:foods:sql && wrangler d1 execute DB --local --file .seed-foods.sql --yes",
+    "seed:foods:preview": "npm run seed:foods:sql && wrangler d1 execute DB --remote --env preview --file .seed-foods.sql --yes",
+    "seed:foods:prod": "npm run seed:foods:sql && wrangler d1 execute DB --remote --env production --file .seed-foods.sql --yes",
     "backup:prod": "bash scripts/backup-prod.sh production"
   },
   "dependencies": {
