@@ -34,7 +34,7 @@
 | 2.5 | Деплой Фази 2 у прод | Opus 5.5 | xhigh | phase-2/05-prod-release | ⬜ | ⬜ |
 | R-2 | Незалежне рев'ю Фази 2 | Opus 5.5 | high | review/phase-2 | ⬜ | — |
 | F-2 | Виправлення за рев'ю Фази 2 | Opus 5.5 | high | fix/phase-2-review | ⬜ | — |
-| 3.0 | Специфікація Фази 3 | Opus 5.5 | high | docs/spec-phase-3 | ⬜ | ⬜ |
+| 3.0 | Специфікація Фази 3 | Opus 5.5 | high | docs/spec-phase-3 | 🟡 | ⬜ |
 | 3.1 | Схема харчування й шар даних | Opus 5.5 | high | phase-3/01-food-data | ⬜ | ⬜ |
 | 3.2 | Денна норма КБЖУ з профілю анкети 1b | Opus 5.5 | high | phase-3/02-targets | ⬜ | — |
 | 3.3 | Розпізнавання їжі за фото | Opus 5.5 | xhigh | phase-3/03-food-photo | ⬜ | ⬜ |
@@ -108,6 +108,7 @@
 
 ## Нотатка для наступного кроку
 
+- 3.0 🟡 (PR 3.0 — **не мержиться**, 🔒 чекає людини; запущено паралельно з деплоєм 2.5 за рішенням власника): `docs/spec/phase-3.md` (схема, сид USDA SR Legacy CC0, норма Міффліна, потік фото, ліміт $0,30/день, тренд ±100); цін і лімітів Anthropic звірено 2026-11-20. Людині: підтвердити джерело сиду (розділ 2) і пройти рев'ю 3.0; ворота 3.1 — 3.0 ✅ і R-2 закрите.
 - 2.4 ✅: `/nalashtuvannia` (`src/bot/settings-flow.ts`, callback `s:`), `repo.getUserSettings/updateUserSettings` з валідацією, `src/domain/settings.ts`, скидання днів в `onboarding.accept`. Тести `test/settings.test.ts` (17); мутанти 3/3 вбито (останній день, скидання днів, сітка годин).
 - 2.3 ✅ (PR #30; рев'ю ✅ `docs/reviews/2.3.md`, виправлено В1 `cron_state.last_ok_at` + `/health` `ok cron=Nm ok=Nm` (міграція `0006`), В2 тести tz, Д3, Д5, Д6): міграція `0005` (`users.training_days/remind_time/weigh_time`, `reminders_sent`, `cron_state`), `src/reminders.ts` (заявити → надіслати → зняти при визначеній недоставці; `Promise.allSettled` по парах), `src/cron.ts` (два незалежні try/catch + `cron_state` + лог-лічильники), `src/domain/{reminders,week-report}.ts`, `localParts`/`localDayStartUtc` у `time.ts`, `/health` → `ok cron=7m`, кроки 1 і 4 числа (`weight.replyToReminder`/`bareNumber`), `bot/prescribe.ts`, `getLastDoneWorkout` лише активної програми (P2.3.12). Тести 548, мутанти `docs/mutants/2.3.md` 21/21.
 - 2.2 ✅ (PR — мерж після CI): `src/domain/records.ts` (Еплі, найкращий підхід, рекорд без вікна, `buildProgress`), `repo.getProgressSets/getFirstWeight`, екран `/progres` (вага тіла + вправи, [📜 Останні тренування] ↔ [⬅️ Назад] через `p:r`/`p:b`), меню `/progres` = «Прогрес: вага, рекорди, e1RM». Мутанти `docs/mutants/2.2.md` 7/7.
@@ -119,10 +120,6 @@
 - 1.3 ✅: потік `/trening` — `src/bot/{callbacks,workout-view,workout-flow}.ts`; `repo` +`getWorkout`, `getWorkoutSets`, `getExercise`, `getSubstitutes`, `setAwaitInput`. Мутанти `docs/mutants/1.3.md` (3/3). Стан тільки в D1, `set_no` з кнопки. Для 1.4: `/progres`, `/prohrama`, крон (`abandonStale`) — не зроблено; текст «Не розумію…» уже в `NOT_UNDERSTOOD`.
 - 1.2 ✅: `src/domain/progression.ts` — `nextPrescription(history, exercise, slot)` (вхід структурно сумісний з `HistorySession` з `repo.getExerciseHistory`) і `nextDayCode(lastDone, days)`; 27 рядків таблиці + звірка зі спекою в `test/progression.test.ts`, мутанти — `docs/mutants/1.2.md` (6/6). Для 1.3: `reason` ∈ calibration|deload|hold|increase|reps; невідомий код останнього дня → перший день, порожня програма → `RangeError`.
 - 1.1 + рев'ю ✅ (PR #6; F-1.1 закрив В1, В2, Д1, Д2, Д4): міграція `0001_workouts.sql`, сид `npm run seed:local|seed:preview|seed:prod` (RUNBOOK «Сид»), `repo`: `getActiveProgram`, `getProgramDay(userId, code)`, `startWorkout`, `getActiveWorkout`, `upsertSet`, `finishWorkout`, `abandonStale`, `getExerciseHistory`, `getLastDoneWorkout`. `upsertSet` сам відмовляє (false) вправі не слота й не заміни, `set_no` > `sets` і переносу підходу в інший слот. На preview міграції 0001 ще немає (Борг) — перший крок 1.3.
-- 0.2 закрито: спека `00-common.md`, `phase-0.md`, `phase-1.md`, `phase-1-flow.md`; рев'ю й виправлення — `docs/reviews/0.2.md`.
-- 0.3: `npm run check:docs`, `test:spec` і CI є; D1 `trener-preview` і `trener-prod` створені, id у `wrangler.jsonc`.
-- R-0 + F-0: Фаза 0 **закрита** — В1, Д1, Д3 виправлено з тестами; живі кроки 3–4 — у «Борг» (до 1.5). Віддалені `wrangler` працюють без змінних (`account_id` у `wrangler.jsonc`). Preview задеплоєно з гілки F-0 (`4d59a6b4`; src = `main`), вебхук preview з новим секретом відповідає.
-- 0.4: preview живий (`https://trener-preview.koxbe.workers.dev` (до переносу 2026-11-20; тепер `trener-preview.adhd-bot.workers.dev`), вебхук preview-бота встановлено, міграція 0000 на preview застосована. Секрети прода й вебхук prod-бота — ще ні (реліз фази). Ручні операції — `docs/RUNBOOK.md`.
 
 - [fix/day-titles, 2026-11-20] Живий баг «День FA» на preview: код `activatePlan`/читання **не був зламаний** (title писався з 1b.1, підтверджено SELECT на D1: `FA`→«Все тіло A»). Причина — **застарілий деплой**: Worker залито о 17:05, за хвилину до мержу 1b.3 (17:05:55), тож крутився код 1b.2 без `dayName`. Рев'ю й тести цього не бачили, бо перевіряли показ при заданому `title` і код в репозиторії, а не «що саме зараз задеплоєно». Лікування: перезалив preview з main; тест `test/day-titles.test.ts` (усі коди FA…LG: `activatePlan` → `program_days.title` → `dayName`), міграція `0003` (страховка `title IS NULL` за мапою). Урок процесу: після мержу, що змінює показ, деплой — окремий крок із перевіркою версії (`wrangler deployments list` після мержу), «ворота ✅» без деплою не означають «видно в боті». На потім: `/health` віддавати з git sha, щоб звіряти деплой з main.
 
