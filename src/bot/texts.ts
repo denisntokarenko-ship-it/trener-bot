@@ -75,7 +75,7 @@ export const BOT_COMMANDS: ReadonlyArray<{ command: string; description: string 
   { command: "start", description: "Почати" },
   { command: "trening", description: "Тренування" },
   { command: "prohrama", description: "Програма й наступне заняття" },
-  { command: "progres", description: "Останні тренування" },
+  { command: "progres", description: "Прогрес: вага, рекорди, e1RM" },
   { command: "vaga", description: "Записати вагу тіла" },
   { command: "profil", description: "Профіль і план" },
 ];
@@ -239,6 +239,65 @@ export function workoutBlock(w: WorkoutBlockText): string {
 }
 
 export const progressTitle = "📈 <b>Останні тренування</b>";
+
+// --- Повний /progres (docs/spec/phase-2.md, розділ 3) ---
+
+export const PROGRESS_FULL_TITLE = "📈 <b>Прогрес</b>";
+export const PROGRESS_EMPTY = "📈 Ще немає даних.\nПочни: /trening, вага: /vaga 78.4";
+export const PROGRESS_RECENT_BTN = "📜 Останні тренування";
+export const PROGRESS_BACK_BTN = "⬅️ Назад";
+
+/** Підписи до чисел блоку ваги. */
+export const WEIGHT_LABEL_PROFILE = "анкета";
+export const weightLabelFirst = (date: string): string => `перший запис ${date}`;
+export const weightLabelLast = (date: string): string => `остання ${date}`;
+/** Середнє 7 днів; менше 3 зважувань — з приміткою (n зваж.). */
+export const weightLabelAvg = (n: number): string => (n < 3 ? `середнє 7 днів · ${n} зваж.` : "середнє 7 днів");
+
+export interface WeightBlockModel {
+  /** Старт тренду: вага з анкети чи перший запис; null — немає. */
+  start: { kg: string; label: string } | null;
+  /** «Зараз»: середнє 7 днів (з приміткою, якщо зважувань < 3) або остання вага з датою. */
+  now: { kg: string; label: string } | null;
+  /** Зміна «зараз» проти старту, уже зі знаком; null — не показується. */
+  total: string | null;
+  /** Зміна до минулого тижня зі знаком; null — «—» не друкуємо. */
+  weekChange: string | null;
+  /** Середні W2 · W1 · W0 від старого до нового; вікна без записів пропущено. */
+  windows: readonly string[];
+}
+
+/** Рядок(и) ваги тіла; без жодної цифри — порожній рядок. */
+export function weightBlock(m: WeightBlockModel): string {
+  const parts: string[] = [];
+  if (m.start) parts.push(`${m.start.kg} (${m.start.label})`);
+  if (m.now) parts.push(`${m.now.kg} (${m.now.label})`);
+  if (parts.length === 0) return "";
+  let head = `⚖️ Вага: ${parts.join(" → ")}`;
+  if (m.total) head += ` · ${m.total} кг`;
+  const second: string[] = [];
+  if (m.weekChange) second.push(`Тиждень до тижня: ${m.weekChange} кг`);
+  if (m.windows.length >= 2) second.push(`7-денні вікна: ${m.windows.join(" · ")}`);
+  return second.length > 0 ? `${head}
+   ${second.join(" · ")}` : head;
+}
+
+export interface ExerciseBlockModel {
+  name: string;
+  bodyweight: boolean;
+  start: { weightKg: number; reps: number };
+  now: { weightKg: number; reps: number };
+  record: { weightKg: number; reps: number; date: string };
+  e1rm: number | null;
+}
+
+/** Блок вправи: «Старт 40 × 8 → зараз 60 × 8 · рекорд 62,5 × 6 (23.10)» + e1RM; для ваги тіла — лише повтори. */
+export function exerciseBlock(m: ExerciseBlockModel): string {
+  const fmt = (x: { weightKg: number; reps: number }): string => (m.bodyweight ? `${x.reps} повт.` : `${fmtKg(x.weightKg)} × ${x.reps}`);
+  const lines = [`<b>${esc(m.name)}</b>`, `   Старт ${fmt(m.start)} → зараз ${fmt(m.now)} · рекорд ${fmt(m.record)} (${m.record.date})`];
+  if (m.e1rm !== null) lines.push(`   e1RM ≈ ${fmtKg(m.e1rm)} кг`);
+  return lines.join("\n");
+}
 
 export interface NextSlotLine {
   nameUk: string;

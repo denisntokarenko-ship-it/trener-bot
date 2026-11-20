@@ -4,8 +4,10 @@ import { GrammyError, type Context } from "grammy";
 import type { Exercise, ProgramDay, Repo, Slot, Workout, WorkoutSetRow } from "../db/repo";
 import { nextDayCode, nextPrescription, type Prescription } from "../domain/progression";
 import { MAX_WEIGHT_KG, parseCb, type Cb } from "./callbacks";
-import { programText, progressText } from "./progress-view";
-import { recordReps, recordWeight, weightEcho } from "./texts";
+import { buildProgress } from "../domain/records";
+import { addDays, localDate } from "../domain/time";
+import { PROGRESS_BACK_CB, PROGRESS_RECENT_CB, fullProgressText, programText, progressKeyboard, progressText, recentKeyboard, weightModel } from "./progress-view";
+import { PROGRESS_EMPTY, recordReps, recordWeight, weightEcho } from "./texts";
 import {
   ANSWER,
   NOT_UNDERSTOOD,
@@ -213,6 +215,35 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
     return summaryText(model);
   }
 
+  /** Екран /progres: вага, агрегат за вправами за всю історію й (кнопкою) останні 5 тренувань. */
+  async function progressScreen(userId: number): Promise<Rendered> {
+    const tz = (await repo.getUserTz(userId)) ?? "Europe/Kyiv";
+    const today = localDate(now(), tz);
+    const [sets, recent, first, last, profile] = await Promise.all([
+      repo.getProgressSets(userId),
+      repo.getWeights(userId, addDays(today, -20), today),
+      repo.getFirstWeight(userId),
+      repo.getLastWeight(userId),
+      repo.getProfile(userId),
+    ]);
+    const exercises = buildProgress(sets);
+    const weight = weightModel({ profileKg: profile?.weightKg ?? null, recent, first, last, today });
+    const text = fullProgressText(exercises, weight, tz);
+    // Порожній екран («Ще немає даних») — без кнопки.
+    return { text, keyboard: text !== PROGRESS_EMPTY ? progressKeyboard() : undefined };
+  }
+
+  /** [📜 Останні тренування] ↔ [⬅️ Назад]: редагують те саме повідомлення. */
+  async function progressNav(ctx: Context, data: string): Promise<void> {
+    const userId = ctx.from!.id;
+    if (data === PROGRESS_RECENT_CB) {
+      const [workouts, tz] = await Promise.all([repo.getRecentWorkouts(userId, 5), repo.getUserTz(userId)]);
+      await edit(ctx, { text: progressText(workouts, tz ?? "Europe/Kyiv"), keyboard: recentKeyboard() });
+    } else {
+      await edit(ctx, await progressScreen(userId));
+    }
+  }
+
   async function dispatch(ctx: Context): Promise<string | undefined> {
     const userId = ctx.from!.id;
     const cb = parseCb(ctx.callbackQuery?.data ?? "");
@@ -405,11 +436,10 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       await ctx.reply(programText({ name: program.name, days, next: { dayName: dayLabel(nextDay), lines }, activeDayName: activeDay ? dayName(activeDay) : null }));
     },
 
-    /** /progres: останні 5 завершених чи обірваних тренувань. */
+    /** /progres: вага тіла + вправи (старт → зараз, рекорд, e1RM); історія тренувань — кнопкою. */
     async progres(ctx: Context): Promise<void> {
-      const userId = ctx.from!.id;
-      const [workouts, tz] = await Promise.all([repo.getRecentWorkouts(userId, 5), repo.getUserTz(userId)]);
-      await ctx.reply(progressText(workouts, tz ?? "Europe/Kyiv"));
+      const { text, keyboard } = await progressScreen(ctx.from!.id);
+      await ctx.reply(text, keyboard ? { reply_markup: keyboard } : undefined);
     },
 
     /** /trening: старт наступного дня або продовження active — завжди новим повідомленням-екраном. */
@@ -447,7 +477,9 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
     async callback(ctx: Context): Promise<void> {
       let text: string | undefined;
       try {
-        text = await dispatch(ctx);
+        const data = ctx.callbackQuery?.data ?? "";
+        if (data === PROGRESS_RECENT_CB || data === PROGRESS_BACK_CB) await progressNav(ctx, data);
+        else text = await dispatch(ctx);
       } finally {
         await ctx.answerCallbackQuery(text ? { text } : undefined);
       }

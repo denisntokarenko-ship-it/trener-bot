@@ -1,0 +1,68 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+# --- Обов'язкові з промпту 2.2 ---
+
+[[mutant]]
+id = "M1"
+file = "src/domain/records.ts"
+old = '''reps === 1 ? weightKg : weightKg * (1 + reps / 30)'''
+new = '''reps === 1 ? weightKg : weightKg * (1 + reps / 3)'''
+why = "у формулі Еплі reps / 30 → reps / 3"
+match = "відомі значення|P2[.]2[.]1|фіксовані дані"
+
+[[mutant]]
+id = "M2"
+file = "src/domain/records.ts"
+old = '''x.weightKg > record.weightKg || (x.weightKg === record.weightKg && x.reps > record.reps)'''
+new = '''x.weightKg > record.weightKg'''
+why = "рекорд без урахування повторів за рівної ваги"
+match = "рекорд за рівної ваги"
+
+# --- Додаткові ---
+
+[[mutant]]
+id = "M3"
+file = "src/domain/records.ts"
+old = '''const eligible = bodyweight ? [] : sets.filter((s) => s.reps <= E1RM_MAX_REPS);'''
+new = '''const eligible = bodyweight ? [] : sets;'''
+why = "межа 10 повторів для e1RM знята — 20×15 бере участь"
+match = "r > 10|20×15"
+
+[[mutant]]
+id = "M4"
+file = "src/domain/records.ts"
+old = '''reps === 1 ? weightKg : weightKg'''
+new = '''weightKg * (1 + reps / 30) + 0 * weightKg'''
+why = "r = 1 більше не повертає вагу (e1RM > ваги)"
+match = "один повтор"
+
+[[mutant]]
+id = "M5"
+file = "src/db/repo.ts"
+old = '''          AND s.skipped = 0 AND s.weight_kg IS NOT NULL AND s.reps >= 1
+        ORDER BY w.started_at, w.id, s.set_no`);'''
+new = '''          AND s.skipped = 0 AND s.weight_kg IS NOT NULL AND s.reps >= 1
+          AND w.id IN (SELECT id FROM workouts WHERE user_id = ${userId} ORDER BY started_at DESC LIMIT 30)
+        ORDER BY w.started_at, w.id, s.set_no`);'''
+why = "вікно 30 тренувань повертається — рекорд з першої сесії зникає"
+match = "35 тренувань|40 сесій"
+
+[[mutant]]
+id = "M6"
+file = "src/db/repo.ts"
+old = '''WHERE w.user_id = ${userId} AND w.status IN ('done', 'abandoned')
+          AND s.skipped = 0'''
+new = '''WHERE w.status IN ('done', 'abandoned')
+          AND s.skipped = 0'''
+why = "агрегат без user_id — чужі підходи в прогресі"
+match = "ізоляція"
+
+[[mutant]]
+id = "M7"
+file = "src/bot/progress-view.ts"
+old = '''...b].join("\n");
+  while (blocks.length > 1 && join(blocks).length > TELEGRAM_TEXT_MAX) blocks.pop();'''
+new = '''...b].join("\n");'''
+why = "текст > 4096 не відкидає вправи (лишається лише clip)"
+match = "> 4096"

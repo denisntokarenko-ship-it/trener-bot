@@ -4,6 +4,7 @@
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import type { Db } from "./client";
 import type { Limit, Plan, PlanCatalogItem } from "../domain/plan";
+import type { ProgressSetRow } from "../domain/records";
 import { bodyWeights, exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, startWeights, userProfiles, users, workoutSets, workouts } from "./schema";
 
 export const FIRST_NAME_MAX = 64;
@@ -348,6 +349,27 @@ export function createRepo(db: Db) {
       });
     },
 
+    /** Усі зараховані підходи (непропущені, з вагою й повторами ≥ 1) done/abandoned тренувань — вся історія, без вікна (агрегат /progres). */
+    async getProgressSets(userId: number): Promise<ProgressSetRow[]> {
+      const rows = await db.all<{ exercise_id: number; name_uk: string; equipment: string; workout_id: number; started_at: number; weight_kg: number; reps: number }>(sql`
+        SELECT s.exercise_id, e.name_uk, e.equipment, s.workout_id, w.started_at, s.weight_kg, s.reps
+        FROM workout_sets s
+        JOIN workouts w ON w.id = s.workout_id
+        JOIN exercises e ON e.id = s.exercise_id
+        WHERE w.user_id = ${userId} AND w.status IN ('done', 'abandoned')
+          AND s.skipped = 0 AND s.weight_kg IS NOT NULL AND s.reps >= 1
+        ORDER BY w.started_at, w.id, s.set_no`);
+      return rows.map((r) => ({
+        exerciseId: r.exercise_id,
+        nameUk: r.name_uk,
+        bodyweight: r.equipment === "bodyweight",
+        workoutId: r.workout_id,
+        startedAt: r.started_at,
+        weightKg: r.weight_kg,
+        reps: r.reps,
+      }));
+    },
+
     /** Поточне active-тренування користувача; немає — null. */
     async getActiveWorkout(userId: number): Promise<Workout | null> {
       const row = await db
@@ -602,6 +624,18 @@ export function createRepo(db: Db) {
         .where(and(eq(bodyWeights.userId, userId), gte(bodyWeights.localDate, from), lte(bodyWeights.localDate, to)))
         .orderBy(asc(bodyWeights.localDate))
         .all();
+    },
+
+    /** Найстаріший запис ваги (старт тренду, якщо анкета ваги не мала). */
+    async getFirstWeight(userId: number): Promise<{ localDate: string; weightDg: number } | null> {
+      const row = await db
+        .select({ localDate: bodyWeights.localDate, weightDg: bodyWeights.weightDg })
+        .from(bodyWeights)
+        .where(eq(bodyWeights.userId, userId))
+        .orderBy(asc(bodyWeights.localDate))
+        .limit(1)
+        .get();
+      return row ?? null;
     },
 
     /** Найновіший запис ваги (для /vaga без числа). */

@@ -623,6 +623,7 @@ describe("1b.3: назви тренувань (P3.2, P3.3)", () => {
     const w = await workoutRow();
     await repo.finishWorkout(OWNER, w!.id, 3, T0 + 1);
     await say("/progres");
+    await tap("p:r"); // у закритого без підходів тренування екран /progres порожній, тож кнопку кличемо напряму
     expect(view().text).toContain(`· ${LONG}</b> · 3/5`);
     expect(view().text.length).toBeLessThanOrEqual(4096);
   });
