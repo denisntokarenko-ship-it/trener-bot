@@ -1,10 +1,10 @@
 // Єдиний вхід у D1. Функції над даними користувача приймають userId (N8): чужий рядок для них не існує —
 // читання дає null / [], запис — false без змін (phase-1.md, «Ізоляція»). Винятки без userId:
 // processed_updates (службова, ключ — update_id) і abandonStale (крон по всіх користувачах).
-import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import type { Db } from "./client";
 import type { Limit, Plan, PlanCatalogItem } from "../domain/plan";
-import { exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, startWeights, userProfiles, users, workoutSets, workouts } from "./schema";
+import { bodyWeights, exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, startWeights, userProfiles, users, workoutSets, workouts } from "./schema";
 
 export const FIRST_NAME_MAX = 64;
 /** active старше за цей вік закривається як abandoned (phase-1-flow.md). */
@@ -577,6 +577,43 @@ export function createRepo(db: Db) {
       const res = await d1.batch(stmts);
       if (res[1]?.meta.changes === 1) return { ok: true, programId: pid };
       return (await this.getActiveWorkout(userId)) ? { ok: false, error: "ACTIVE_WORKOUT" } : { ok: false, error: "NO_USER" };
+    },
+
+    /** Вага тіла за локальну дату: перезаписує день. Повертає попереднє значення дня (десяті кг) або null. */
+    async upsertBodyWeight(userId: number, localDate: string, weightDg: number, now: number): Promise<number | null> {
+      const prev = await db
+        .select({ weightDg: bodyWeights.weightDg })
+        .from(bodyWeights)
+        .where(and(eq(bodyWeights.userId, userId), eq(bodyWeights.localDate, localDate)))
+        .get();
+      await db
+        .insert(bodyWeights)
+        .values({ userId, localDate, weightDg, updatedAt: now })
+        .onConflictDoUpdate({ target: [bodyWeights.userId, bodyWeights.localDate], set: { weightDg, updatedAt: now } })
+        .run();
+      return prev?.weightDg ?? null;
+    },
+
+    /** Записи ваги за локальні дати [from, to] включно, за зростанням дати. */
+    async getWeights(userId: number, from: string, to: string): Promise<{ localDate: string; weightDg: number }[]> {
+      return db
+        .select({ localDate: bodyWeights.localDate, weightDg: bodyWeights.weightDg })
+        .from(bodyWeights)
+        .where(and(eq(bodyWeights.userId, userId), gte(bodyWeights.localDate, from), lte(bodyWeights.localDate, to)))
+        .orderBy(asc(bodyWeights.localDate))
+        .all();
+    },
+
+    /** Найновіший запис ваги (для /vaga без числа). */
+    async getLastWeight(userId: number): Promise<{ localDate: string; weightDg: number } | null> {
+      const row = await db
+        .select({ localDate: bodyWeights.localDate, weightDg: bodyWeights.weightDg })
+        .from(bodyWeights)
+        .where(eq(bodyWeights.userId, userId))
+        .orderBy(desc(bodyWeights.localDate))
+        .limit(1)
+        .get();
+      return row ?? null;
     },
   };
 }

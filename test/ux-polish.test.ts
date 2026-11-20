@@ -292,6 +292,7 @@ describe("знімки ключових екранів", () => {
       /trening — Тренування
       /prohrama — Програма й наступне заняття
       /progres — Останні тренування
+      /vaga — Записати вагу тіла
       /profil — Профіль і план"
     `);
     expect(sn(emptyDayScreen())).toMatchInlineSnapshot(`
@@ -373,7 +374,7 @@ describe("мова: літералів поза texts.ts немає", () => {
       expect(c.description.length).toBeGreaterThanOrEqual(3);
       expect(c.description.length).toBeLessThanOrEqual(256);
     }
-    expect(BOT_COMMANDS.map((c) => c.command)).toEqual(["start", "trening", "prohrama", "progres", "profil"]);
+    expect(BOT_COMMANDS.map((c) => c.command)).toEqual(["start", "trening", "prohrama", "progres", "vaga", "profil"]);
   });
 });
 

@@ -76,6 +76,7 @@ export const BOT_COMMANDS: ReadonlyArray<{ command: string; description: string 
   { command: "trening", description: "Тренування" },
   { command: "prohrama", description: "Програма й наступне заняття" },
   { command: "progres", description: "Останні тренування" },
+  { command: "vaga", description: "Записати вагу тіла" },
   { command: "profil", description: "Профіль і план" },
 ];
 
@@ -554,4 +555,26 @@ export function profileText(
   }
   if (weights.length) lines.push(`⚖️ Робочі ваги: ${weights.map((w) => `${esc(w.name)} ${fmtKg(w.weight.weightKg)}×${w.weight.reps}`).join("; ")}`);
   return clip(lines.join("\n"));
+}
+
+// --- Вага тіла (docs/spec/phase-2.md, розділ 2) ---
+
+export const WEIGHT_HINT = "Вагу тіла записують так: /vaga 78.4";
+export const WEIGHT_BAD = "Не схоже на вагу. Приклад: /vaga 78.4";
+export const WEIGHT_NONE = "⚖️ Ще немає записів ваги.\nЗаписати: /vaga 78.4";
+
+/** `(середнє за 7 днів: 78,9 кг)`; 1–2 записи — з приміткою `(n зваж.)`; 0 — «—». */
+function avgLabel(avg: string | null, n: number): string {
+  if (avg === null) return "—";
+  return n < 3 ? `${avg} кг (${n} зваж.)` : `${avg} кг`;
+}
+
+export function weightSaved(a: { kg: string; replaced: string | null; avg: string | null; n: number; jump: string | null }): string {
+  const lines = [`⚖️ ${a.kg} кг записано${a.replaced ? `, замінило ${a.replaced}` : ""} (середнє за 7 днів: ${avgLabel(a.avg, a.n)})`];
+  if (a.jump) lines.push(`Різниця ${a.jump} кг — якщо помилка, надішли ще раз: /vaga 78.4`);
+  return lines.join("\n");
+}
+
+export function weightLast(a: { kg: string; date: string; avg: string | null; n: number }): string {
+  return `⚖️ Остання вага: ${a.kg} кг (${a.date})\nСереднє за 7 днів: ${avgLabel(a.avg, a.n)}\nЗаписати: /vaga 78.4`;
 }

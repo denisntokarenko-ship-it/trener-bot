@@ -466,14 +466,14 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       if (w?.awaitInput) await repo.setAwaitInput(userId, w.id, null);
     },
 
-    /** Не-команда: вага, якщо чекаємо її; інакше підказка про команди. */
-    async text(ctx: Context): Promise<void> {
+    /** Не-команда: вага, якщо чекаємо її; інакше підказка про команди (+ `hint`: «вагу тіла записують так…»). */
+    async text(ctx: Context, hint?: string | null): Promise<void> {
       const userId = ctx.from!.id;
       const workout = await repo.getActiveWorkout(userId);
       const state = parseAwait(workout?.awaitInput ?? null);
       if (!workout || !state) {
         if (workout?.awaitInput) await repo.setAwaitInput(userId, workout.id, null);
-        await ctx.reply(NOT_UNDERSTOOD);
+        await ctx.reply(hint ? `${NOT_UNDERSTOOD}\n${hint}` : NOT_UNDERSTOOD);
         return;
       }
       const day = await repo.getProgramDay(userId, workout.dayCode);
@@ -481,7 +481,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       const v = day ? await resolve(day, sets, state.p, state.e) : null;
       if (!day || !v) {
         await repo.setAwaitInput(userId, workout.id, null);
-        await ctx.reply(NOT_UNDERSTOOD);
+        await ctx.reply(hint ? `${NOT_UNDERSTOOD}\n${hint}` : NOT_UNDERSTOOD);
         return;
       }
       const raw = (ctx.message?.text ?? "").trim();

@@ -50,6 +50,7 @@ describe("P2.1 set-webhook", () => {
         { command: "trening", description: "Тренування" },
         { command: "prohrama", description: "Програма й наступне заняття" },
         { command: "progres", description: "Останні тренування" },
+        { command: "vaga", description: "Записати вагу тіла" },
         { command: "profil", description: "Профіль і план" },
       ],
     });
