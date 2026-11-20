@@ -1,4 +1,4 @@
-﻿﻿# Секрети й вебхук для PREVIEW і PROD разом (акаунт Cloudflare з wrangler.jsonc). Нічого не друкує й не зберігає із секретів.
+﻿# Секрети й вебхук для PREVIEW і PROD разом (акаунт Cloudflare з wrangler.jsonc). Нічого не друкує й не зберігає із секретів.
 # Запуск (з будь-якої теки): powershell -ExecutionPolicy Bypass -File scripts\setup-secrets.ps1
 # Один середовище: додай -Only preview або -Only production. Ротація секретів — той самий запуск.
 # Файл у UTF-8 з BOM — без нього Windows PowerShell 5.1 ламає кирилицю.
