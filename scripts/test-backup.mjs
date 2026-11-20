@@ -27,7 +27,7 @@ fi
 chmodSync(stub, 0o755);
 
 const schema = 'CREATE TABLE `users` (id);\nCREATE TABLE `exercises` (id);\nCREATE TABLE IF NOT EXISTS "d1_migrations" (id);';
-const data = 'PRAGMA defer_foreign_keys=TRUE;\nINSERT INTO "d1_migrations" VALUES(1,\'0000.sql\',\'t\');\nINSERT INTO "users" VALUES(1);\nINSERT INTO "exercises" VALUES(1);\nINSERT INTO "exercises" VALUES(2);\n';
+const data = 'PRAGMA defer_foreign_keys=TRUE;\nINSERT INTO "d1_migrations" VALUES(1,\'0000.sql\',\'t\');\nINSERT INTO "users" VALUES(1);\nINSERT INTO "exercises" VALUES(1);\nINSERT INTO "exercises" VALUES(2);\nINSERT INTO "sqlite_sequence" ("name","seq") VALUES(\'d1_migrations\',1);\n';
 const tables = 'users,exercises,d1_migrations';
 const cases = [
   { name: 'порожня БД + export = рівно PRAGMA → exit 0, файл є', exp: 'PRAGMA defer_foreign_keys=TRUE;\n', tables: '', code: 0, files: 2 },

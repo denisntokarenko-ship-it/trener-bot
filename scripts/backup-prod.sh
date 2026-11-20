@@ -26,7 +26,7 @@ trap 'code=$?; if [ $code -ne 0 ]; then rm -f "$out" "$data" "$data.tmp"; echo "
 "${NPX:-npx}" wrangler d1 export "$db" --remote --env "$env_name" --output "$out"
 "${NPX:-npx}" wrangler d1 export "$db" --remote --env "$env_name" --no-schema --output "$data.tmp"
 # d1_migrations у новій БД пише сам `migrations apply` — його рядки в дампі даних дали б конфлікт PK.
-grep -v '^INSERT INTO "d1_migrations"' "$data.tmp" > "$data" || true
+grep -v -e '^INSERT INTO "d1_migrations"' -e "^INSERT INTO \"sqlite_sequence\" (\"name\",\"seq\") VALUES('d1_migrations'" "$data.tmp" > "$data" || true
 rm -f "$data.tmp"
 
 if [ ! -s "$out" ]; then
