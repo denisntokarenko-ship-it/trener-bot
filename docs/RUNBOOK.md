@@ -43,7 +43,7 @@ npm run set-bot-profile
 
 Строго по порядку. Збій на кроці — не йти далі.
 
-1. **Бекап:** `npm run backup:prod` → `backups/prod-YYYYMMDD-HHMMSS.sql`. Скрипт падає з кодом ≠ 0 і видаляє файл, якщо export не вдався або в ньому немає `CREATE TABLE` якоїсь таблиці. Виняток — порожня БД (перший реліз): порожній список таблиць дозволений, лише якщо export рівно `PRAGMA defer_foreign_keys=TRUE;`. Тест — `npm run test:scripts` (стаб wrangler, 5 випадків).
+1. **Бекап:** `npm run backup:prod` → `backups/prod-YYYYMMDD-HHMMSS.sql` (повний) і `…-data.sql` (лише дані — для відновлення, розділ «Відкат пізніше ніж за 7 днів»). Скрипт падає з кодом ≠ 0 і видаляє обидва файли, якщо export не вдався, у повному немає `CREATE TABLE` якоїсь таблиці або кількість `INSERT` таблиці в дампі даних ≠ `COUNT(*)` у БД (запис посеред бекапу — повтори). Виняток — порожня БД (перший реліз): порожній список таблиць дозволений, лише якщо export рівно `PRAGMA defer_foreign_keys=TRUE;`. Тест — `npm run test:scripts` (стаб wrangler, 8 випадків + репетиція відновлення на локальній D1).
 2. **Bookmark і знімок «до»:** `npx wrangler d1 time-travel info trener-prod --env production` → записати `bookmark` (у нотатку релізу, не в git). Знімок лічильників — **одним** `SELECT (SELECT count(*) FROM users) users, (SELECT count(*) FROM workouts) workouts, …` (довгий `UNION ALL` D1 відхиляє: `too many terms in compound SELECT`); той самий запит — після релізу.
 3. **Міграція:** `npm run db:migrate:prod` (`wrangler d1 migrations apply DB --remote --env production`).
 4. **Деплой коду:** `npm run deploy:prod -- --message "main <sha> (<завдання>)"` — без `--message` версію не звірити з `main` у `deployments list`. Це довільний рядок, не sha збірки: вміст підтверджує живий крок, а не `message`.
@@ -59,12 +59,16 @@ npm run set-bot-profile
 
 ## Відкат пізніше ніж за 7 днів
 
-Time Travel уже не дістає — лише файл з `backups/`:
+Time Travel уже не дістає (на Paid — 30 днів) — лише файли з `backups/`. **Повний дамп `prod-<дата>.sql` у чисту БД не відновлюється** (R-2 В1): `wrangler d1 export` пише `INSERT INTO exercise_substitutes` до `CREATE TABLE exercises` → `no such table: main.exercises`. Відновлюємо схему міграціями, дані — з `prod-<дата>-data.sql` (`backup:prod` пише його поруч: `--no-schema`, без рядків `d1_migrations`, кількість рядків кожної таблиці звірена з `COUNT(*)`):
 
-1. `npx wrangler d1 create trener-prod-restore`
-2. `npx wrangler d1 execute trener-prod-restore --remote --file=backups/prod-<дата>.sql`
-3. У `wrangler.jsonc` → `env.production.d1_databases[0].database_id` = id нової БД; `npm run deploy:prod`; smoke `/start`.
-4. Стару БД не видаляти, поки нова не пропрацює тиждень.
+1. Код — на коміті, міграції якого збігаються з `INSERT INTO "d1_migrations"` у повному дампі (новіші міграції, що перейменовують/видаляють, дамп даних не прийме).
+2. `npx wrangler d1 create trener-prod-restore` → у `wrangler.jsonc` `env.production.d1_databases[0].database_id` = id нової БД (поки не деплоїти).
+3. `npm run db:migrate:prod` — схема в новій БД.
+4. `npx wrangler d1 execute trener-prod-restore --remote --env production --file=backups/prod-<дата>-data.sql --yes`.
+5. Звірка: лічильники таблиць (одним `SELECT (SELECT count(*) FROM …) …`) = рядок `Рядки (дамп = БД): …`, який надрукував `backup:prod`.
+6. `npm run deploy:prod -- --message …`; smoke `/start`. Стару БД не видаляти, поки нова не пропрацює тиждень.
+
+Рецепт репетирується в CI на локальній D1: `scripts/test-restore.mjs` (у `npm run test:scripts`) — дані з FK у різні боки → справжній `backup-prod.sh` → кроки 3–4 у чисту БД → ті самі лічильники всіх таблиць. Remote-відновлення в нову D1 не репетирувалось (створює БД в акаунті — живий крок людини).
 
 ## Відкат міграції 0000 (users, processed_updates)
 

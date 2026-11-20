@@ -175,15 +175,16 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
     const program = await repo.getActiveProgram(userId);
     const records: string[] = [];
     const seen = new Set<number>();
+    // Рекорд — по всій історії без вікна, тим самим агрегатом, що /progres і недільний звіт (спека §3; R-2 В2).
+    // Попередні підходи — без цього тренування; немає жодного → перша сесія вправи (калібрування), рекорду немає.
+    const history = (await repo.getProgressSets(userId)).filter((x) => x.workoutId !== w.id);
     for (const s of worked) {
       if (seen.has(s.exerciseId)) continue;
       seen.add(s.exerciseId);
       const exercise = day.slots.find((x) => x.exercise.id === s.exerciseId)?.exercise ?? (await repo.getExercise(s.exerciseId));
       if (!exercise) continue;
-      // Попередні сесії: без цього тренування; зарахована — з ≥ 1 непропущеним підходом.
-      const sessions = (await repo.getExerciseHistory(userId, exercise.id, 30)).filter((h) => h.workoutId !== w.id);
-      if (!sessions.some((h) => h.sets.some((x) => !x.skipped))) continue;
-      const prev = sessions.flatMap((h) => h.sets.filter((x) => !x.skipped && x.weightKg !== null && x.reps !== null && x.reps >= 1));
+      const prev = history.filter((x) => x.exerciseId === exercise.id);
+      if (prev.length === 0) continue;
       const mine = worked.filter((x) => x.exerciseId === exercise.id && (x.reps ?? 0) >= 1);
       if (mine.length === 0) continue;
       if (exercise.equipment === "bodyweight") {

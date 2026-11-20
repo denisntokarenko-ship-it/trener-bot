@@ -340,9 +340,9 @@ describe("P2.3.7 недільний звіт", () => {
   const SUN_1900 = at("2026-10-25T17:00:00Z");
   const strip = (s: string): string => s.replace(/<\/?[a-z]+>/g, "");
 
-  async function addWorkout(day: "A" | "B", startedAt: number, sets: [number, number, number, number][]): Promise<number> {
+  async function addWorkout(day: "A" | "B", startedAt: number, sets: [number, number, number, number][], status: "done" | "abandoned" = "done"): Promise<number> {
     const d = (await repo.getProgramDay(OWNER, day))!;
-    const w = await env.DB.prepare("INSERT INTO workouts (user_id, program_day_id, status, started_at, finished_at, effort) VALUES (?, ?, 'done', ?, ?, 3)").bind(OWNER, d.id, startedAt, startedAt + 3_000_000).run();
+    const w = await env.DB.prepare("INSERT INTO workouts (user_id, program_day_id, status, started_at, finished_at, effort) VALUES (?, ?, ?, ?, ?, ?)").bind(OWNER, d.id, status, startedAt, startedAt + 3_000_000, status === "done" ? 3 : null).run();
     const setNo = new Map<number, number>(); // set_no рахується в межах вправи
     for (const [weight, reps, slotIdx, skipped] of sets) {
       const slot = d.slots[slotIdx]!;
@@ -382,6 +382,20 @@ describe("P2.3.7 недільний звіт", () => {
       ].join("\n"),
     );
     expect((await sentRows())[0]).toMatchObject({ kind: "report", local_date: "2026-10-25" });
+  });
+
+  it("R-2 R4: кинуте (abandoned) тренування тижня не входить у «Тренувань/Підходів/Обсяг», а його підхід — у рекорди", async () => {
+    // Одне правило (R-2, дрібниця 4): лічильники — лише done (спека §4); рекорд — з усіх зарахованих підходів, як підсумок і /progres.
+    await env.DB.prepare("UPDATE users SET weigh_time = NULL, remind_time = NULL").run();
+    await addWorkout("A", at("2026-10-12T07:00:00Z"), [[60, 8, 0, 0]]);
+    await addWorkout("A", at("2026-10-19T07:00:00Z"), [[60, 8, 0, 0], [60, 8, 0, 0], [45, 10, 1, 0]]);
+    await addWorkout("B", at("2026-10-21T07:00:00Z"), [[40, 10, 0, 0], [40, 10, 0, 0]]);
+    await addWorkout("A", at("2026-10-23T07:00:00Z"), [[62.5, 6, 0, 0], [60, 8, 0, 0], [0, 0, 1, 1]]);
+    await addWorkout("A", at("2026-10-24T07:00:00Z"), [[70, 3, 0, 0], [45, 10, 1, 0]], "abandoned"); // Сб, кинуте
+    await tick(SUN_1900);
+    const text = strip(tg.texts()[0]!);
+    expect(text).toContain("Тренувань: 3 з 3 · Підходів: 7 · Обсяг: 3 065 кг");
+    expect(text).toContain("🏆 Нові рекорди: Присідання зі штангою — 70 кг × 3");
   });
 
   it("нуль тренувань, але є вага — без докорів, з «далі»", async () => {
