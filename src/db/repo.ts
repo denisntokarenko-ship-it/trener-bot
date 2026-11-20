@@ -1,11 +1,11 @@
 // Єдиний вхід у D1. Функції над даними користувача приймають userId (N8): чужий рядок для них не існує —
 // читання дає null / [], запис — false без змін (phase-1.md, «Ізоляція»). Винятки без userId:
-// processed_updates (службова, ключ — update_id) і abandonStale (крон по всіх користувачах).
+// processed_updates (службова, ключ — update_id), abandonStale і getReminderUsers (крон по всіх користувачах) та cron_state (один рядок).
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import type { Db } from "./client";
 import type { Limit, Plan, PlanCatalogItem } from "../domain/plan";
 import type { ProgressSetRow } from "../domain/records";
-import { bodyWeights, exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, startWeights, userProfiles, users, workoutSets, workouts } from "./schema";
+import { bodyWeights, cronState, exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, remindersSent, startWeights, userProfiles, users, workoutSets, workouts, type ReminderKind } from "./schema";
 
 export const FIRST_NAME_MAX = 64;
 /** active старше за цей вік закривається як abandoned (phase-1-flow.md). */
@@ -140,6 +140,13 @@ export type ProfileRow = typeof userProfiles.$inferSelect;
 export type ProfilePatch = Partial<Omit<ProfileRow, "userId" | "createdAt" | "updatedAt">>;
 export type OnboardingRow = typeof onboardingState.$inferSelect;
 export type OnboardingPatch = Partial<Omit<OnboardingRow, "userId" | "startedAt" | "updatedAt">>;
+export interface ReminderUserRow {
+  id: number;
+  tz: string;
+  trainingDays: string;
+  remindTime: string | null;
+  weighTime: string | null;
+}
 export interface StartWeight {
   exerciseId: number;
   weightKg: number;
@@ -486,6 +493,8 @@ export function createRepo(db: Db) {
         .select(workoutColumns)
         .from(workouts)
         .innerJoin(programDays, eq(programDays.id, workouts.programDayId))
+        // Лише активна програма: після активації нового плану лічильник «наступного дня» починається з першого дня (P2.3.12).
+        .innerJoin(programs, and(eq(programs.id, programDays.programId), eq(programs.active, 1)))
         .where(and(eq(workouts.userId, userId), eq(workouts.status, "done")))
         .orderBy(desc(workouts.startedAt), desc(workouts.id))
         .get();
@@ -647,6 +656,106 @@ export function createRepo(db: Db) {
         .orderBy(desc(bodyWeights.localDate))
         .limit(1)
         .get();
+      return row ?? null;
+    },
+
+    // --- Нагадування й крон (Фаза 2.3) ---
+
+    /** Усі користувачі з розкладом нагадувань (крон іде по всіх). */
+    async getReminderUsers(): Promise<ReminderUserRow[]> {
+      return db
+        .select({ id: users.id, tz: users.tz, trainingDays: users.trainingDays, remindTime: users.remindTime, weighTime: users.weighTime })
+        .from(users)
+        .all();
+    },
+
+    /** Є заявка (user, kind, local_date) — нагадування вже взяте. */
+    async hasReminder(userId: number, kind: ReminderKind, localDate: string): Promise<boolean> {
+      const row = await db
+        .select({ k: remindersSent.kind })
+        .from(remindersSent)
+        .where(and(eq(remindersSent.userId, userId), eq(remindersSent.kind, kind), eq(remindersSent.localDate, localDate)))
+        .get();
+      return row !== undefined;
+    },
+
+    /** Крок 1 «заявити → надіслати»: true — заявку взято цим тіком; false — її вже взяв інший (UNIQUE). */
+    async claimReminder(userId: number, kind: ReminderKind, localDate: string, now: number): Promise<boolean> {
+      const res = await db.insert(remindersSent).values({ userId, kind, localDate, sentAt: now }).onConflictDoNothing().run();
+      return res.meta.changes === 1;
+    },
+
+    /** Крок 2: Telegram прийняв — зберегти message_id (для відповіді-reply на нагадування про вагу). */
+    async setReminderMessageId(userId: number, kind: ReminderKind, localDate: string, messageId: number): Promise<void> {
+      await db
+        .update(remindersSent)
+        .set({ messageId })
+        .where(and(eq(remindersSent.userId, userId), eq(remindersSent.kind, kind), eq(remindersSent.localDate, localDate)))
+        .run();
+    },
+
+    /** Крок 3: визначена недоставка — зняти заявку, наступний тік у вікні повторить. */
+    async releaseReminder(userId: number, kind: ReminderKind, localDate: string): Promise<void> {
+      await db
+        .delete(remindersSent)
+        .where(and(eq(remindersSent.userId, userId), eq(remindersSent.kind, kind), eq(remindersSent.localDate, localDate)))
+        .run();
+    },
+
+    /** Нагадування про вагу, на яке відповіли reply (за message_id): його локальна дата; немає — null. */
+    async getWeighReminderDate(userId: number, messageId: number): Promise<string | null> {
+      const row = await db
+        .select({ localDate: remindersSent.localDate })
+        .from(remindersSent)
+        .where(and(eq(remindersSent.userId, userId), eq(remindersSent.kind, "weigh"), eq(remindersSent.messageId, messageId)))
+        .get();
+      return row?.localDate ?? null;
+    },
+
+    /** Є тренування `active`/`done`, розпочате в `[fromUtc, toUtc)` (локальна доба). */
+    async hasWorkoutBetween(userId: number, fromUtc: number, toUtc: number): Promise<boolean> {
+      const row = await db
+        .select({ id: workouts.id })
+        .from(workouts)
+        .where(and(eq(workouts.userId, userId), inArray(workouts.status, ["active", "done"]), gte(workouts.startedAt, fromUtc), lt(workouts.startedAt, toUtc)))
+        .limit(1)
+        .get();
+      return row !== undefined;
+    },
+
+    /** Тижневий підсумок: `done`-тренування, розпочаті в `[fromUtc, toUtc)`; підходи й обсяг — як у підсумку тренування (непропущені). */
+    async getWeekStats(userId: number, fromUtc: number, toUtc: number): Promise<{ workouts: number; sets: number; volumeKg: number }> {
+      const row = await db.all<{ workouts: number; sets: number; volume: number }>(sql`
+        SELECT COUNT(DISTINCT w.id) AS workouts,
+               COUNT(s.id) AS sets,
+               COALESCE(SUM(COALESCE(s.weight_kg, 0) * COALESCE(s.reps, 0)), 0) AS volume
+        FROM workouts w
+        LEFT JOIN workout_sets s ON s.workout_id = w.id AND s.skipped = 0
+        WHERE w.user_id = ${userId} AND w.status = 'done' AND w.started_at >= ${fromUtc} AND w.started_at < ${toUtc}`);
+      const r = row[0];
+      return { workouts: r?.workouts ?? 0, sets: r?.sets ?? 0, volumeKg: r?.volume ?? 0 };
+    },
+
+    /** Чи є в користувача хоч одне `done`-тренування або запис ваги за весь час (інакше недільний звіт мовчить). */
+    async hasHistory(userId: number): Promise<boolean> {
+      const row = await db.all<{ n: number }>(sql`
+        SELECT (EXISTS (SELECT 1 FROM workouts WHERE user_id = ${userId} AND status = 'done')
+             OR EXISTS (SELECT 1 FROM body_weights WHERE user_id = ${userId})) AS n`);
+      return row[0]?.n === 1;
+    },
+
+    /** Кінець кожного тіку (навіть якщо нагадування кидали): `/health` бере звідси вік крону. `ok` — тік без помилок: лише тоді оновлюється last_ok_at. */
+    async touchCron(now: number, ok = true): Promise<void> {
+      await db
+        .insert(cronState)
+        .values({ id: 1, lastTickAt: now, lastOkAt: ok ? now : null })
+        .onConflictDoUpdate({ target: cronState.id, set: ok ? { lastTickAt: now, lastOkAt: now } : { lastTickAt: now } })
+        .run();
+    },
+
+    /** Момент останнього тіку й останнього тіку без помилок (UTC мс); тіку ще не було — null. */
+    async getCronTick(): Promise<{ tickAt: number; okAt: number | null } | null> {
+      const row = await db.select({ tickAt: cronState.lastTickAt, okAt: cronState.lastOkAt }).from(cronState).where(eq(cronState.id, 1)).get();
       return row ?? null;
     },
   };

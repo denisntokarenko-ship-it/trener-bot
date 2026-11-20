@@ -637,3 +637,77 @@ export function weightSaved(a: { kg: string; replaced: string | null; avg: strin
 export function weightLast(a: { kg: string; date: string; avg: string | null; n: number }): string {
   return `⚖️ Остання вага: ${a.kg} кг (${a.date})\nСереднє за 7 днів: ${avgLabel(a.avg, a.n)}\nЗаписати: /vaga 78.4`;
 }
+
+// --- Нагадування й недільний звіт (docs/spec/phase-2.md, розділ 4) ---
+
+export const WEIGH_REMINDER = "⚖️ Доброго ранку! Вага? Надішли число у відповідь (наприклад 78.4) або /vaga 78.4";
+/** Відповідь на нагадування про зважування за минулу дату (крок 1 маршрутизації числа). */
+export const WEIGH_REMINDER_STALE = "Це нагадування за вчора. Надішли /vaga 78.4 — запишу на сьогодні";
+
+export interface TrainReminderLine {
+  nameUk: string;
+  bodyweight: boolean;
+  weightKg: number;
+  targetReps: number;
+  /** Вправа без історії: показується «калібрування, старт ≈ N кг». */
+  calibration: boolean;
+}
+
+function trainLine(l: TrainReminderLine): string {
+  if (l.bodyweight) return `${esc(l.nameUk)} — власна вага × ${l.targetReps}`;
+  return l.calibration
+    ? `${esc(l.nameUk)} — калібрування, старт ≈ ${fmtKg(l.weightKg)} кг × ${l.targetReps}`
+    : `${esc(l.nameUk)} — ${fmtKg(l.weightKg)} кг × ${l.targetReps}`;
+}
+
+/** Нагадування про тренування. Не влізло в 4096 — список різався з кінця (N6), «Почати» лишається. */
+export function trainReminderText(m: { dayLabel: string; lines: readonly TrainReminderLine[] }): string {
+  const head = `🏋️ <b>Сьогодні тренування — ${esc(m.dayLabel)}</b>`;
+  const foot = "Почати: /trening";
+  const lines = m.lines.map(trainLine);
+  const join = (l: readonly string[]): string => [head, ...l, foot].join("\n");
+  while (lines.length > 0 && join(lines).length > TELEGRAM_TEXT_MAX) lines.pop();
+  return clip(join(lines));
+}
+
+const MONTHS_GEN = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"];
+
+/** `19–25 жовтня`; через місяць — `28 жовтня – 3 листопада` (родовий відмінок). */
+export function weekRangeLabel(startDate: string, endDate: string): string {
+  const day = (d: string): number => Number(d.slice(8));
+  const month = (d: string): string => MONTHS_GEN[Number(d.slice(5, 7)) - 1]!;
+  return startDate.slice(0, 7) === endDate.slice(0, 7)
+    ? `${day(startDate)}–${day(endDate)} ${month(endDate)}`
+    : `${day(startDate)} ${month(startDate)} – ${day(endDate)} ${month(endDate)}`;
+}
+
+export interface WeeklyReportTextModel {
+  weekStart: string;
+  weekEnd: string;
+  workouts: number;
+  planned: number;
+  sets: number;
+  volumeKg: number;
+  /** Готові рядки рекордів (`recordWeight` / `recordReps`), ≤ 3. */
+  records: string[];
+  /** Середня вага, її кількість записів і зміна до минулого тижня — вже відформатовані; null — рядка немає. */
+  weight: { avg: string; n: number; change: string | null } | null;
+  next: string | null;
+}
+
+export function weeklyReportText(m: WeeklyReportTextModel): string {
+  const lines = [`📊 <b>Тиждень ${weekRangeLabel(m.weekStart, m.weekEnd)}</b>`];
+  const next = m.next ? `${esc(m.next)} — /trening` : "";
+  if (m.workouts === 0) {
+    lines.push(`Цього тижня тренувань не було. Нічого страшного${next ? ` — далі: ${next}` : "."}`);
+  } else {
+    lines.push(`Тренувань: <b>${m.planned > 0 ? `${m.workouts} з ${m.planned}` : m.workouts}</b> · Підходів: <b>${m.sets}</b> · Обсяг: <b>${fmtInt(m.volumeKg)} кг</b>`);
+    if (m.records.length > 0) lines.push(`🏆 Нові рекорди: ${m.records.join("; ")}`);
+  }
+  if (m.weight) {
+    const note = m.weight.n < 3 ? ` (${m.weight.n} зваж.)` : "";
+    lines.push(`⚖️ Середня вага <b>${m.weight.avg} кг</b>${note}${m.weight.change ? ` (${m.weight.change} до минулого тижня)` : ""}`);
+  }
+  if (m.workouts > 0 && next) lines.push(`Далі: ${next}`);
+  return clip(lines.join("\n"));
+}

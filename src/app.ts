@@ -21,12 +21,26 @@ function errorName(err: unknown): string {
   return cause instanceof Error ? cause.name : typeof cause;
 }
 
-export async function handleRequest(request: Request, env: Env, handler: UpdateHandler): Promise<Response> {
+/**
+ * Для `/health`: `cron=7m ok=7m` — вік останнього тіку й останнього тіку без помилок (тік, що впав, «живим» не виглядає).
+ * Тіку ще не було чи D1 недоступна — `cron=?`; безпомилкового ще не було — `ok=?`. Health лишається 200.
+ */
+async function cronAge(env: Env, nowMs: number): Promise<string> {
+  const age = (at: number | null | undefined): string => (at == null ? "?" : `${Math.max(0, Math.floor((nowMs - at) / 60_000))}m`);
+  try {
+    const t = await createRepo(createDb(env.DB)).getCronTick();
+    return `cron=${age(t?.tickAt)} ok=${age(t?.okAt)}`;
+  } catch {
+    return "cron=? ok=?";
+  }
+}
+
+export async function handleRequest(request: Request, env: Env, handler: UpdateHandler, now: () => number = Date.now): Promise<Response> {
   const { pathname } = new URL(request.url);
 
   // 1. Метод і шлях.
   if (pathname === "/health") {
-    return request.method === "GET" ? new Response("ok") : new Response("Not Found", { status: 404 });
+    return request.method === "GET" ? new Response(`ok ${await cronAge(env, now())}`) : new Response("Not Found", { status: 404 });
   }
   if (pathname !== WEBHOOK_PATH) return new Response("Not Found", { status: 404 });
   if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });

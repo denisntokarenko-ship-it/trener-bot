@@ -51,11 +51,15 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
   bot.command("vaga", (ctx) => weight.vaga(ctx));
   bot.on("callback_query:data", (ctx) => (ctx.callbackQuery.data.startsWith("o:") ? onboarding.callback(ctx) : flow.callback(ctx)));
   bot.on("callback_query", (ctx) => ctx.answerCallbackQuery());
-  // Текст: вага підходу, що чекає, має пріоритет над анкетою (phase-1b.md, «Потік»); інакше — анкета, інакше «Не зрозумів».
+  // Текст, число — порядок із phase-2.md, розділ 2 (перший збіг виграє): 1) reply на нагадування про вагу; 2) вага підходу, що
+  // чекає; 3) анкета; 4) голе число при відкритому нагадуванні про вагу; 5) «Не зрозумів» (+ підказка для чисел 30–300).
   bot.on("message:text", async (ctx) => {
+    if (await weight.replyToReminder(ctx)) return;
     const awaits = await flow.awaitsWeight(ctx);
-    if (!awaits && (await onboarding.text(ctx))) return;
-    // Спека 2.1: кроки 2 (вага вправи), 3 (анкета), 5 (голе число — лише підказка). Кроки 1 і 4 — у 2.3.
+    if (!awaits) {
+      if (await onboarding.text(ctx)) return;
+      if (await weight.bareNumber(ctx)) return;
+    }
     await flow.text(ctx, awaits ? undefined : weight.hintFor(ctx));
   });
   bot.on("message", (ctx) => ctx.reply(NOT_UNDERSTOOD));

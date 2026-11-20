@@ -2,8 +2,9 @@
 // тож перезапуск клієнта, повтор доставки й подвійне натискання нічого не гублять і не дублюють (N3).
 import { GrammyError, type Context } from "grammy";
 import type { Exercise, ProgramDay, Repo, Slot, Workout, WorkoutSetRow } from "../db/repo";
-import { nextDayCode, nextPrescription, type Prescription } from "../domain/progression";
+import { nextDayCode, type Prescription } from "../domain/progression";
 import { MAX_WEIGHT_KG, parseCb, type Cb } from "./callbacks";
+import { prescribeSlot } from "./prescribe";
 import { buildProgress } from "../domain/records";
 import { addDays, localDate } from "../domain/time";
 import { PROGRESS_BACK_CB, PROGRESS_RECENT_CB, fullProgressText, programText, progressKeyboard, progressText, recentKeyboard, weightModel } from "./progress-view";
@@ -90,10 +91,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
     const key = `${exercise.id}:${slot.id}`;
     const hit = memo?.get(key);
     if (hit) return hit;
-    // Робоча вага з анкети діє лише без історії вправи (phase-1b.md, §2).
-    const p = repo.getExerciseHistory(userId, exercise.id, 3).then(async (h) =>
-      nextPrescription(h, exercise, slot, h.length === 0 ? await repo.getStartWeight(userId, exercise.id) : null),
-    );
+    const p = prescribeSlot(repo, userId, exercise, slot);
     memo?.set(key, p);
     return p;
   };

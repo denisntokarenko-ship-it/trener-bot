@@ -5,7 +5,7 @@ describe("Worker", () => {
   it("GET /health → 200 ok", async () => {
     const res = await SELF.fetch("https://example.com/health");
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe("ok");
+    expect(await res.text()).toBe("ok cron=? ok=?");
   });
 
   it("невідомий шлях → 404", async () => {
