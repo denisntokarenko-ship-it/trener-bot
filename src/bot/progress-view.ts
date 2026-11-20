@@ -1,6 +1,7 @@
 // Тексти /progres і /prohrama — чисті функції (phase-1-flow.md, P2.5).
 import type { ProgramDay, WorkoutSummaryRow } from "../db/repo";
-import { TELEGRAM_TEXT_MAX, clip, dayName, fmtKg } from "./workout-view";
+import { NEXT_WORKOUT, esc } from "./texts";
+import { TELEGRAM_TEXT_MAX, clip, dayHint, dayName, fmtKg } from "./workout-view";
 
 export const NO_WORKOUTS = "Ще немає тренувань. Почни: /trening";
 
@@ -63,11 +64,12 @@ export interface ProgramModel {
 export function programText(m: ProgramModel): string {
   const parts: string[] = [];
   for (const d of m.days) {
-    const slots = d.slots.map((s, i) => `${i + 1}. ${s.exercise.nameUk} — ${s.sets} × ${s.repMin}–${s.repMax}`);
-    parts.push([dayName(d), ...slots].join("\n"));
+    const slots = d.slots.map((s, i) => `${i + 1}. ${esc(s.exercise.nameUk)} — ${s.sets} × ${s.repMin}–${s.repMax}`);
+    const hint = dayHint(d.slots);
+    parts.push([`<b>${esc(dayName(d))}</b>${hint ? ` · ${hint}` : ""}`, ...slots].join("\n"));
   }
-  const next = m.next.lines.map((l) => `${l.nameUk} — ${l.bodyweight ? "власна вага" : `${fmtKg(l.weightKg)} кг`} × ${l.targetReps}`);
-  parts.push([`➡️ Наступне: ${m.next.dayName}`, ...next].join("\n"));
-  if (m.activeDayName) parts.push(`Зараз триває: ${m.activeDayName} — /trening, щоб продовжити`);
+  const next = m.next.lines.map((l) => `${esc(l.nameUk)} — ${l.bodyweight ? "власна вага" : `${fmtKg(l.weightKg)} кг`} × ${l.targetReps}`);
+  parts.push([`➡️ ${NEXT_WORKOUT}: ${esc(m.next.dayName)}`, ...next].join("\n"));
+  if (m.activeDayName) parts.push(`Зараз триває: ${esc(m.activeDayName)} — /trening, щоб продовжити`);
   return clip(parts.join("\n\n"));
 }

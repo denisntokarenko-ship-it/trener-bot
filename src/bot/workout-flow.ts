@@ -11,6 +11,7 @@ import {
   NO_PROGRAM,
   RATING_TEXT,
   badWeight,
+  dayLabel,
   dayName,
   fmtKg,
   ratingKeyboard,
@@ -197,7 +198,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       }
     }
     const nextCode = program && program.days.length > 0 ? nextDayCode({ dayCode: w.dayCode }, program.days) : w.dayCode;
-    const nextDay = program?.days.find((d) => d.code === nextCode);
+    const nextDay = program?.days.some((d) => d.code === nextCode) ? await repo.getProgramDay(userId, nextCode) : null;
     const model: SummaryModel = {
       dayName: dayName(day),
       minutes: Math.floor(((w.finishedAt ?? now()) - w.startedAt) / 60000),
@@ -207,7 +208,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       volumeKg: worked.reduce((a, s) => a + (s.weightKg ?? 0) * (s.reps ?? 0), 0),
       effort: w.effort ?? 0,
       records,
-      nextDayName: nextDay ? dayName(nextDay) : dayName(day),
+      nextDayName: nextDay ? dayLabel(nextDay) : dayLabel(day),
     };
     return summaryText(model);
   }
@@ -401,7 +402,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       }
       const active = await repo.getActiveWorkout(userId);
       const activeDay = active ? days.find((d) => d.code === active.dayCode) : undefined;
-      await ctx.reply(programText({ days, next: { dayName: dayName(nextDay), lines }, activeDayName: activeDay ? dayName(activeDay) : null }));
+      await ctx.reply(programText({ days, next: { dayName: dayLabel(nextDay), lines }, activeDayName: activeDay ? dayName(activeDay) : null }), { parse_mode: "HTML" });
     },
 
     /** /progres: останні 5 завершених чи обірваних тренувань. */

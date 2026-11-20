@@ -17,3 +17,14 @@ export const SOMETHING_WRONG = "Щось пішло не так, спробуй 
 export function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
+/** Групи мʼязів у підказці складу дня (назва дня + «(ноги, груди, спина)»). Ключі = exercises.muscle_group. */
+export const MUSCLE_UK: Record<string, string> = {
+  legs: "ноги",
+  chest: "груди",
+  back: "спина",
+  shoulders: "плечі",
+  core: "кора",
+};
+
+export const NEXT_WORKOUT = "Наступне тренування";

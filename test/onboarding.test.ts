@@ -549,6 +549,9 @@ describe("P2.8–P2.10 підтвердження плану", () => {
     expect((await state())?.status).toBe("done");
     expect(lastText()).toContain("Готово");
     expect(lastText()).toContain("Наступне тренування");
+    // Назва дня самодостатня: «Все тіло A (ноги, груди, спина)», не код і не голе «День».
+    expect(lastText()).toMatch(/Наступне тренування: <b>[^<(]+ \([а-яі]+(, [а-яі]+){0,2}\)<\/b>/);
+    expect(lastText()).not.toMatch(/День|bF[AB]b/);
     // P2.10
     await tap(accept);
     expect(lastAnswer()).toBe("Це вже неактуально");
