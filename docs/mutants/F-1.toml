@@ -1,0 +1,52 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+# --- Мутанти рев'ю Фази 1 (X1, X5, X6, X8) + власні для виправлень ---
+
+[[mutant]]
+id = "X1"
+file = "src/db/repo.ts"
+old = '''and(eq(workoutSets.workoutId, workoutId), eq(workouts.userId, userId))'''
+new = '''eq(workoutSets.workoutId, workoutId)'''
+why = "getWorkoutSets без userId"
+match = "getWorkoutSets чужого"
+
+[[mutant]]
+id = "X5"
+file = "src/bot/workout-flow.ts"
+old = '''repo.getExerciseHistory(userId, exercise.id, 3)'''
+new = '''repo.getExerciseHistory(userId, exercise.id, 1)'''
+why = "вікно історії для призначення 3 → 1"
+match = "F-1 В1"
+
+[[mutant]]
+id = "X6"
+file = "src/bot/workout-flow.ts"
+old = '''repo.getExerciseHistory(userId, exercise.id, 3)'''
+new = '''repo.getExerciseHistory(userId, exercise.id, 2)'''
+why = "вікно 3 → 2: еквівалентний мутант — nextPrescription читає лише дві останні зараховані сесії (counted.at(-1), at(-2))"
+expect = "survived"
+
+[[mutant]]
+id = "X8"
+file = "src/bot/workout-flow.ts"
+old = '''if (setNo !== rows.length + 1 || setNo > slot.sets)'''
+new = '''if (setNo > slot.sets)'''
+why = "s пише й не наступний підхід (розрив нумерації)"
+match = "розрив нумерації"
+
+[[mutant]]
+id = "X9"
+file = "src/db/repo.ts"
+old = ''' AND s2.skipped = 0)'''
+new = ''')'''
+why = "вікно історії знову рахує повністю пропущені сесії"
+match = "F-1 В1|вікно n"
+
+[[mutant]]
+id = "X10"
+file = "src/bot/workout-flow.ts"
+old = '''if (hit) return hit;'''
+new = ''''''
+why = "призначення на натискання знову рахується двічі"
+match = "запитів D1"

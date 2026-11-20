@@ -29,7 +29,10 @@ interface Rendered {
   keyboard?: InlineKeyboard;
 }
 
+type Memo = Map<string, Promise<Prescription>>;
+
 interface ScreenOpts {
+  memo?: Memo;
   /** Вправа-заміна, якщо в слоті ще немає підходів. */
   exercise?: Exercise;
   /** Вага в десятих кг з кнопки. */
@@ -78,8 +81,15 @@ function parseAwait(raw: string | null): AwaitState | null {
 }
 
 export function createWorkoutFlow(repo: Repo, now: () => number) {
-  const prescribe = async (userId: number, exercise: Exercise, slot: Slot): Promise<Prescription> =>
-    nextPrescription(await repo.getExerciseHistory(userId, exercise.id, 3), exercise, slot);
+  /** memo — на один апдейт: призначення вправи в межах натискання рахується один раз (рев'ю Фази 1, В2). */
+  const prescribe = (userId: number, exercise: Exercise, slot: Slot, memo?: Memo): Promise<Prescription> => {
+    const key = `${exercise.id}:${slot.id}`;
+    const hit = memo?.get(key);
+    if (hit) return hit;
+    const p = repo.getExerciseHistory(userId, exercise.id, 3).then((h) => nextPrescription(h, exercise, slot));
+    memo?.set(key, p);
+    return p;
+  };
 
   /** Заміни, доступні слоту: каталог мінус вправи дня мінус уже виконані в тренуванні. */
   async function available(day: ProgramDay, sets: readonly WorkoutSetRow[], slot: Slot): Promise<Exercise[]> {
@@ -113,7 +123,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
         ? slot.exercise
         : ((await repo.getExercise(first.exerciseId)) ?? slot.exercise)
       : (o.exercise ?? slot.exercise);
-    const pres = await prescribe(userId, exercise, slot);
+    const pres = await prescribe(userId, exercise, slot, o.memo);
     const lastWorked = rows.filter((r) => !r.skipped).at(-1);
     return {
       workoutId: w.id,
@@ -222,16 +232,17 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
     }
 
     /** Показати поточний екран замість застарілого й відповісти text. */
+    const memo: Memo = new Map();
     const current = async (text: string): Promise<string> => {
-      await edit(ctx, await screen(userId, workout, day, sets));
+      await edit(ctx, await screen(userId, workout, day, sets, { memo }));
       return text;
     };
 
     switch (cb.a) {
       case "s":
-        return recordSet(ctx, userId, cb, workout, day, sets, current);
+        return recordSet(ctx, userId, cb, workout, day, sets, current, memo);
       case "k":
-        return skip(ctx, userId, cb, workout, day, sets, current);
+        return skip(ctx, userId, cb, workout, day, sets, current, memo);
       case "v": {
         const v = await resolve(day, sets, cb.p, cb.e);
         if (!v || v.exercise.equipment === "bodyweight") return current(ANSWER.stale);
@@ -287,6 +298,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
     day: ProgramDay,
     sets: readonly WorkoutSetRow[],
     current: (text: string) => Promise<string>,
+    memo: Memo,
   ): Promise<string | undefined> {
     const v = await resolve(day, sets, cb.p, cb.e);
     if (!v) return current(ANSWER.stale);
@@ -299,7 +311,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       return current(same ? ANSWER.recorded : ANSWER.staleShowCurrent);
     }
     if (setNo !== rows.length + 1 || setNo > slot.sets) return current(ANSWER.staleShowCurrent);
-    const pres = await prescribe(userId, exercise, slot);
+    const pres = await prescribe(userId, exercise, slot, memo);
     const row: WorkoutSetRow = {
       programExerciseId: slot.id,
       exerciseId: exercise.id,
@@ -312,7 +324,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
     };
     const ok = await repo.upsertSet(userId, { workoutId: workout.id, ...toInput(row) });
     if (!ok) return current(ANSWER.stale);
-    await edit(ctx, await screen(userId, workout, day, [...sets, row]));
+    await edit(ctx, await screen(userId, workout, day, [...sets, row], { memo }));
     return undefined;
   }
 
@@ -324,12 +336,13 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
     day: ProgramDay,
     sets: readonly WorkoutSetRow[],
     current: (text: string) => Promise<string>,
+    memo: Memo,
   ): Promise<string | undefined> {
     const v = await resolve(day, sets, cb.p, cb.e);
     if (!v) return current(ANSWER.stale);
     const { slot, rows, exercise } = v;
     if (cb.n === rows.length + 1 && cb.n <= slot.sets) {
-      const pres = await prescribe(userId, exercise, slot);
+      const pres = await prescribe(userId, exercise, slot, memo);
       const added: WorkoutSetRow[] = [];
       for (let n = cb.n; n <= slot.sets; n++) {
         const row: WorkoutSetRow = {
@@ -345,7 +358,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
         if (!(await repo.upsertSet(userId, { workoutId: workout.id, ...toInput(row) }))) return current(ANSWER.stale);
         added.push(row);
       }
-      await edit(ctx, await screen(userId, workout, day, [...sets, ...added]));
+      await edit(ctx, await screen(userId, workout, day, [...sets, ...added], { memo }));
       return undefined;
     }
     // Повтор: підходи cb.n…sets уже пропущено — нічого не пишемо.
