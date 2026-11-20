@@ -98,6 +98,12 @@ describe("dayTotals і знімок (P3.1.1–2)", () => {
     const rice = await seedFood("рис", 130, 27, 3, 282);
     const m = await pending(U, [{ foodId: rice, grams: 100, confidence: "high" }]);
     await expect(env.DB.prepare("UPDATE meal_items SET kcal = 130 WHERE meal_id = ?").bind(m).run()).rejects.toThrow(/meal_items_snapshot_all_or_none|CHECK/);
+    // Кожне поле знімка окремо: бракує рівно одного з чотирьох — CHECK відмовляє (інакше «дірка» в одному стовпці)
+    for (const missing of ["kcal", "protein_dg", "fat_dg", "carbs_dg"]) {
+      const cols = { kcal: "130", protein_dg: "1", fat_dg: "1", carbs_dg: "1", [missing]: "NULL" };
+      const set = Object.entries(cols).map(([k, v]) => `${k} = ${v}`).join(", ");
+      await expect(env.DB.prepare(`UPDATE meal_items SET ${set} WHERE meal_id = ?`).bind(m).run(), missing).rejects.toThrow(/CHECK/);
+    }
     await expect(env.DB.prepare("UPDATE meal_items SET kcal = 130, protein_dg = 1, fat_dg = 1, carbs_dg = -1 WHERE meal_id = ?").bind(m).run()).rejects.toThrow(/CHECK/);
     await env.DB.prepare("UPDATE meal_items SET kcal = 130, protein_dg = 1, fat_dg = 1, carbs_dg = 1 WHERE meal_id = ?").bind(m).run(); // усі чотири — можна
   });
