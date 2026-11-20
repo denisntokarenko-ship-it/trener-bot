@@ -5,6 +5,7 @@ import type { Exercise, ProgramDay, Repo, Slot, Workout, WorkoutSetRow } from ".
 import { nextDayCode, nextPrescription, type Prescription } from "../domain/progression";
 import { MAX_WEIGHT_KG, parseCb, type Cb } from "./callbacks";
 import { programText, progressText } from "./progress-view";
+import { recordReps, recordWeight, weightEcho } from "./texts";
 import {
   ANSWER,
   NOT_UNDERSTOOD,
@@ -13,7 +14,6 @@ import {
   badWeight,
   dayLabel,
   dayName,
-  fmtKg,
   ratingKeyboard,
   screenKeyboard,
   screenText,
@@ -188,12 +188,12 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       if (mine.length === 0) continue;
       if (exercise.equipment === "bodyweight") {
         const cur = Math.max(...mine.map((x) => x.reps ?? 0));
-        if (cur > Math.max(-1, ...prev.map((x) => x.reps ?? 0))) records.push(`${exercise.nameUk} — ${cur} повт.`);
+        if (cur > Math.max(-1, ...prev.map((x) => x.reps ?? 0))) records.push(recordReps(exercise.nameUk, cur));
       } else {
         const cur = Math.max(...mine.map((x) => x.weightKg ?? 0));
         if (cur > Math.max(-1, ...prev.map((x) => x.weightKg ?? 0))) {
           const reps = Math.max(...mine.filter((x) => x.weightKg === cur).map((x) => x.reps ?? 0));
-          records.push(`${exercise.nameUk} — ${fmtKg(cur)} кг × ${reps}`);
+          records.push(recordWeight(exercise.nameUk, cur, reps));
         }
       }
     }
@@ -402,7 +402,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       }
       const active = await repo.getActiveWorkout(userId);
       const activeDay = active ? days.find((d) => d.code === active.dayCode) : undefined;
-      await ctx.reply(programText({ days, next: { dayName: dayLabel(nextDay), lines }, activeDayName: activeDay ? dayName(activeDay) : null }), { parse_mode: "HTML" });
+      await ctx.reply(programText({ name: program.name, days, next: { dayName: dayLabel(nextDay), lines }, activeDayName: activeDay ? dayName(activeDay) : null }));
     },
 
     /** /progres: останні 5 завершених чи обірваних тренувань. */
@@ -500,7 +500,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       await repo.setAwaitInput(userId, workout.id, null);
       const kg = grams / 1000;
       try {
-        await ctx.api.editMessageText(ctx.chat!.id, state.m, `⚖️ ${fmtKg(kg)} кг`);
+        await ctx.api.editMessageText(ctx.chat!.id, state.m, weightEcho(kg));
       } catch (err) {
         if (!isNotModified(err)) throw err;
       }

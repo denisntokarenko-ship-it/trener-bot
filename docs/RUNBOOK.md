@@ -29,6 +29,16 @@ npm run set-webhook -- preview
 
 Скрипт друкує `@username` бота — звір, що це бот потрібного середовища. Повторний запуск безпечний.
 
+## Профіль бота (меню, опис)
+
+Той самий `TELEGRAM_BOT_TOKEN` (потрібного бота) у середовищі терміналу:
+
+```bash
+npm run set-bot-profile
+```
+
+Скрипт читає з Telegram меню команд, опис і короткий опис (`getMyCommands`, `getMyDescription`, `getMyShortDescription`) і пише лише те, що відрізняється; тексти — `BOT_COMMANDS`, `BOT_DESCRIPTION`, `BOT_SHORT_DESCRIPTION` у `src/bot/texts.ts`. Повторний запуск безпечний («без змін»). `set-webhook` теж виставляє меню команд.
+
 ## Чек-лист «міграція прода»
 
 Строго по порядку. Збій на кроці — не йти далі.

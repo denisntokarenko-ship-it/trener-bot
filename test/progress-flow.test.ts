@@ -3,6 +3,7 @@ import { seedStatements } from "../scripts/seed-core";
 import { handleRequest, telegramHandler } from "../src/app";
 import { createDb } from "../src/db/client";
 import { createRepo } from "../src/db/repo";
+import { NO_PROGRAM, NO_WORKOUTS } from "../src/bot/texts";
 import { OWNER, botInfo, env, fakeTelegram, resetDb, textUpdate, webhookRequest } from "./helpers";
 
 const repo = createRepo(createDb(env.DB));
@@ -53,14 +54,14 @@ async function seedWorkout(dayCode: string, startedAt: number, status: "done" | 
 
 describe("/progres", () => {
   it("немає тренувань", async () => {
-    expect(await say("/progres")).toBe("Ще немає тренувань. Почни: /trening");
+    expect(await say("/progres")).toBe(NO_WORKOUTS);
   });
 
   it("7 тренувань → 5 найновіших, від нових до старих, з локальною датою", async () => {
     for (let i = 0; i < 7; i++) await seedWorkout(i % 2 === 0 ? "A" : "B", T0 + i * DAY, "done", () => [20, 8]);
     const text = await say("/progres");
-    const heads = text.split("\n\n").map((b) => b.split("\n")[0]);
-    expect(heads).toEqual(["26.10 (нд) · Все тіло A · 4/5", "25.10 (сб) · Все тіло B · 4/5", "24.10 (пт) · Все тіло A · 4/5", "23.10 (чт) · Все тіло B · 4/5", "22.10 (ср) · Все тіло A · 4/5"]);
+    const heads = text.split("\n\n").slice(1).map((b) => b.split("\n")[0]);
+    expect(heads).toEqual(["<b>26.10 (нд) · Все тіло A</b> · 4/5", "<b>25.10 (сб) · Все тіло B</b> · 4/5", "<b>24.10 (пт) · Все тіло A</b> · 4/5", "<b>23.10 (чт) · Все тіло B</b> · 4/5", "<b>22.10 (ср) · Все тіло A</b> · 4/5"]);
     expect(text).toContain("Присідання зі штангою 20×8,8,8");
   });
 
@@ -69,8 +70,8 @@ describe("/progres", () => {
     const day = (await repo.getProgramDay(OWNER, "B"))!;
     await repo.startWorkout(OWNER, day.id, T0 + DAY);
     const text = await say("/progres");
-    expect(text.split("\n\n")).toHaveLength(1);
-    expect(text.startsWith("20.10 (пн) · Все тіло A · не завершене")).toBe(true);
+    expect(text.split("\n\n")).toHaveLength(2); // заголовок + одне обірване
+    expect(text.split("\n\n")[1]!.startsWith("<b>20.10 (пн) · Все тіло A</b> · не завершене")).toBe(true);
   });
 
   it("чужі тренування не показуються (ізоляція)", async () => {
@@ -79,7 +80,7 @@ describe("/progres", () => {
     const day = (await repo.getProgramDay(222, "A"))!;
     const w = (await repo.startWorkout(222, day.id, T0))!.workout;
     await repo.finishWorkout(222, w.id, 3, T0 + 1);
-    expect(await say("/progres")).toBe("Ще немає тренувань. Почни: /trening");
+    expect(await say("/progres")).toBe(NO_WORKOUTS);
   });
 });
 
@@ -88,14 +89,14 @@ describe("/prohrama", () => {
     const text = await say("/prohrama");
     expect(text).toContain("<b>Все тіло A</b> · ноги, груди, спина\n1. Присідання зі штангою — 3 × 6–10");
     expect(text).toContain("<b>Все тіло B</b> · ноги, спина, груди\n1. Румунська тяга зі штангою");
-    expect(text).toContain("➡️ Наступне тренування: Все тіло A (ноги, груди, спина)\n");
+    expect(text).toContain("➡️ <b>Наступне тренування: Все тіло A (ноги, груди, спина)</b>\n");
     expect(text).not.toContain("Зараз триває");
   });
 
   it("після done A — наступний B з призначеними вагами", async () => {
     await seedWorkout("A", T0, "done", () => [20, 8]);
     const text = await say("/prohrama");
-    expect(text).toContain("➡️ Наступне тренування: Все тіло B (ноги, спина, груди)");
+    expect(text).toContain("➡️ <b>Наступне тренування: Все тіло B (ноги, спина, груди)</b>");
     const next = text.slice(text.indexOf("➡️"));
     expect(next).toMatch(/Румунська тяга зі штангою — \d+(,\d+)? кг × \d+/);
   });
@@ -103,13 +104,13 @@ describe("/prohrama", () => {
   it("є active — рядок «Зараз триває»", async () => {
     const day = (await repo.getProgramDay(OWNER, "A"))!;
     await repo.startWorkout(OWNER, day.id, nowMs - 1000);
-    expect((await say("/prohrama")).endsWith("Зараз триває: Все тіло A — /trening, щоб продовжити")).toBe(true);
+    expect((await say("/prohrama")).endsWith("Зараз триває: <b>Все тіло A</b> — /trening, щоб продовжити")).toBe(true);
   });
 
   it("без програми — повідомлення про сид", async () => {
     await resetDb();
     await repo.upsertUser(OWNER, "Денис", 0);
-    expect(await say("/prohrama")).toBe("Програму не знайдено — запусти сид (docs/RUNBOOK.md).");
+    expect(await say("/prohrama")).toBe(NO_PROGRAM);
   });
 });
 

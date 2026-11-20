@@ -215,7 +215,7 @@ describe("P1.4 /start", () => {
     expect(tg.calls).toHaveLength(1);
     expect(tg.calls[0]!.method).toBe("sendMessage");
     // Новий користувач: привітання з командами + перший екран анкети (1b.2).
-    expect(String(tg.calls[0]!.payload.text)).toContain("Привіт, Денис! Я записую твої тренування.\n/start — Почати\n/trening — Тренування: почати або продовжити\n/progres — Останні тренування\n/prohrama — Програма й наступне тренування");
+    expect(String(tg.calls[0]!.payload.text)).toContain("👋 <b>Привіт, Денис!</b>\nЯ записую твої тренування й підказую ваги.\n\n/start — Почати\n/trening — Тренування\n/prohrama — Програма й наступне заняття\n/progres — Останні тренування\n/profil — Профіль і план");
   });
 
   it("наявний рядок: first_name оновлено, tz і created_at не змінені", async () => {

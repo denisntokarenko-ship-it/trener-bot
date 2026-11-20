@@ -13,8 +13,7 @@ import {
   liftScreen, limitsScreen, newPlanKeyboard, noteScreen, numberScreen, parseOb, planAcceptedText, planScreen, profileScreen,
   resumeScreen, welcomeScreen, type Screen,
 } from "./onboarding-view";
-import { SOMETHING_WRONG, esc, greeting } from "./texts";
-import { dayLabel } from "./workout-view";
+import { SOMETHING_WRONG, dayLabel, greeting } from "./texts";
 
 const HTML = "HTML" as const;
 const isNotModified = (e: unknown): boolean => e instanceof GrammyError && /not modified/i.test(e.description);
@@ -514,12 +513,12 @@ export function createOnboardingFlow(repo: Repo, now: () => number) {
       const st = await repo.getOnboarding(userId);
       if (st?.status === "active") {
         const fresh = st.step === "welcome";
-        await sendNew(ctx, userId, fresh ? welcomeScreen(esc(greeting(name))) : resumeScreen(), st.msgId);
+        await sendNew(ctx, userId, fresh ? welcomeScreen(greeting(name)) : resumeScreen(), st.msgId);
         return;
       }
       if (!st && !(await repo.getActiveProgram(userId))) {
         await repo.upsertOnboarding(userId, { status: "active", step: "welcome", sub: 0, planVariant: 0 }, now());
-        await sendNew(ctx, userId, welcomeScreen(esc(greeting(name))), null);
+        await sendNew(ctx, userId, welcomeScreen(greeting(name)), null);
         return;
       }
       await ctx.reply(greeting(name), { reply_markup: newPlanKeyboard() });

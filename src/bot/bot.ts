@@ -3,9 +3,8 @@ import { Bot, BotError } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import type { Repo } from "../db/repo";
 import { createOnboardingFlow } from "./onboarding";
-import { SOMETHING_WRONG } from "./texts";
+import { NOT_UNDERSTOOD, SOMETHING_WRONG } from "./texts";
 import { createWorkoutFlow } from "./workout-flow";
-import { NOT_UNDERSTOOD } from "./workout-view";
 
 export interface BotOptions {
   botInfo?: UserFromGetMe;
@@ -19,6 +18,13 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
     botInfo: opts.botInfo,
     client: opts.fetch ? { fetch: opts.fetch } : undefined,
   });
+
+  // Усі тексти — HTML (texts.ts): parse_mode ставиться тут, щоб жоден reply/edit не пішов без нього й не показав теги як є.
+  bot.api.config.use((prev, method, payload, signal) =>
+    (method === "sendMessage" || method === "editMessageText") && !("parse_mode" in payload)
+      ? prev(method, { ...payload, parse_mode: "HTML" } as typeof payload, signal)
+      : prev(method, payload, signal),
+  );
 
   // Профіль — від першого апдейту власника, не лише від /start (P1.4.3).
   bot.use(async (ctx, next) => {

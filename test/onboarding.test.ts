@@ -1,13 +1,14 @@
 // Завдання 1b.2: потік анкети (docs/spec/phase-1b.md, історії P1.1–P1.11, P2.8–P2.10).
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Update } from "grammy/types";
 import { seedStatements } from "../scripts/seed-core";
 import { handleRequest, telegramHandler } from "../src/app";
 import { createDb } from "../src/db/client";
 import { createRepo } from "../src/db/repo";
-import { parseOb, planScreen } from "../src/bot/onboarding-view";
+import { MSG, parseOb, planScreen } from "../src/bot/onboarding-view";
+import { BTN, NOT_UNDERSTOOD } from "../src/bot/texts";
 import { GOAL_LABELS } from "../src/domain/plan";
-import { OWNER, botInfo, count, env, fakeTelegram, resetDb, textUpdate, webhookRequest } from "./helpers";
+import { OWNER, botInfo, count, env, fakeTelegram, resetDb, textUpdate, webhookRequest, outgoingProblems } from "./helpers";
 
 const repo = createRepo(createDb(env.DB));
 const OTHER = 222;
@@ -72,6 +73,11 @@ beforeEach(async () => {
   updateId = 1;
   // Лише каталог: користувачів ще немає, тож програма A/B не створюється (новий користувач).
   await env.DB.batch(seedStatements(0).map((s) => env.DB.prepare(s)));
+});
+
+// 1b.4: кожен вихідний виклик кожного тесту — HTML, валідна розмітка, ліміти Telegram.
+afterEach(() => {
+  expect(outgoingProblems(tg.calls)).toEqual([]);
 });
 
 /** Власник зі старою програмою A/B (існуючі дані, які анкета не має зламати). */
@@ -452,10 +458,10 @@ describe("P1.11 текст за станом", () => {
     await press("💪 Набрати");
     await press("➡️ Далі");
     await say("привіт"); // крок level — кнопки
-    expect(lastText()).toContain("Не розумію");
+    expect(lastText()).toContain(NOT_UNDERSTOOD);
     await resetDb();
     await say("привіт");
-    expect(lastText()).toContain("Не розумію");
+    expect(lastText()).toContain(NOT_UNDERSTOOD);
   });
 });
 
@@ -570,7 +576,7 @@ describe("P2.8–P2.10 підтвердження плану", () => {
     const before = await programsCount();
     // екран плану — попереднє повідомлення; кнопка з нього
     await tap("o:pl:ok0");
-    expect(lastAnswer()).toBe("Заверши тренування (/trening) і повтори");
+    expect(lastAnswer()).toBe(MSG.activeWorkout);
     expect(await programsCount()).toBe(before);
     expect((await state())?.status).toBe("active");
   });
@@ -648,7 +654,7 @@ describe("/start і /profil", () => {
     await ownerWithProgram();
     await say("/start");
     expect(lastText()).toContain("Привіт, Денис");
-    expect(view().buttons.map((b) => b.text)).toEqual(["📝 Налаштувати персональний план"]);
+    expect(view().buttons.map((b) => b.text)).toEqual([BTN.newPlan]);
     expect(await state()).toBeNull();
     expect(await repo.getActiveProgram(OWNER)).not.toBeNull();
     await press("📝");
