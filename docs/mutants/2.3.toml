@@ -1,0 +1,190 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+# --- Обов'язкові з промпту 2.3 ---
+
+[[mutant]]
+id = "M1"
+file = "src/reminders.ts"
+old = '''  if (await c.repo.hasReminder(user.id, kind, date)) return "skipped";
+  if (!(await wanted(c.repo, user, kind, date))) return "skipped";
+  // 1. Заявка: 0 рядків — інший тік уже взяв.
+  if (!(await c.repo.claimReminder(user.id, kind, date, c.now))) return "skipped";'''
+new = '''  if (!(await wanted(c.repo, user, kind, date))) return "skipped";
+  await c.repo.claimReminder(user.id, kind, date, c.now);'''
+why = "прибрати перевірку reminders_sent (і попередню, і за результатом claim) — другий тік шле дубль"
+match = "другий тік|два виклики|гонка"
+
+[[mutant]]
+id = "M2"
+file = "src/domain/time.ts"
+old = '''{ timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(nowUtcMs))'''
+new = '''{ timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(nowUtcMs))'''
+why = "локальний час нагадування за UTC замість tz — 08:00 за Києвом збігається з 08:00Z, переходи часу ламаються"
+match = "переходи часу|25\\.10\\.2026|вікно тіка|localParts"
+
+[[mutant]]
+id = "M3"
+file = "src/config.ts"
+old = '''export const REMINDER_WINDOW_MIN = 60;'''
+new = '''export const REMINDER_WINDOW_MIN = 15;'''
+why = "вікно 60 хв → 15: пропущений тік губить нагадування (T+45 не шле)"
+match = "T\\+45|вікно тіка|переходи часу"
+
+[[mutant]]
+id = "M3b"
+file = "src/config.ts"
+old = '''export const REMINDER_WINDOW_MIN = 60;'''
+new = '''export const REMINDER_WINDOW_MIN = 0;'''
+why = "вікно 60 → 0: нагадування не надсилається ніколи"
+match = "P2\\.3|нагадування|вікно тіка"
+
+# --- Додаткові ---
+
+[[mutant]]
+id = "M4"
+file = "src/domain/reminders.ts"
+old = '''if (isoWeekday === 7 && minutes >= REPORT_LOCAL_MINUTES) out.push("report");'''
+new = '''if (isoWeekday === 7 && minutes >= REPORT_LOCAL_MINUTES && minutes < REPORT_LOCAL_MINUTES + REMINDER_WINDOW_MIN) out.push("report");'''
+why = "звіт лише в годинному вікні замість «до кінця доби» — о 20:30 мовчить"
+match = "кінця доби|недільний звіт|20:30"
+
+[[mutant]]
+id = "M5"
+file = "src/reminders.ts"
+old = '''  if (res.definite) {'''
+new = '''  if (false as boolean) {'''
+why = "визначену недоставку (500/429/403) не знімати — заявка лишається, день пропущено"
+match = "помилки Telegram|відповідь 500|відповідь 429|відповідь 403"
+
+[[mutant]]
+id = "M6"
+file = "src/reminders.ts"
+old = '''  if (res.definite) {'''
+new = '''  if (true as boolean) {'''
+why = "знімати заявку й на таймаут/обрив — можливий дубль (мутант «зняти на таймаут»)"
+match = "таймаут|обрив мережі"
+
+[[mutant]]
+id = "M7"
+file = "src/domain/time.ts"
+old = '''  let t = midnight - tzOffsetMs(midnight, tz);
+  t = midnight - tzOffsetMs(t, tz);'''
+new = '''  let t = midnight - 3 * 3_600_000;'''
+why = "локальна північ зі сталим зсувом +3 замість Intl — 2026-10-26 і 2027-03-28 хибні"
+match = "localDayStartUtc"
+
+[[mutant]]
+id = "M8"
+file = "src/db/repo.ts"
+old = '''inArray(workouts.status, ["active", "done"]), gte(workouts.startedAt, fromUtc)'''
+new = '''inArray(workouts.status, ["done"]), gte(workouts.startedAt, fromUtc)'''
+why = "active-тренування не рахується як «тренування сьогодні» — нагадування шле поки людина в залі"
+match = "тренування сьогодні \\(active\\)"
+
+[[mutant]]
+id = "M9"
+file = "src/reminders.ts"
+old = '''if (kind === "weigh") return (await repo.getWeights(user.id, date, date)).length === 0;'''
+new = '''if (kind === "weigh") return true;'''
+why = "нагадування про вагу шле, навіть якщо вагу вже записано"
+match = "вага за сьогодні вже є"
+
+[[mutant]]
+id = "M10"
+file = "src/bot/bot.ts"
+old = '''    const awaits = await flow.awaitsWeight(ctx);
+    if (!awaits) {'''
+new = '''    const awaits = await flow.awaitsWeight(ctx);
+    if (await weight.bareNumber(ctx)) return;
+    if (!awaits) {'''
+why = "крок 4 перед кроком 2: голе число при відкритому нагадуванні краде вагу підходу"
+match = "крок 2 перед 4"
+
+[[mutant]]
+id = "M11"
+file = "src/bot/weight-flow.ts"
+old = '''      if ((await repo.getWeights(userId, today, today)).length > 0) return false;
+'''
+new = ''''''
+why = "голе число після зважування знову пишеться як вага (перезаписує ранкову)"
+match = "після зважування голе число"
+
+[[mutant]]
+id = "M12"
+file = "src/bot/weight-flow.ts"
+old = '''      if (reminderDate !== today) {'''
+new = '''      if (false as boolean) {'''
+why = "reply на вчорашнє нагадування пише вагу на сьогодні замість відмови"
+match = "reply на нагадування за вчора"
+
+[[mutant]]
+id = "M13"
+file = "src/db/repo.ts"
+old = '''.where(and(eq(remindersSent.userId, userId), eq(remindersSent.kind, "weigh"), eq(remindersSent.messageId, messageId)))'''
+new = '''.where(and(eq(remindersSent.kind, "weigh"), eq(remindersSent.messageId, messageId)))'''
+why = "N8: пошук нагадування за message_id без userId — видно чуже"
+match = "message_id зберігається"
+
+[[mutant]]
+id = "M14"
+file = "src/cron.ts"
+old = '''    cleanupErrors++;
+    console.error("cron cleanup failed", { error: errorName(e) });'''
+new = '''    cleanupErrors++;
+    console.error("cron cleanup failed", { error: errorName(e) });
+    throw e;'''
+why = "збій прибирання зупиняє нагадування (немає незалежних try/catch)"
+match = "purge… кидає"
+
+[[mutant]]
+id = "M15"
+file = "src/domain/reminders.ts"
+old = '''&& (parseTrainingDays(user.trainingDays) ?? []).includes(isoWeekday)'''
+new = ''''''
+why = "train шле в усі дні, не лише з training_days"
+match = "Вт — train не надсилається|не день тренування"
+
+[[mutant]]
+id = "M16"
+file = "src/db/repo.ts"
+old = '''        .innerJoin(programs, and(eq(programs.id, programDays.programId), eq(programs.active, 1)))
+        .where(and(eq(workouts.userId, userId), eq(workouts.status, "done")))'''
+new = '''        .where(and(eq(workouts.userId, userId), eq(workouts.status, "done")))'''
+why = "P2.3.12: nextDayCode рахує від done старої програми після активації нового плану"
+match = "P2\\.3\\.12|done-тренування старої програми"
+
+[[mutant]]
+id = "M17"
+file = "src/domain/week-report.ts"
+old = '''(before.length > 0 ? before : [ordered[0]!])'''
+new = '''before'''
+why = "перша сесія вправи (калібрування) у тижні рахується рекордом"
+match = "перша сесія вправи|звіт"
+
+[[mutant]]
+id = "M18"
+file = "src/reminders.ts"
+old = '''const toUtc = localDayStartUtc(addDays(date, 1), user.tz);
+  const program'''
+new = '''const toUtc = Date.parse(`${addDays(date, 1)}T00:00:00Z`);
+  const program'''
+why = "межа тижня за UTC-північчю замість локальної — тренування Пн 00:10 за Києвом потрапляє в минулий тиждень"
+match = "тиждень рахується за локальними датами"
+
+[[mutant]]
+id = "M19"
+file = "src/app.ts"
+old = '''Math.max(0, Math.floor((nowMs - tick) / 60_000))'''
+new = '''Math.max(0, Math.round((nowMs - tick) / 60_000))'''
+why = "вік крону округлюється, а не усікається — 7 хв 59 с показано як 8m"
+match = "вік у хвилинах"
+
+[[mutant]]
+id = "M20"
+file = "src/reminders.ts"
+old = '''    await c.repo.releaseReminder(user.id, kind, date); // до відправки — недоставка визначена
+    throw e;'''
+new = '''    throw e;'''
+why = "помилка побудови тексту лишає заявку — нагадування губиться без відправки"
+match = "помилка побудови тексту"

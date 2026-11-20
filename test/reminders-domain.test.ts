@@ -190,6 +190,10 @@ describe("weekRecords: нові рекорди тижня", () => {
     const rows = [row(1, "Присідання", 1, 0, 40, 8), row(1, "Присідання", 2, 2, 45, 8)];
     expect(weekRecords(rows, from, to).map((x) => x.weightKg)).toEqual([45]);
   });
+  it("перша сесія тижня задає базу: друга, легша за першу, рекордом не є", () => {
+    const rows = [row(1, "Присідання", 1, 0, 60, 8), row(1, "Присідання", 2, 2, 50, 8)];
+    expect(weekRecords(rows, from, to)).toEqual([]);
+  });
   it("вага тіла — рекорд за повторами", () => {
     const r = weekRecords([row(2, "Віджимання", 1, -7, 0, 10, true), row(2, "Віджимання", 2, 1, 0, 12, true)], from, to);
     expect(r).toEqual([{ nameUk: "Віджимання", bodyweight: true, weightKg: 0, reps: 12, gain: 2 }]);
