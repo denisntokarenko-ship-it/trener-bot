@@ -136,7 +136,7 @@ const NEW: Omit<CatalogEntry, "videoUrl">[] = [
     cues: ["Лопатки зведені, стопи впираються в підлогу", "Опускай гантелі до верху грудей під контролем", "Тисни вгору без ривка, лікті близько 45°"],
     substitutes: ["dumbbell-bench-press", "barbell-bench-press"] },
   { id: 25, slug: "leg-curl", nameUk: "Згинання ніг у тренажері", equipment: "machine", stepKg: 5, minKg: 5, group: "legs", pattern: "legacc", kind: "accessory", place: "gym", minLevel: 1, stress: [],
-    cues: ["Налаштуй вісь тренажера на рівень колін", "Не відривай таз від лави, рухайся без ривка", "Повертай вагу повільно, не скидай блок"],
+    cues: ["Налаштуй вісь тренажера на рівень колін", "Притисни таз до опори, рухайся без ривка", "Повертай вагу повільно, не скидай блок"],
     substitutes: ["leg-extension"] },
   { id: 26, slug: "leg-extension", nameUk: "Розгинання ніг у тренажері", equipment: "machine", stepKg: 5, minKg: 5, group: "legs", pattern: "legacc", kind: "accessory", place: "gym", minLevel: 1, stress: ["knee"],
     cues: ["Бери легку вагу, спина притиснута до спинки", "Не випрямляй коліна різко до замка вгорі", "Опускай вагу повільно, під контролем"],

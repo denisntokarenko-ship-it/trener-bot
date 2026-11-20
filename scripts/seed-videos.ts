@@ -28,7 +28,7 @@ export const VIDEOS: Record<string, string | null> = {
   "incline-dumbbell-press": "https://www.youtube.com/watch?v=ZixeFw_iHVY",
   "leg-curl": "https://www.youtube.com/watch?v=ZfyDQOviOfk",
   "leg-extension": "https://www.youtube.com/watch?v=qz8QvMGHJu0",
-  "face-pull": "https://www.youtube.com/watch?v=thBbuIwMzBw",
+  "face-pull": null, // рев'ю 1b.1 В1: відео thBbuIwMzBw — тренування широчайших, не тяга до обличчя; надійного немає → «Борг»
   "barbell-row": "https://www.youtube.com/watch?v=F9wrtuXJQZY",
   "dead-bug": "https://www.youtube.com/watch?v=XStveWETjvk",
   "dumbbell-reverse-fly": "https://www.youtube.com/watch?v=8o5yQpn0FOU",

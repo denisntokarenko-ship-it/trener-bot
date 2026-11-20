@@ -209,6 +209,11 @@ describe("каталог і відео (§3, §9)", () => {
     expect(CATALOG.map((e) => e.id)).toEqual(Array.from({ length: 30 }, (_, i) => i + 1));
     for (const e of CATALOG.filter((x) => x.id >= 19)) expect(e.substitutes.length, e.slug).toBeGreaterThanOrEqual(1);
   });
+  it("рев'ю 1b.1: face-pull без непідтвердженого відео; підказка leg-curl не прив'язана до лави (відео — згинання сидячи)", () => {
+    const by = new Map(CATALOG.map((e) => [e.slug, e]));
+    expect(by.get("face-pull")!.videoUrl).toBeNull();
+    expect(by.get("leg-curl")!.cues.join(" ")).not.toContain("лави");
+  });
   it("заміни нових вправ — той самий pattern, і слаги існують", () => {
     const by = new Map(CATALOG.map((e) => [e.slug, e]));
     for (const e of CATALOG.filter((x) => x.id >= 19)) {
