@@ -14,12 +14,20 @@ esac
 cd "$(dirname "$0")/.."
 backup_dir="${BACKUP_DIR:-backups}"
 mkdir -p "$backup_dir"
-out="$backup_dir/${prefix}-$(date -u +%Y%m%d-%H%M%S).sql"
+stamp="$(date -u +%Y%m%d-%H%M%S)"
+out="$backup_dir/${prefix}-${stamp}.sql"
+# Дамп лише даних — для відновлення (R-2 В1): повний дамп пише INSERT дочірньої таблиці до CREATE TABLE батьківської
+# і в чисту БД не відновлюється. Рецепт: міграції в нову БД → execute --file цього файлу (RUNBOOK).
+data="$backup_dir/${prefix}-${stamp}-data.sql"
 
-# Будь-який вихід з помилкою — прибрати недописаний файл.
-trap 'code=$?; if [ $code -ne 0 ]; then rm -f "$out"; echo "Бекап не вдався (код $code), $out видалено" >&2; fi' EXIT
+# Будь-який вихід з помилкою — прибрати недописані файли.
+trap 'code=$?; if [ $code -ne 0 ]; then rm -f "$out" "$data" "$data.tmp"; echo "Бекап не вдався (код $code), $out і $data видалено" >&2; fi' EXIT
 
 "${NPX:-npx}" wrangler d1 export "$db" --remote --env "$env_name" --output "$out"
+"${NPX:-npx}" wrangler d1 export "$db" --remote --env "$env_name" --no-schema --output "$data.tmp"
+# d1_migrations у новій БД пише сам `migrations apply` — його рядки в дампі даних дали б конфлікт PK.
+grep -v '^INSERT INTO "d1_migrations"' "$data.tmp" > "$data" || true
+rm -f "$data.tmp"
 
 if [ ! -s "$out" ]; then
   echo "Порожній файл бекапу" >&2
@@ -46,4 +54,24 @@ for table in $tables; do
   fi
 done
 
-echo "Бекап: $out ($(wc -c < "$out") байт)"
+# Дані на місці: рядків INSERT кожної таблиці в дампі даних = COUNT(*) у БД (R-2 В1). Одним рядком із підзапитами —
+# D1 не приймає довгий UNION ALL. Розбіжність — запис між export і COUNT або обрізаний дамп: повтори бекап.
+data_tables=$(printf '%s\n' $tables | grep -vx 'd1_migrations' || true)
+if [ -n "$data_tables" ]; then
+  count_sql="SELECT $(printf '%s\n' $data_tables | sed 's/.*/(SELECT count(*) FROM "&") AS "&"/' | paste -sd, -)"
+  counts=$("${NPX:-npx}" wrangler d1 execute "$db" --remote --env "$env_name" --json --command "$count_sql" \
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const[k,v]of Object.entries(JSON.parse(s)[0].results[0]))console.log(k+" "+v)})')
+  summary=""
+  while read -r table n; do
+    [ -z "$table" ] && continue
+    got=$(grep -c "^INSERT INTO \"${table}\"" "$data" || true)
+    if [ "$got" != "$n" ]; then
+      echo "У дампі даних $table: $got рядків, у БД: $n — дані змінились під час бекапу або дамп неповний; повтори" >&2
+      exit 1
+    fi
+    summary="$summary $table=$n"
+  done <<< "$counts"
+  echo "Рядки (дамп = БД):$summary"
+fi
+
+echo "Бекап: $out ($(wc -c < "$out") байт); дані для відновлення: $data ($(wc -c < "$data") байт)"
