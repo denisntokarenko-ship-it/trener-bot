@@ -294,7 +294,8 @@ describe("знімки ключових екранів", () => {
       /progres — Прогрес: вага, рекорди, e1RM
       /vaga — Записати вагу тіла
       /profil — Профіль і план
-      /nalashtuvannia — Дні, час нагадувань, часовий пояс"
+      /nalashtuvannia — Дні, час нагадувань, часовий пояс
+      /yizha — Їжа за день і норма"
     `);
     expect(sn(emptyDayScreen())).toMatchInlineSnapshot(`
       "⚠️ <b>Не вдалося скласти план із такими обмеженнями</b>
@@ -375,7 +376,7 @@ describe("мова: літералів поза texts.ts немає", () => {
       expect(c.description.length).toBeGreaterThanOrEqual(3);
       expect(c.description.length).toBeLessThanOrEqual(256);
     }
-    expect(BOT_COMMANDS.map((c) => c.command)).toEqual(["start", "trening", "prohrama", "progres", "vaga", "profil", "nalashtuvannia"]);
+    expect(BOT_COMMANDS.map((c) => c.command)).toEqual(["start", "trening", "prohrama", "progres", "vaga", "profil", "nalashtuvannia", "yizha"]);
   });
 });
 

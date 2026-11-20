@@ -1,0 +1,102 @@
+test = "npx vitest run --reporter=dot test/yizha.test.ts"
+timeout = 300
+
+# --- Обов'язкові з промпту 3.2 ---
+
+[[mutant]]
+id = "M1"
+file = "src/domain/nutrition.ts"
+old = '''(sex === "m" ? 5 : -161)'''
+new = '''(sex === "m" ? -161 : 5)'''
+why = "поправка статі в Міффліна переплутана: +5 ↔ −161"
+match = "BMR: обидві статі|контрольні вектори"
+
+[[mutant]]
+id = "M2"
+file = "src/domain/nutrition.ts"
+old = '''PROTEIN_G_PER_KG = 1.8;'''
+new = '''PROTEIN_G_PER_KG = 1.6;'''
+why = "білок 1,8 → 1,6 г/кг"
+match = "контрольні вектори|4Б \\+ 9Ж"
+
+[[mutant]]
+id = "M3"
+file = "src/bot/food-flow.ts"
+old = '''let norm = await repo.getTargetOn(userId, today);'''
+new = '''let norm = await repo.getTargetOn(userId, "9999-12-31");'''
+why = "/yizha бере найновішу норму замість чинної на дату"
+match = "P3[.]2[.]2"
+
+# --- Додаткові ---
+
+[[mutant]]
+id = "M4"
+file = "src/domain/nutrition.ts"
+old = '''["goal", "sex", "birth_year", "height_cm", "activity", "weight"]'''
+new = '''["sex", "goal", "birth_year", "height_cm", "activity", "weight"]'''
+why = "порядок питань про прогалини змінений"
+match = "порядок питань"
+
+[[mutant]]
+id = "M5"
+file = "src/domain/nutrition.ts"
+old = '''if (floor > kcal) {'''
+new = '''if (false) {'''
+why = "підлога 4Б+9Ж більше не піднімає kcal, коли вона вища за формулу"
+match = "4Б \\+ 9Ж > kcal"
+
+[[mutant]]
+id = "M6"
+file = "src/domain/nutrition.ts"
+old = '''kcal < NORM_KCAL_MIN || '''
+new = '''kcal < 0 || '''
+why = "нижня межа норми 800 ккал знята"
+match = "P3[.]2[.]7|kcal поза 800"
+
+[[mutant]]
+id = "M7"
+file = "src/bot/food-flow.ts"
+old = '''if (!norm && missing === null) {'''
+new = '''if (missing === null) {'''
+why = "норма створюється й тоді, коли вже є чинна (нова формула на сьогодні поверх старої)"
+match = "P3[.]2[.]2"
+
+[[mutant]]
+id = "M8"
+file = "src/bot/food-flow.ts"
+old = '''if (!opt || profile?.[field] != null) {'''
+new = '''if (!opt) {'''
+why = "застаріла кнопка перезаписує вже заповнене поле"
+match = "стать порожня"
+
+[[mutant]]
+id = "M9"
+file = "src/bot/food-flow.ts"
+old = '''      if (filled) {'''
+new = '''      if (false) {'''
+why = "reply на старе питання перезаписує заповнене поле"
+match = "reply на питання про вагу"
+
+[[mutant]]
+id = "M10"
+file = "src/db/repo.ts"
+old = '''local_date = ${localDate} AND status = 'pending'`);'''
+new = '''local_date = ${localDate} AND status <> 'cancelled'`);'''
+why = "«Не підтверджено» рахує й підтверджені прийоми"
+match = "P3[.]2[.]6"
+
+[[mutant]]
+id = "M11"
+file = "src/domain/nutrition.ts"
+old = '''if (w.avgDg !== null) return w.avgDg / 10;'''
+new = ''''''
+why = "вага для норми ігнорує середнє W0"
+match = "вага для норми"
+
+[[mutant]]
+id = "M12"
+file = "src/bot/food-flow.ts"
+old = '''kg!, Number(today.slice(0, 4)))'''
+new = '''kg!, Number(today.slice(0, 4)) + 1)'''
+why = "вік у нормі зсунутий на рік (рік локальної дати + 1)"
+match = "P3[.]2[.]4|P3[.]2[.]3"

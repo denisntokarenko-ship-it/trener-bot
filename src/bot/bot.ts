@@ -2,6 +2,7 @@
 import { Bot, BotError } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import type { Repo } from "../db/repo";
+import { createFoodFlow, isFoodCb } from "./food-flow";
 import { createOnboardingFlow } from "./onboarding";
 import { createSettingsFlow, isSettingsCb } from "./settings-flow";
 import { NOT_UNDERSTOOD, SOMETHING_WRONG } from "./texts";
@@ -37,6 +38,7 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
   const flow = createWorkoutFlow(repo, now);
   const onboarding = createOnboardingFlow(repo, now);
   const weight = createWeightFlow(repo, now);
+  const food = createFoodFlow(repo, now);
   const settings = createSettingsFlow(repo, (ctx) => onboarding.profil(ctx));
 
   // Будь-яка команда знімає очікування ваги й виконується далі (phase-1-flow.md, «Введення ваги», п. 5).
@@ -52,15 +54,18 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
   bot.command("prohrama", (ctx) => flow.prohrama(ctx));
   bot.command("vaga", (ctx) => weight.vaga(ctx));
   bot.command("nalashtuvannia", (ctx) => settings.command(ctx));
+  bot.command("yizha", (ctx) => food.yizha(ctx));
   bot.on("callback_query:data", (ctx) => {
     const d = ctx.callbackQuery.data;
-    return d.startsWith("o:") ? onboarding.callback(ctx) : isSettingsCb(d) ? settings.callback(ctx) : flow.callback(ctx);
+    // f:go|sx|ac:… — питання про профіль для норми (food-flow); f:<число>:<число> — оцінка тренування, її бере flow.
+    return d.startsWith("o:") ? onboarding.callback(ctx) : isFoodCb(d) ? food.callback(ctx) : isSettingsCb(d) ? settings.callback(ctx) : flow.callback(ctx);
   });
   bot.on("callback_query", (ctx) => ctx.answerCallbackQuery());
-  // Текст, число — порядок із phase-2.md, розділ 2 (перший збіг виграє): 1) reply на нагадування про вагу; 2) вага підходу, що
+  // Текст, число — порядок із phase-2.md, розділ 2 (перший збіг виграє): 1) reply на нагадування про вагу; 1б) reply на питання про профіль для норми (phase-3.md); 2) вага підходу, що
   // чекає; 3) анкета; 4) голе число при відкритому нагадуванні про вагу; 5) «Не зрозумів» (+ підказка для чисел 30–300).
   bot.on("message:text", async (ctx) => {
     if (await weight.replyToReminder(ctx)) return;
+    if (await food.replyToQuestion(ctx)) return;
     const awaits = await flow.awaitsWeight(ctx);
     if (!awaits) {
       if (await onboarding.text(ctx)) return;

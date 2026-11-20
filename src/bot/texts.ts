@@ -79,6 +79,7 @@ export const BOT_COMMANDS: ReadonlyArray<{ command: string; description: string 
   { command: "vaga", description: "Записати вагу тіла" },
   { command: "profil", description: "Профіль і план" },
   { command: "nalashtuvannia", description: "Дні, час нагадувань, часовий пояс" },
+  { command: "yizha", description: "Їжа за день і норма" },
 ];
 
 /** `setMyDescription` ≤ 512 символів: показується в порожньому чаті до першого /start. */
@@ -759,3 +760,84 @@ export function settingsText(s: { days: readonly number[]; remindTime: string | 
 /** Рядок після активації плану з іншим числом днів: дні нагадувань скинуто. */
 export const settingsDaysReset = (n: number, days: readonly number[]): string =>
   `📅 Дні нагадувань скинув під ${n} трен. на тиждень: ${days.map((d) => WEEKDAYS_UK[d - 1]).join(", ")}. Змінити — /nalashtuvannia`;
+
+// --- Фаза 3: норма КБЖУ, питання про прогалини профілю, /yizha (docs/spec/phase-3.md, розділ 3) ---
+
+export type FoodAskField = "goal" | "sex" | "birth_year" | "height_cm" | "activity" | "weight";
+
+/** Заголовок питання — перший рядок повідомлення; за ним впізнається reply (стан не потрібен). */
+export const FOOD_ASK_HEAD: Record<FoodAskField, string> = {
+  goal: "🎯 Для норми калорій потрібна ціль",
+  sex: "👤 Для норми калорій потрібна стать",
+  birth_year: "🎂 Для норми калорій потрібен рік народження",
+  height_cm: "📏 Для норми калорій потрібен зріст",
+  activity: "🚶 Для норми калорій потрібна активність поза залом",
+  weight: "⚖️ Для норми калорій потрібна вага",
+};
+export const FOOD_ASK_EXAMPLE = { birth_year: "1995", height_cm: "178", weight: "80,5" } as const;
+export const FOOD_ASK_BAD = {
+  birth_year: "❌ Рік народження — чотири цифри, від 1930 до 2020 (вік 14–80). Спробуй ще раз у reply на питання.",
+  height_cm: "❌ Зріст — число від 120 до 230 см. Спробуй ще раз у reply на питання.",
+  weight: "❌ Вага — число від 30 до 300 кг. Спробуй ще раз у reply на питання.",
+} as const;
+export const FOOD_ASK_STALE = "Це вже заповнено — зміни профіль через /profil.";
+export const FOOD_ASK_SAVED = "✅ Записав";
+
+/** Текст питання: для числових полів — прохання відповісти reply; для кнопкових кнопки йдуть окремо (f:go|sx|ac). */
+export function foodAskText(field: FoodAskField): string {
+  if (field === "birth_year" || field === "height_cm" || field === "weight") {
+    return `${FOOD_ASK_HEAD[field]}\nНапиши відповіддю (reply) на це повідомлення число, наприклад <code>${FOOD_ASK_EXAMPLE[field]}</code>.`;
+  }
+  return FOOD_ASK_HEAD[field];
+}
+
+/** Поле питання за заголовком повідомлення, на яке відповіли (лише числові поля); інакше null. */
+export function foodAskFieldOf(repliedText: string | undefined): "birth_year" | "height_cm" | "weight" | null {
+  const first = (repliedText ?? "").split("\n", 1)[0];
+  for (const f of ["birth_year", "height_cm", "weight"] as const) if (first === FOOD_ASK_HEAD[f]) return f;
+  return null;
+}
+
+export const FOOD_PROFILE_CHECK = "⚠️ Перевір профіль: норма виходить за межі 800–6000 ккал. Зміни дані через /profil.";
+export const FOOD_NOTHING_YET = "Сьогодні ще нічого не підтверджено.";
+
+export interface YizhaView {
+  /** Сума підтверджених за день: ккал, макроси — десяті грама. */
+  total: { kcal: number; proteinDg: number; fatDg: number; carbsDg: number };
+  norm: { kcal: number; proteinG: number; fatG: number; carbsG: number; validFrom: string } | null;
+  /** Підтверджені прийоми: час «HH:MM» за tz користувача, позиції, ккал. */
+  meals: { time: string; items: { nameUk: string; grams: number }[]; kcal: number }[];
+  pending: number;
+  profileCheck: boolean;
+}
+
+const YIZHA_MEALS_MAX = 12;
+const gram = (dg: number): number => Math.round(dg / 10);
+
+/** Підсумок дня проти норми, чинної на цю дату. Текст ≤ 4096 (clip). */
+export function yizhaText(v: YizhaView): string {
+  const lines: string[] = ["🍽 <b>Їжа за сьогодні</b>"];
+  const { total, norm } = v;
+  if (norm) {
+    const pct = Math.round((total.kcal * 100) / norm.kcal);
+    lines.push(`З'їдено <b>${fmtInt(total.kcal)} / ${fmtInt(norm.kcal)}</b> ккал (${pct} %)`);
+    lines.push(`Б ${gram(total.proteinDg)} / ${norm.proteinG} г · Ж ${gram(total.fatDg)} / ${norm.fatG} г · В ${gram(total.carbsDg)} / ${norm.carbsG} г`);
+    if (total.kcal > norm.kcal) lines.push(`⚠️ +${fmtInt(total.kcal - norm.kcal)} ккал понад норму`);
+    lines.push(`<i>норма від ${norm.validFrom.slice(8)}.${norm.validFrom.slice(5, 7)}</i>`);
+  } else {
+    lines.push(`З'їдено <b>${fmtInt(total.kcal)}</b> ккал`);
+    lines.push(`Б ${gram(total.proteinDg)} г · Ж ${gram(total.fatDg)} г · В ${gram(total.carbsDg)} г`);
+    if (v.profileCheck) lines.push("", FOOD_PROFILE_CHECK);
+  }
+  if (v.meals.length === 0) {
+    lines.push("", FOOD_NOTHING_YET);
+  } else {
+    lines.push("");
+    for (const m of v.meals.slice(0, YIZHA_MEALS_MAX)) {
+      lines.push(`• ${m.time} — ${m.items.map((i) => `${esc(i.nameUk)} ${i.grams} г`).join(", ")} · ${fmtInt(m.kcal)} ккал`);
+    }
+    if (v.meals.length > YIZHA_MEALS_MAX) lines.push(`…ще ${v.meals.length - YIZHA_MEALS_MAX}`);
+  }
+  if (v.pending > 0) lines.push("", `⏳ Не підтверджено: ${v.pending}`);
+  return clip(lines.join("\n"));
+}
