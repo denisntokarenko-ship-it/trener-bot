@@ -115,7 +115,7 @@ async function seedDone(dayCode: string, startedAt: number, rows: { slot: number
 describe("callback_data: кодек", () => {
   it("round-trip і межа 64 байти", () => {
     const data = encodeCb("t", { w: 4294967295, p: 4294967295, e: 4294967295, n: 10, r: 50, g: 5000, t: 1 });
-    expect(new TextEncoder().encode(data).byteLength).toBeLessThanOrEqual(7);
+    expect(new TextEncoder().encode(data).byteLength).toBeLessThanOrEqual(64);
     expect(parseCb(data)).toMatchObject({ a: "t", w: 4294967295, n: 10, r: 50, g: 5000, t: 1 });
     expect(() => encodeCb("t", { w: 9e15, p: 9e15, e: 9e15, n: 10, r: 50, g: 5000, t: 1 })).toThrow();
   });
