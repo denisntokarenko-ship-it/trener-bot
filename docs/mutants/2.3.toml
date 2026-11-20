@@ -160,7 +160,7 @@ file = "src/domain/week-report.ts"
 old = '''(before.length > 0 ? before : [ordered[0]!])'''
 new = '''before'''
 why = "перша сесія вправи (калібрування) у тижні рахується рекордом"
-match = "перша сесія вправи|звіт"
+match = "перша сесія"
 
 [[mutant]]
 id = "M18"
