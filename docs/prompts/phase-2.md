@@ -75,9 +75,9 @@
 
 Робиш:
 - Міграція body_weights (UNIQUE user_id + local_date).
-- repo: upsertBodyWeight(userId, localDate, kg), getWeights(userId, from, to).
+- repo: upsertBodyWeight(userId, localDate, weightDg) (вага в десятих кг), getWeights(userId, from, to). `reminders_sent` у 2.1 не існує: кроки 1 і 4 маршрутизації числа — у 2.3.
 - src/domain/time.ts: localDate(nowUtcMs, tz) через Intl; src/domain/weight.ts: avg7, зміна до минулого тижня — чисті функції.
-- /vaga 78.4 і число за правилами phase-2.md; кома й крапка; межі 30–300 кг; відповідь: записано + avg7.
+- /vaga 78.4 за phase-2.md (кроки 2, 3, 5 розділу 2); кома й крапка; округлення половини вгору до десятих, межі 30–300 після округлення; відповідь: записано + avg7; /vaga в BOT_COMMANDS.
 
 Тести: два зважування за день → 1 рядок з останнім; 23:30 і 00:30 за Києвом → різні дати; avg7 із пропущеними днями; 25.10.2026 (перехід часу) — правильна дата; «78,4» і «78.4» → однаково; 3000 → відмова.
 Мутації — `python "$HOME/.claude/skills/prompt-roadmap/scripts/mutate.py" docs/mutants/2.1.toml --report docs/mutants/2.1.md`:
@@ -158,7 +158,8 @@ M1 — у формулі Еплі reps / 30 → reps / 3 → червоніє т
 Робиш:
 - Міграція reminders_sent (UNIQUE user_id + kind + local_date).
 - scheduled() для кожного користувача: нагадування в день тренування з призначеними вагами (nextPrescription), нагадування зважитись, недільний звіт (тренувань із запланованих, що зросло, avg7 — шаблон); порядок «записати / надіслати» і поведінка при помилці Telegram — за phase-2.md.
-- Чисті функції вибору: dueReminders(user, nowUtcMs) → список kind.
+- Чисті функції вибору: dueReminders(user, nowUtcMs) → список kind; localDayStartUtc(date, tz).
+- cron_state + `/health` із віком тіку; два незалежні try/catch у runCron і на пару (користувач, kind); кроки 1 і 4 маршрутизації числа (розділ 2); правка nextDayCode (P2.3.12).
 
 Тести: два виклики scheduled() в одному вікні → 1 повідомлення; 25.10.2026 08:00 за Києвом — нагадування в правильному вікні; не день тренування → нічого; помилка Telegram → поведінка за спекою; неділя → звіт, інший день → ні.
 Мутації — `python "$HOME/.claude/skills/prompt-roadmap/scripts/mutate.py" docs/mutants/2.3.toml --report docs/mutants/2.3.md`:
@@ -214,7 +215,7 @@ M1 — прибери перевірку reminders_sent → червоніє т�
 Контекстна дисципліна: тести під час ітерації — тихим репортером (`npx vitest run --reporter=dot`); довгий вивід (лог, дамп, дерево файлів, wrangler tail) — у файл, у контекст лише підсумок; прочитане не перечитуй.
 
 Робиш:
-- /nalashtuvannia: дні тренувань (кнопки Пн–Нд, перемикач), час нагадування й зважування (за спекою: кнопки або введення HH:MM), часовий пояс (кілька популярних + введення IANA з перевіркою через Intl).
+- /nalashtuvannia: дні тренувань (кнопки Пн–Нд, перемикач), час нагадування й зважування (кнопки: година, потім :00/:15/:30/:45; «Вимкнути»), часовий пояс командою `/nalashtuvannia Europe/Warsaw` з перевіркою через Intl (стану очікування немає); /nalashtuvannia у BOT_COMMANDS; скидання training_days при активації плану з іншим days_per_week.
 - repo: updateUserSettings(userId, patch) з валідацією.
 
 Тести: HH:MM валідний / невалідний; невідома зона відхилена; змінені дні впливають на dueReminders.
@@ -230,11 +231,12 @@ M1 — прибери перевірку reminders_sent → червоніє т�
 Завдання 2.5. Ворота: 2.4 ✅ у docs/PROGRESS.md на origin/main. Інакше зупинись.
 Гілка від origin/main: phase-2/05-prod-release.
 
-Прочитай docs/spec/phase-0.md (розділ про бекап і відкат), docs/spec/00-common.md і docs/RUNBOOK.md. Спеку цілком не читай.
+Прочитай docs/spec/phase-0.md (розділ про бекап і відкат), docs/spec/phase-2.md (розділ 4 і «Розбивка»), docs/spec/00-common.md і docs/RUNBOOK.md. Спеку цілком не читай.
 
 Контекстна дисципліна: тести під час ітерації — тихим репортером (`npx vitest run --reporter=dot`); довгий вивід (лог, дамп, дерево файлів, wrangler tail) — у файл, у контекст лише підсумок; прочитане не перечитуй.
 
 Робиш:
+- Перевір ліміти тригерів крону й wall-time запланованого обробника на платному акаунті; `/health` після деплою показує `cron=` < 20m.
 - План відкату — у PR до будь-якої команди на prod.
 - backup:prod — тепер із реальними даними: перевір, що файл містить рядки workout_sets (кількість — у «Перевірку»).
 - db:migrate:prod → deploy:prod → smoke: /vaga, /progres; нагадування — тимчасово постав через /nalashtuvannia час на найближче вікно, дочекайся, поверни налаштування; wrangler tail production у файл — без помилок.
