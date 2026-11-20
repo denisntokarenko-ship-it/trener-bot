@@ -511,3 +511,77 @@ describe("N6/N9", () => {
     expect(view().text).toBe("Програму не знайдено — запусти сид (docs/RUNBOOK.md).");
   });
 });
+
+// Рев'ю Фази 1 (F-1).
+describe("F-1 В1: призначення через БД на ≥ 2 сесіях, пропуски не витісняють зараховані", () => {
+  /** Повністю пропущена сесія слота 0 (три ⏭): у БД це рядки skipped = 1, у спеці — не сесія. */
+  async function seedSkipped(dayCode: string, startedAt: number): Promise<void> {
+    const day = (await repo.getProgramDay(OWNER, dayCode))!;
+    const w = (await repo.startWorkout(OWNER, day.id, startedAt))!.workout;
+    const slot = day.slots[0]!;
+    for (let n = 1; n <= slot.sets; n++) {
+      await repo.upsertSet(OWNER, {
+        workoutId: w.id, programExerciseId: slot.id, exerciseId: slot.exercise.id, setNo: n,
+        weightKg: null, reps: null, prescribedWeightKg: 60, prescribedReps: 6, skipped: true,
+      });
+    }
+    await repo.finishWorkout(OWNER, w.id, 3, startedAt + 3_000_000);
+  }
+  const DAY = 86_400_000;
+
+  it("[невдача, пропуск, пропуск, невдача] → deload 50 × 6 (правило 4)", async () => {
+    await seedDone("A", T0 - DAY * 8, [{ slot: 0, weight: 60, reps: 6 }, { slot: 0, weight: 60, reps: 6 }, { slot: 0, weight: 60, reps: 5 }], 4);
+    await seedSkipped("A", T0 - DAY * 6);
+    await seedSkipped("A", T0 - DAY * 4);
+    await seedDone("A", T0 - DAY * 2, [{ slot: 0, weight: 60, reps: 6 }, { slot: 0, weight: 60, reps: 5 }, { slot: 0, weight: 60, reps: 5 }], 4);
+    await seedDone("B", T0 - DAY, [{ slot: 0, weight: 40, reps: 8 }]);
+    await say("/trening");
+    expect(view().text).toContain("День A · вправа 1/5");
+    expect(view().text).toContain("50 кг × 6 · підхід 1/3");
+  });
+
+  it("[успіх e5, пропуск, пропуск, успіх e5] → 45 × 6 (правило 5: не двічі поспіль)", async () => {
+    const full = [0, 1, 2].map(() => ({ slot: 0, weight: 40, reps: 10 }));
+    await seedDone("A", T0 - DAY * 8, full, 5);
+    await seedSkipped("A", T0 - DAY * 6);
+    await seedSkipped("A", T0 - DAY * 4);
+    await seedDone("A", T0 - DAY * 2, full, 5);
+    await seedDone("B", T0 - DAY, [{ slot: 0, weight: 40, reps: 8 }]);
+    await say("/trening");
+    expect(view().text).toContain("45 кг × 6 · підхід 1/3");
+  });
+});
+
+describe("F-1 В2: кількість запитів D1 на натискання", () => {
+  it("✅ другого підходу того самого слота: ≤ 7 запитів D1 (було 9)", async () => {
+    await say("/trening");
+    await press("✅"); // підхід 1
+    const next = button("✅").callback_data;
+    let queries = 0;
+    const counted = {
+      ...env,
+      DB: new Proxy(env.DB, {
+        get(t, k) {
+          const v = Reflect.get(t, k) as unknown;
+          if (k === "prepare") return (q: string) => { queries++; return t.prepare(q); };
+          return typeof v === "function" ? v.bind(t) : v;
+        },
+      }),
+    };
+    const handler = telegramHandler(counted, { fetch: tg.fetch, botInfo, now: () => nowMs });
+    await handleRequest(webhookRequest(cbUpdate(next)), counted, handler);
+    expect(await setCount()).toBe(2);
+    expect(queries).toBeLessThanOrEqual(7);
+  });
+});
+
+describe("F-1 В3: дві вимоги спеки", () => {
+  it("«s» з n ≠ рядків + 1 (розрив нумерації) → «Кнопка застаріла — показую поточний підхід», рядка немає", async () => {
+    await say("/trening");
+    const cb = parseCb(button("✅").callback_data)!;
+    expect(cb.n).toBe(1);
+    await tap(encodeCb("s", { ...cb, n: 3 }));
+    expect(lastAnswer()).toBe("Кнопка застаріла — показую поточний підхід");
+    expect(await setCount()).toBe(0);
+  });
+});
