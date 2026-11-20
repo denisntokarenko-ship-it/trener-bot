@@ -34,7 +34,7 @@
 | 2.5 | Деплой Фази 2 у прод | Opus 5.5 | xhigh | phase-2/05-prod-release | ⬜ | ⬜ |
 | R-2 | Незалежне рев'ю Фази 2 | Opus 5.5 | high | review/phase-2 | ⬜ | — |
 | F-2 | Виправлення за рев'ю Фази 2 | Opus 5.5 | high | fix/phase-2-review | ⬜ | — |
-| 3.0 | Специфікація Фази 3 | Opus 5.5 | high | docs/spec-phase-3 | 🟡 | ⬜ |
+| 3.0 | Специфікація Фази 3 | Opus 5.5 | high | docs/spec-phase-3 | ✅ | ✅ |
 | 3.1 | Схема харчування й шар даних | Opus 5.5 | high | phase-3/01-food-data | ⬜ | ⬜ |
 | 3.2 | Денна норма КБЖУ з профілю анкети 1b | Opus 5.5 | high | phase-3/02-targets | ⬜ | — |
 | 3.3 | Розпізнавання їжі за фото | Opus 5.5 | xhigh | phase-3/03-food-photo | ⬜ | ⬜ |
@@ -108,7 +108,7 @@
 
 ## Нотатка для наступного кроку
 
-- 3.0 🟡 (PR 3.0 — **не мержиться**, 🔒 чекає людини; запущено паралельно з деплоєм 2.5 за рішенням власника): `docs/spec/phase-3.md` (схема, сид USDA SR Legacy CC0, норма Міффліна, потік фото, ліміт $0,30/день, тренд ±100); цін і лімітів Anthropic звірено 2026-11-20. Джерело сиду власник підтвердив 2026-11-20; лишилось рев'ю 3.0; ворота 3.1 — 3.0 ✅ і R-2 закрите.
+- 3.0 ✅ (PR #33; рев'ю ✅ `docs/reviews/3.0.md`, виправлено В1–В6, Д1–Д8): спека розрізана на `phase-3.md` (дані, сид USDA SR Legacy CC0, норма, `/yizha`, тренд) і `phase-3-photo.md` (фото, ШІ, ліміт витрат — резервування); 3.3 читає обидва. Ключ Anthropic — один пакет секретів у 3.3. Ворота 3.1: R-2 закрите (🟡 2.5/R-2 ще ⬜). Джерело сиду власник підтвердив 2026-11-20.
 - 2.4 ✅: `/nalashtuvannia` (`src/bot/settings-flow.ts`, callback `s:`), `repo.getUserSettings/updateUserSettings` з валідацією, `src/domain/settings.ts`, скидання днів в `onboarding.accept`. Тести `test/settings.test.ts` (17); мутанти 3/3 вбито (останній день, скидання днів, сітка годин).
 - 2.3 ✅ (PR #30; рев'ю ✅ `docs/reviews/2.3.md`, виправлено В1 `cron_state.last_ok_at` + `/health` `ok cron=Nm ok=Nm` (міграція `0006`), В2 тести tz, Д3, Д5, Д6): міграція `0005` (`users.training_days/remind_time/weigh_time`, `reminders_sent`, `cron_state`), `src/reminders.ts` (заявити → надіслати → зняти при визначеній недоставці; `Promise.allSettled` по парах), `src/cron.ts` (два незалежні try/catch + `cron_state` + лог-лічильники), `src/domain/{reminders,week-report}.ts`, `localParts`/`localDayStartUtc` у `time.ts`, `/health` → `ok cron=7m`, кроки 1 і 4 числа (`weight.replyToReminder`/`bareNumber`), `bot/prescribe.ts`, `getLastDoneWorkout` лише активної програми (P2.3.12). Тести 548, мутанти `docs/mutants/2.3.md` 21/21.
 - 2.2 ✅ (PR — мерж після CI): `src/domain/records.ts` (Еплі, найкращий підхід, рекорд без вікна, `buildProgress`), `repo.getProgressSets/getFirstWeight`, екран `/progres` (вага тіла + вправи, [📜 Останні тренування] ↔ [⬅️ Назад] через `p:r`/`p:b`), меню `/progres` = «Прогрес: вага, рекорди, e1RM». Мутанти `docs/mutants/2.2.md` 7/7.
