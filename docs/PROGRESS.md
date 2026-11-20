@@ -35,7 +35,7 @@
 | R-2 | Незалежне рев'ю Фази 2 | Opus 5.5 | high | review/phase-2 | ⬜ | — |
 | F-2 | Виправлення за рев'ю Фази 2 | Opus 5.5 | high | fix/phase-2-review | ⬜ | — |
 | 3.0 | Специфікація Фази 3 | Opus 5.5 | high | docs/spec-phase-3 | ✅ | ✅ |
-| 3.1 | Схема харчування й шар даних | Opus 5.5 | high | phase-3/01-food-data | ⬜ | ⬜ |
+| 3.1 | Схема харчування й шар даних | Opus 5.5 | high | phase-3/01-food-data | 🟡 | ⬜ |
 | 3.2 | Денна норма КБЖУ з профілю анкети 1b | Opus 5.5 | high | phase-3/02-targets | ⬜ | — |
 | 3.3 | Розпізнавання їжі за фото | Opus 5.5 | xhigh | phase-3/03-food-photo | ⬜ | ⬜ |
 | 3.4 | Корекція норми за трендом ваги | Sonnet 5.5 | high | phase-3/04-target-trend | ⬜ | — |
@@ -113,6 +113,7 @@
 
 ## Нотатка для наступного кроку
 
+- 3.1 🟡 (🔒 мержить людина після рев'ю; PR — гілка `phase-3/01-food-data`): міграція `0007_nutrition.sql` (6 таблиць, CHECK і в SQL, і в `schema.ts`; вручну, бо знімка 0006 немає), repo харчування (`findFoodByAlias`, `insertEstimatedFood`, `createPendingMeal`, `getMeal`, `awaitingGramsMeal`, `confirmMeal`, `updateMealGrams`, `cancelMeal`, `expirePendingMeals`, `dayTotals`, `reserveAiUsage`/`settleAiUsage`/`releaseAiUsage`/`aiSpendToday`, `getTargetOn`, `insertTarget`), `normalizeAlias` (`src/domain/text.ts`), сид 106 продуктів USDA SR Legacy (`scripts/foods-map.json` → `build-foods-seed.ts` → `foods-seed.json` → `seed-foods.ts`, `npm run seed:foods:*`). Тести: `test/text.test.ts`, `foods-seed.test.ts`, `nutrition-repo.test.ts`; повний vitest 621 ✅; мутанти 20/20 (`docs/mutants/3.1.md`). Preview: міграція 0007 застосована, сид двічі (971 → 0 записаних рядків), `foods`=106, `food_aliases`=253, версія Worker `8d61bbdb`, `/health` ok; прод не чіпали. Для 3.2–3.4: `foods.fdc_ref` має частковий UNIQUE (ключ ідемпотентності сиду — доповнення до спеки); `meals.await_grams_at`/`message_id` пише 3.3 (сеттерів у repo 3.1 немає); `expirePendingMeals(cutoff)` ще не підключений до крону (3.3). Перед продом — `npm run backup:prod`, потім `db:migrate:prod` і `seed:foods:prod` (3.5).
 - 2.5 🟡 (PR #32, 🔒 мержить людина після рев'ю): прод: версія `95478ee1`, message `main 78529d5` (довільний рядок, не sha; вміст підтвердив живий пакет — налаштування змінено через `/nalashtuvannia`), міграції 0000–0006, крон живий. Відкат — RUNBOOK «Реліз Фази 2», значення — коментар PR #32. Живий пакет пройдено (вага, анкета, `/progres`), нагадування — свідок завтра 06:30 UTC («Борг» [2.5]). Далі: рев'ю 2.5, потім R-2.
 - 3.0 ✅ (PR #33; рев'ю ✅ `docs/reviews/3.0.md`, виправлено В1–В6, Д1–Д8): спека розрізана на `phase-3.md` (дані, сид USDA SR Legacy CC0, норма, `/yizha`, тренд) і `phase-3-photo.md` (фото, ШІ, ліміт витрат — резервування); 3.3 читає обидва. Ключ Anthropic — один пакет секретів у 3.3. Ворота 3.1: R-2 закрите (🟡 2.5/R-2 ще ⬜). Джерело сиду власник підтвердив 2026-11-20.
 - 2.4 ✅: `/nalashtuvannia` (`src/bot/settings-flow.ts`, callback `s:`), `repo.getUserSettings/updateUserSettings` з валідацією, `src/domain/settings.ts`, скидання днів в `onboarding.accept`. Тести `test/settings.test.ts` (17); мутанти 3/3 вбито (останній день, скидання днів, сітка годин).
