@@ -18,7 +18,7 @@
 | 1.5 | Перший деплой у прод | Opus 5.5 | xhigh | phase-1/05-prod-release | ✅ | ✅ |
 | R-1 | Незалежне рев'ю Фази 1 | Opus 5.5 | high | review/phase-1 | ⬜ | — |
 | F-1 | Виправлення за рев'ю Фази 1 | Opus 5.5 | high | fix/phase-1-review | ⬜ | — |
-| 1b.0 | Специфікація Фази 1b | Opus 5.5 | high | docs/spec-phase-1b | 🟡 | ⬜ |
+| 1b.0 | Специфікація Фази 1b | Opus 5.5 | high | docs/spec-phase-1b | ✅ | ✅ |
 | 1b.1 | Схема профілю, генератор плану, відео-посилання | Opus 5.5 | high | phase-1b/01-profile-plan | ⬜ | ⬜ |
 | 1b.2 | Потік опитування в Telegram | Opus 5.5 | high | phase-1b/02-onboarding-flow | ⬜ | ⬜ |
 | 1b.3 | Назви тренувань у всьому боті | Sonnet 5.5 | medium | phase-1b/03-workout-names | ⬜ | — |
