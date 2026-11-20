@@ -78,6 +78,7 @@ export const BOT_COMMANDS: ReadonlyArray<{ command: string; description: string 
   { command: "progres", description: "Прогрес: вага, рекорди, e1RM" },
   { command: "vaga", description: "Записати вагу тіла" },
   { command: "profil", description: "Профіль і план" },
+  { command: "nalashtuvannia", description: "Дні, час нагадувань, часовий пояс" },
 ];
 
 /** `setMyDescription` ≤ 512 символів: показується в порожньому чаті до першого /start. */
@@ -711,3 +712,50 @@ export function weeklyReportText(m: WeeklyReportTextModel): string {
   if (m.workouts > 0 && next) lines.push(`Далі: ${next}`);
   return clip(lines.join("\n"));
 }
+
+// --- /nalashtuvannia (docs/spec/phase-2.md, розділ 5) ---
+
+export const WEEKDAYS_UK = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"] as const;
+
+export const SETTINGS_BTN = {
+  days: "📅 Дні",
+  remind: "🏋️ Час",
+  weigh: "⚖️ Час",
+  tz: "🌍 Пояс",
+  profile: "👤 Профіль",
+  done: "✅ Готово",
+  back: "⬅️ Назад",
+  off: "🔕 Вимкнути",
+} as const;
+
+export const SETTINGS_MSG = {
+  stale: "Це вже неактуально",
+  lastDay: "Потрібен хоча б один день",
+  failed: "Щось пішло не так",
+  saved: "Збережено",
+  tzBad: "Не знаю такого поясу. Приклад: Europe/Kyiv, Europe/Warsaw",
+} as const;
+
+export const settingsTzHint = (current: string): string => `Надішли: /nalashtuvannia Europe/Warsaw (зараз ${current})`;
+export const settingsTzSaved = (tz: string): string => `🌍 Часовий пояс: <b>${esc(tz)}</b>`;
+export const settingsDaysTitle = "📅 <b>Дні тренувань</b>\nНатисни день, щоб додати чи зняти.";
+export const settingsTimeTitle = (kind: "remind" | "weigh", hour?: number): string =>
+  `${kind === "remind" ? "🏋️ <b>Нагадування про тренування</b>" : "⚖️ <b>Нагадування про вагу</b>"}\n${hour === undefined ? "Обери годину." : `Година ${String(hour).padStart(2, "0")}:__ — обери хвилини.`}`;
+
+export function settingsText(s: { days: readonly number[]; remindTime: string | null; weighTime: string | null; tz: string; planDays: number | null }): string {
+  const lines = [
+    "⚙️ <b>Налаштування</b>",
+    `📅 Дні тренувань: ${s.days.map((d) => WEEKDAYS_UK[d - 1]).join(", ")}`,
+    `🏋️ Нагадування про тренування: ${s.remindTime ?? "вимкнено"}`,
+    `⚖️ Нагадування про вагу: ${s.weighTime ?? "вимкнено"}`,
+    `🌍 Часовий пояс: ${esc(s.tz)}`,
+  ];
+  if (s.planDays !== null && s.planDays !== s.days.length) {
+    lines.push("", `<i>План розрахований на ${s.planDays} дн., обрано ${s.days.length} — це лише нагадування.</i>`);
+  }
+  return lines.join("\n");
+}
+
+/** Рядок після активації плану з іншим числом днів: дні нагадувань скинуто. */
+export const settingsDaysReset = (n: number, days: readonly number[]): string =>
+  `📅 Дні нагадувань скинув під ${n} трен. на тиждень: ${days.map((d) => WEEKDAYS_UK[d - 1]).join(", ")}. Змінити — /nalashtuvannia`;

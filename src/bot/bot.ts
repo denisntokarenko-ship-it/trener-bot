@@ -3,6 +3,7 @@ import { Bot, BotError } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import type { Repo } from "../db/repo";
 import { createOnboardingFlow } from "./onboarding";
+import { createSettingsFlow, isSettingsCb } from "./settings-flow";
 import { NOT_UNDERSTOOD, SOMETHING_WRONG } from "./texts";
 import { createWeightFlow } from "./weight-flow";
 import { createWorkoutFlow } from "./workout-flow";
@@ -36,6 +37,7 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
   const flow = createWorkoutFlow(repo, now);
   const onboarding = createOnboardingFlow(repo, now);
   const weight = createWeightFlow(repo, now);
+  const settings = createSettingsFlow(repo, (ctx) => onboarding.profil(ctx));
 
   // Будь-яка команда знімає очікування ваги й виконується далі (phase-1-flow.md, «Введення ваги», п. 5).
   bot.use(async (ctx, next) => {
@@ -49,7 +51,11 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
   bot.command("progres", (ctx) => flow.progres(ctx));
   bot.command("prohrama", (ctx) => flow.prohrama(ctx));
   bot.command("vaga", (ctx) => weight.vaga(ctx));
-  bot.on("callback_query:data", (ctx) => (ctx.callbackQuery.data.startsWith("o:") ? onboarding.callback(ctx) : flow.callback(ctx)));
+  bot.command("nalashtuvannia", (ctx) => settings.command(ctx));
+  bot.on("callback_query:data", (ctx) => {
+    const d = ctx.callbackQuery.data;
+    return d.startsWith("o:") ? onboarding.callback(ctx) : isSettingsCb(d) ? settings.callback(ctx) : flow.callback(ctx);
+  });
   bot.on("callback_query", (ctx) => ctx.answerCallbackQuery());
   // Текст, число — порядок із phase-2.md, розділ 2 (перший збіг виграє): 1) reply на нагадування про вагу; 2) вага підходу, що
   // чекає; 3) анкета; 4) голе число при відкритому нагадуванні про вагу; 5) «Не зрозумів» (+ підказка для чисел 30–300).
