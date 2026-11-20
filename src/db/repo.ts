@@ -70,6 +70,8 @@ export interface Workout {
 export interface WorkoutSummaryRow {
   id: number;
   dayCode: string;
+  /** Назва дня (NULL → показ за кодом). */
+  dayTitle: string | null;
   status: Exclude<WorkoutStatus, "active">;
   startedAt: number;
   effort: number | null;
@@ -305,8 +307,8 @@ export function createRepo(db: Db) {
     /** Останні n тренувань done і abandoned користувача, від нових до старих, з підходами за слотами. */
     async getRecentWorkouts(userId: number, n: number): Promise<WorkoutSummaryRow[]> {
       if (n <= 0) return [];
-      const heads = await db.all<{ id: number; day_code: string; status: "done" | "abandoned"; started_at: number; effort: number | null }>(sql`
-        SELECT w.id, d.code AS day_code, w.status, w.started_at, w.effort
+      const heads = await db.all<{ id: number; day_code: string; day_title: string | null; status: "done" | "abandoned"; started_at: number; effort: number | null }>(sql`
+        SELECT w.id, d.code AS day_code, d.title AS day_title, w.status, w.started_at, w.effort
         FROM workouts w JOIN program_days d ON d.id = w.program_day_id
         WHERE w.user_id = ${userId} AND w.status IN ('done', 'abandoned')
         ORDER BY w.started_at DESC, w.id DESC
@@ -342,7 +344,7 @@ export function createRepo(db: Db) {
           }
           exs[exs.length - 1]!.sets.push({ setNo: r.set_no, weightKg: r.weight_kg, reps: r.reps, skipped: r.skipped === 1 });
         }
-        return { id: h.id, dayCode: h.day_code, status: h.status, startedAt: h.started_at, effort: h.effort, exercises: exs };
+        return { id: h.id, dayCode: h.day_code, dayTitle: h.day_title, status: h.status, startedAt: h.started_at, effort: h.effort, exercises: exs };
       });
     },
 

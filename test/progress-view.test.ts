@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fmtLocalDate, fmtSets, NO_WORKOUTS, programText, progressText } from "../src/bot/progress-view";
+import { dayName } from "../src/bot/workout-view";
 import type { ProgramDay, WorkoutSummaryRow } from "../src/db/repo";
 
 const set = (setNo: number, weightKg: number | null, reps: number | null, skipped = false) => ({ setNo, weightKg, reps, skipped });
@@ -7,6 +8,7 @@ const ex = (nameUk: string, sets: ReturnType<typeof set>[]) => ({ nameUk, sets }
 const wk = (id: number, startedAt: number, over: Partial<WorkoutSummaryRow> = {}): WorkoutSummaryRow => ({
   id,
   dayCode: "A",
+  dayTitle: null,
   status: "done",
   startedAt,
   effort: 4,
@@ -55,13 +57,13 @@ describe("progressText", () => {
   it("знімок: нові першими, abandoned — «не завершене»", () => {
     const text = progressText(
       [
-        wk(2, THU + 86_400_000 * 2, { dayCode: "B", status: "abandoned", effort: null, exercises: [ex("Румунська тяга зі штангою", [set(1, 50, 7), set(2, null, null, true)])] }),
+        wk(2, THU + 86_400_000 * 2, { dayCode: "B", dayTitle: "Низ", status: "abandoned", effort: null, exercises: [ex("Румунська тяга зі штангою", [set(1, 50, 7), set(2, null, null, true)])] }),
         wk(1, THU),
       ],
       "Europe/Kyiv",
     );
     expect(text).toBe(
-      ["25.10 (сб) · B · не завершене", "Румунська тяга зі штангою 50×7,—", "", "23.10 (чт) · A · 4/5", "Присідання 60×8,8,7 · Жим лежачи 45×8,8,8"].join("\n"),
+      ["25.10 (сб) · Низ · не завершене", "Румунська тяга зі штангою 50×7,—", "", "23.10 (чт) · День A · 4/5", "Присідання 60×8,8,7 · Жим лежачи 45×8,8,8"].join("\n"),
     );
   });
   it("> 4096 — відкидаються найстаріші, найновіше лишається", () => {
@@ -73,7 +75,7 @@ describe("progressText", () => {
     expect(text.length).toBeLessThanOrEqual(4096);
     expect(text.startsWith("23.10 (чт)")).toBe(true);
     expect(text).not.toContain("19.10");
-    expect((text.match(/· A ·/g) ?? []).length).toBeLessThan(5);
+    expect((text.match(/· День A ·/g) ?? []).length).toBeLessThan(5);
   });
 });
 
@@ -86,27 +88,35 @@ describe("programText", () => {
     title: null,
     slots: names.map((n, i) => ({ id: i + 1, position: i + 1, sets: 3, repMin: 6, repMax: 10, exercise: { nameUk: n } as never })),
   });
-  const model = (activeDayCode: string | null) => ({
+  const model = (activeDayName: string | null) => ({
     days: [day("A", ["Присідання зі штангою", "Жим лежачи"]), day("B", ["Румунська тяга зі штангою"])],
     next: {
-      dayCode: "B",
+      dayName: "День B",
       lines: [
         { nameUk: "Румунська тяга зі штангою", bodyweight: false, weightKg: 50, targetReps: 7 },
         { nameUk: "Підтягування", bodyweight: true, weightKg: 0, targetReps: 5 },
       ],
     },
-    activeDayCode,
+    activeDayName,
   });
   it("знімок без active", () => {
     expect(programText(model(null))).toBe(
       [
         "День A\n1. Присідання зі штангою — 3 × 6–10\n2. Жим лежачи — 3 × 6–10",
         "День B\n1. Румунська тяга зі штангою — 3 × 6–10",
-        "➡️ Наступне: день B\nРумунська тяга зі штангою — 50 кг × 7\nПідтягування — власна вага × 5",
+        "➡️ Наступне: День B\nРумунська тяга зі штангою — 50 кг × 7\nПідтягування — власна вага × 5",
       ].join("\n\n"),
     );
   });
   it("є active — додатковий рядок", () => {
-    expect(programText(model("A")).endsWith("\n\nЗараз триває: день A — /trening, щоб продовжити")).toBe(true);
+    expect(programText(model("День A")).endsWith("\n\nЗараз триває: День A — /trening, щоб продовжити")).toBe(true);
+  });
+});
+
+describe("dayName", () => {
+  it("title, інакше «День <code>»; порожній title — теж запасний", () => {
+    expect(dayName({ code: "UP", title: "Верх" })).toBe("Верх");
+    expect(dayName({ code: "UP", title: null })).toBe("День UP");
+    expect(dayName({ code: "UP", title: "  " })).toBe("День UP");
   });
 });

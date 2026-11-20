@@ -60,7 +60,7 @@ describe("/progres", () => {
     for (let i = 0; i < 7; i++) await seedWorkout(i % 2 === 0 ? "A" : "B", T0 + i * DAY, "done", () => [20, 8]);
     const text = await say("/progres");
     const heads = text.split("\n\n").map((b) => b.split("\n")[0]);
-    expect(heads).toEqual(["26.10 (нд) · A · 4/5", "25.10 (сб) · B · 4/5", "24.10 (пт) · A · 4/5", "23.10 (чт) · B · 4/5", "22.10 (ср) · A · 4/5"]);
+    expect(heads).toEqual(["26.10 (нд) · Все тіло A · 4/5", "25.10 (сб) · Все тіло B · 4/5", "24.10 (пт) · Все тіло A · 4/5", "23.10 (чт) · Все тіло B · 4/5", "22.10 (ср) · Все тіло A · 4/5"]);
     expect(text).toContain("Присідання зі штангою 20×8,8,8");
   });
 
@@ -70,7 +70,7 @@ describe("/progres", () => {
     await repo.startWorkout(OWNER, day.id, T0 + DAY);
     const text = await say("/progres");
     expect(text.split("\n\n")).toHaveLength(1);
-    expect(text.startsWith("20.10 (пн) · A · не завершене")).toBe(true);
+    expect(text.startsWith("20.10 (пн) · Все тіло A · не завершене")).toBe(true);
   });
 
   it("чужі тренування не показуються (ізоляція)", async () => {
@@ -86,16 +86,16 @@ describe("/progres", () => {
 describe("/prohrama", () => {
   it("без done — день A, обидва дні зі слотами, калібрування без active", async () => {
     const text = await say("/prohrama");
-    expect(text).toContain("День A\n1. Присідання зі штангою — 3 × 6–10");
-    expect(text).toContain("День B\n1. Румунська тяга зі штангою");
-    expect(text).toContain("➡️ Наступне: день A\n");
+    expect(text).toContain("Все тіло A\n1. Присідання зі штангою — 3 × 6–10");
+    expect(text).toContain("Все тіло B\n1. Румунська тяга зі штангою");
+    expect(text).toContain("➡️ Наступне: Все тіло A\n");
     expect(text).not.toContain("Зараз триває");
   });
 
   it("після done A — наступний B з призначеними вагами", async () => {
     await seedWorkout("A", T0, "done", () => [20, 8]);
     const text = await say("/prohrama");
-    expect(text).toContain("➡️ Наступне: день B");
+    expect(text).toContain("➡️ Наступне: Все тіло B");
     const next = text.slice(text.indexOf("➡️"));
     expect(next).toMatch(/Румунська тяга зі штангою — \d+(,\d+)? кг × \d+/);
   });
@@ -103,7 +103,7 @@ describe("/prohrama", () => {
   it("є active — рядок «Зараз триває»", async () => {
     const day = (await repo.getProgramDay(OWNER, "A"))!;
     await repo.startWorkout(OWNER, day.id, nowMs - 1000);
-    expect((await say("/prohrama")).endsWith("Зараз триває: день A — /trening, щоб продовжити")).toBe(true);
+    expect((await say("/prohrama")).endsWith("Зараз триває: Все тіло A — /trening, щоб продовжити")).toBe(true);
   });
 
   it("без програми — повідомлення про сид", async () => {
