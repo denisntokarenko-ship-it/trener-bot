@@ -5,7 +5,7 @@ import { runSetBotProfile, type SetBotProfileIo } from "../scripts/set-bot-profi
 import { ENUMS, LIMIT_OPTS, emptyDayScreen, enumScreen, goalNoteScreen, limitsScreen, liftScreen, noteScreen, numberScreen, planScreen, profileScreen, resumeScreen, welcomeScreen, type Screen } from "../src/bot/onboarding-view";
 import { fmtSets, progressText } from "../src/bot/progress-view";
 import {
-  BOT_COMMANDS, BOT_DESCRIPTION, BOT_SHORT_DESCRIPTION, BTN, RATING_TEXT, TELEGRAM_TEXT_MAX, badLift, badWeightText, clip, dayName, esc, greeting,
+  BOT_COMMANDS, BOT_DESCRIPTION, NEXT_WORKOUT, dayLabel, BOT_SHORT_DESCRIPTION, BTN, RATING_TEXT, TELEGRAM_TEXT_MAX, badLift, badWeightText, clip, dayName, esc, greeting,
   programText, recordReps, recordWeight, summaryText, swapTitle, weightPromptText,
 } from "../src/bot/texts";
 import { screenKeyboard, screenText, swapMenu, weightPrompt, type ScreenModel } from "../src/bot/workout-view";
@@ -248,13 +248,13 @@ describe("знімки ключових екранів", () => {
       "🏋️ <b>Все тіло A</b> · 52 хв
       Підходів: <b>13 з 14</b> (пропущено 1)
       Обсяг: <b>6 240 кг</b>
-      Тяжкість: <b>4/5</b>
+      Складність: <b>4/5</b>
 
       🏆 <b>Рекорди</b>
       • Жим лежачи — <b>60 кг × 8</b>
       • Підтягування — <b>6 повт.</b>
 
-      Наступне: <b>Все тіло B</b>"
+      Наступне тренування: <b>Все тіло B</b>"
     `);
   });
 
@@ -266,14 +266,14 @@ describe("знімки ключових екранів", () => {
     expect(programText({ name: "План: сила", days: [day("FA", "Все тіло A", ["Присідання зі штангою", "Жим лежачи"]), day("FB", "Все тіло B", ["Румунська тяга"])], next: { dayName: "Все тіло A", lines: [{ nameUk: "Присідання зі штангою", bodyweight: false, weightKg: 60, targetReps: 6 }] }, activeDayName: null })).toMatchInlineSnapshot(`
       "📋 <b>План: сила</b>
 
-      <b>Все тіло A</b>
+      <b>Все тіло A</b> · ноги
       1. Присідання зі штангою — 3 × 6–10
       2. Жим лежачи — 3 × 6–10
 
-      <b>Все тіло B</b>
+      <b>Все тіло B</b> · ноги
       1. Румунська тяга — 3 × 6–10
 
-      ➡️ <b>Наступне: Все тіло A</b>
+      ➡️ <b>Наступне тренування: Все тіло A</b>
       Присідання зі штангою — 60 кг × 6"
     `);
     expect(progressText([], "Europe/Kyiv")).toMatchInlineSnapshot(`
@@ -281,7 +281,7 @@ describe("знімки ключових екранів", () => {
       Почни перше: /trening"
     `);
     expect(RATING_TEXT).toMatchInlineSnapshot(`
-      "✅ <b>Готово!</b> Як тяжко було?
+      "✅ <b>Готово!</b> Наскільки було важко?
       <i>1 — легко, 5 — на межі.</i>"
     `);
     expect(greeting("Денис")).toMatchInlineSnapshot(`
@@ -316,7 +316,7 @@ describe("знімки ключових екранів", () => {
     expect(sn(enumScreen("goal", null, { back: false, skip: false }))).toMatchInlineSnapshot(`
       "<b>🎯 Чого хочеш від тренувань?</b>
       <i>Питання 1 з 15</i>
-      Без цілі я не складу план, тому це питання не пропустити.
+      Без цілі я не складу план, тому його не можна пропустити.
 
       [🔥 Схуднути] [💪 Набрати мʼязи]
       [🔄 Рекомпозиція] [🏋️ Сила]
@@ -435,5 +435,31 @@ describe("P3.6 set-bot-profile", () => {
     const h2 = harness();
     expect(await runSetBotProfile({ ...h2.io, env: {} })).toBe(1);
     expect(h2.calls).toEqual([]);
+  });
+});
+
+describe("рев'ю 1b.4: мова й межі", () => {
+  it("В1: «прийом їжі» відмінюється за числом", () => {
+    const text = (n: number) => profileScreen({ goal: "muscle", limits: null, mealsPerDay: n } as ProfileRow, null, [], false).text;
+    expect(text(1)).toContain("1 прийом їжі");
+    for (const n of [2, 3, 4]) expect(text(n)).toContain(`${n} прийоми їжі`);
+    expect(text(5)).toContain("5+ прийомів їжі");
+    expect(text(3)).not.toContain("3 прийомів");
+  });
+
+  it("Д8: clip одного довгого рядка без переносів не рве сутність і вкладається в ліміт", () => {
+    const out = clip("я".repeat(4094) + "&amp;" + "я".repeat(10));
+    expect(out.length).toBeLessThanOrEqual(TELEGRAM_TEXT_MAX);
+    expect(out.endsWith("&…")).toBe(false);
+    expectValid(out);
+  });
+
+  it("/prohrama: підказка складу дня й єдиний підпис «Наступне тренування» (злиття з #24 не може їх прибрати)", () => {
+    const e = (g: string) => exercise({ muscleGroup: g as never });
+    const day = { id: 1, programId: 1, code: "FA", position: 1, title: "Все тіло A", slots: ["legs", "chest", "back"].map((g, i) => ({ id: i + 1, position: i + 1, sets: 3, repMin: 6, repMax: 10, exercise: e(g) })) };
+    const text = programText({ name: "План", days: [day], next: { dayName: dayLabel(day), lines: [] }, activeDayName: null });
+    expect(text).toContain("<b>Все тіло A</b> · ноги, груди, спина");
+    expect(text).toContain(`➡️ <b>${NEXT_WORKOUT}: Все тіло A (ноги, груди, спина)</b>`);
+    expect(summaryText({ dayName: "x", minutes: 1, setsTotal: 1, setsDone: 1, setsSkipped: 0, volumeKg: 1, effort: 3, records: [], nextDayName: "Все тіло B" })).toContain(`${NEXT_WORKOUT}: <b>Все тіло B</b>`);
   });
 });

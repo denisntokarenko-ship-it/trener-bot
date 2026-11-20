@@ -40,6 +40,34 @@ export function dayName(d: { code: string; title: string | null }): string {
   return d.title && d.title.trim() !== "" ? d.title : `День ${d.code}`;
 }
 
+/** Групи мʼязів у підказці складу дня. Ключі = exercises.muscle_group. */
+export const MUSCLE_UK: Record<string, string> = {
+  legs: "ноги",
+  chest: "груди",
+  back: "спина",
+  shoulders: "плечі",
+  core: "кор",
+};
+
+/** Підказка складу дня: до 3 різних груп мʼязів за порядком вправ (детерміновано, з каталогу; у БД не зберігається). */
+export function dayHint(slots: readonly { exercise: { muscleGroup: string } }[]): string {
+  const seen: string[] = [];
+  for (const s of slots) {
+    const g = MUSCLE_UK[s.exercise.muscleGroup];
+    if (g && !seen.includes(g)) seen.push(g);
+  }
+  return seen.slice(0, 3).join(", ");
+}
+
+/** Самодостатня назва дня: «Все тіло A (ноги, груди, спина)»; без слотів — лише назва. */
+export function dayLabel(d: { code: string; title: string | null; slots?: readonly { exercise: { muscleGroup: string } }[] }): string {
+  const h = d.slots ? dayHint(d.slots) : "";
+  return h ? `${dayName(d)} (${h})` : dayName(d);
+}
+
+/** Єдиний підпис «що далі» для підсумку, програми й екрана після анкети. */
+export const NEXT_WORKOUT = "Наступне тренування";
+
 // --- Меню, опис, привітання ---
 
 /** Меню команд (`setMyCommands`): імена без «/», опис ≤ 256 символів за вимогою Telegram. */
@@ -67,7 +95,7 @@ export function greeting(firstName: string): string {
 
 export const SOMETHING_WRONG = "❌ Щось пішло не так. Спробуй ще раз.";
 export const NOT_UNDERSTOOD = "🤔 Не зрозумів. Обери команду з меню: /trening, /prohrama або /progres.";
-export const NO_PROGRAM = "❌ Програму не знайдено. Запусти сид (docs/RUNBOOK.md) або пройди анкету: /start.";
+export const NO_PROGRAM = "❌ Програму не знайдено. Пройди анкету: /start.";
 export const NO_WORKOUTS = "📈 Тренувань ще немає.\nПочни перше: /trening";
 
 /** Відповіді answerCallbackQuery (N6: ≤ 200 символів). Без розмітки: тост показує текст як є. */
@@ -145,7 +173,7 @@ export function screenText(m: ScreenTextModel): string {
 }
 
 export const swapTitle = (name: string): string => `🔁 Чим замінити <b>${esc(name)}</b>?`;
-export const RATING_TEXT = "✅ <b>Готово!</b> Як тяжко було?\n<i>1 — легко, 5 — на межі.</i>";
+export const RATING_TEXT = "✅ <b>Готово!</b> Наскільки було важко?\n<i>1 — легко, 5 — на межі.</i>";
 
 const weightHint = (e: Pick<Exercise, "weightStepKg" | "minWeightKg">): string =>
   `Крок ${fmtKg(e.weightStepKg)} кг, від ${fmtKg(e.minWeightKg)} кг`;
@@ -185,10 +213,10 @@ export function summaryText(m: SummaryTextModel): string {
       ? `Підходів: <b>${m.setsDone} з ${m.setsTotal}</b> (пропущено ${m.setsSkipped})`
       : `Підходів: <b>${m.setsDone} з ${m.setsTotal}</b>`,
     `Обсяг: <b>${fmtInt(m.volumeKg)} кг</b>`,
-    `Тяжкість: <b>${m.effort}/5</b>`,
+    `Складність: <b>${m.effort}/5</b>`,
   ];
   if (m.records.length > 0) lines.push("", "🏆 <b>Рекорди</b>", ...m.records.map((r) => `• ${r}`));
-  lines.push("", `Наступне: <b>${esc(m.nextDayName)}</b>`);
+  lines.push("", `${NEXT_WORKOUT}: <b>${esc(m.nextDayName)}</b>`);
   return clip(lines.join("\n"));
 }
 
@@ -230,12 +258,13 @@ export function programText(m: ProgramTextModel): string {
   const parts: string[] = [`📋 <b>${esc(m.name)}</b>`];
   for (const d of m.days) {
     const slots = d.slots.map((s, i) => `${i + 1}. ${esc(s.exercise.nameUk)} — ${s.sets} × ${s.repMin}–${s.repMax}`);
-    parts.push([`<b>${esc(dayName(d))}</b>`, ...slots].join("\n"));
+    const hint = dayHint(d.slots);
+    parts.push([`<b>${esc(dayName(d))}</b>${hint ? ` · ${hint}` : ""}`, ...slots].join("\n"));
   }
   const next = m.next.lines.map(
     (l) => `${esc(l.nameUk)} — ${l.bodyweight ? "власна вага" : `${fmtKg(l.weightKg)} кг`} × ${l.targetReps}`,
   );
-  parts.push([`➡️ <b>Наступне: ${esc(m.next.dayName)}</b>`, ...next].join("\n"));
+  parts.push([`➡️ <b>${NEXT_WORKOUT}: ${esc(m.next.dayName)}</b>`, ...next].join("\n"));
   if (m.activeDayName) parts.push(`🏋️ Зараз триває: <b>${esc(m.activeDayName)}</b> — /trening, щоб продовжити`);
   return clip(parts.join("\n\n"));
 }
@@ -356,6 +385,9 @@ export const short = (s: string, n = 100): string => (s.length > n ? `${[...s].s
 /** Шапка питання: назва жирним, номер курсивом. */
 export const head = (n: number, title: string): string => `<b>${title}</b>\n<i>Питання ${n} з ${SURVEY_TOTAL}</i>`;
 
+/** 1 прийом їжі · 2–4 прийоми · 5+ прийомів (відмінювання за числом). */
+export const mealsText = (n: number): string => (n >= 5 ? "5+ прийомів їжі" : n === 1 ? "1 прийом їжі" : `${n} прийоми їжі`);
+
 export const daysWord = (n: number): string => (n >= 5 ? "днів" : "дні");
 
 export function welcomeText(intro = ""): string {
@@ -370,7 +402,7 @@ export function welcomeText(intro = ""): string {
 export function enumText(step: EnumStep, hint: string | undefined): string {
   const q = ENUMS[step];
   const lines = [hint, head(q.n, q.title), q.hint ? `<i>${q.hint}</i>` : ""].filter(Boolean);
-  if (step === "goal") lines.push("Без цілі я не складу план, тому це питання не пропустити.");
+  if (step === "goal") lines.push("Без цілі я не складу план, тому його не можна пропустити.");
   return lines.join("\n");
 }
 
@@ -384,7 +416,7 @@ export function goalNoteText(other: boolean, current: string | null | undefined)
 }
 
 export const limitsText = (): string =>
-  `${head(6, "🩹 Є обмеження чи травми?")}\n<i>Познач, що болить або заважає. Я не братиму для тебе вправи, які це навантажують.</i>`;
+  `${head(6, "🩹 Є обмеження чи травми?")}\n<i>Познач, що болить або заважає. Не включатиму вправи, що навантажують ці місця.</i>`;
 
 export function noteText(isDiet: boolean, current: string | null): string {
   const title = isDiet ? head(13, "🍽 Харчові обмеження, алергії") : "📝 <b>Хочеш додати нотатку?</b>";
@@ -472,7 +504,7 @@ export const EMPTY_DAY_TEXT =
   "⚠️ <b>Не вдалося скласти план із такими обмеженнями</b>\nДля одного з днів не вистачає вправ. Змінімо обмеження чи тривалість — або почнімо спочатку.";
 
 export const planAcceptedText = (planName: string, nextDay: string): string =>
-  `✅ <b>Готово!</b> Активовано: ${esc(planName)}.\nНаступне тренування: <b>${esc(nextDay)}</b>. Почати — /trening`;
+  `✅ <b>Готово!</b> Активовано: ${esc(planName)}.\n${NEXT_WORKOUT}: <b>${esc(nextDay)}</b>. Почати — /trening`;
 
 export const RESUME_TEXT = "📝 <b>Анкета не завершена</b>\nПродовжити з місця, де зупинився, чи почати спочатку? Відповіді збережуться.";
 
@@ -514,7 +546,7 @@ export function profileText(
     if (profile.weightKg) body.push(`${fmtKg(profile.weightKg)} кг`);
     if (body.length) lines.push(`👤 ${body.join(" · ")}`);
     const life: string[] = [];
-    if (profile.mealsPerDay) life.push(`${profile.mealsPerDay === 5 ? "5+" : profile.mealsPerDay} прийомів їжі`);
+    if (profile.mealsPerDay) life.push(`${mealsText(profile.mealsPerDay)}`);
     if (profile.sleepBand) life.push(`сон ${SLEEP_TEXT[profile.sleepBand] ?? profile.sleepBand}`);
     if (profile.activity) life.push(`активність ${ACTIVITY_TEXT[profile.activity] ?? profile.activity}`);
     if (life.length) lines.push(`🍽 ${life.join(" · ")}`);

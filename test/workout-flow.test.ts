@@ -165,9 +165,9 @@ describe("P1.3 записати тренування", () => {
     const text = view().text;
     expect(text).toContain("🏋️ <b>Все тіло A</b> · 0 хв");
     expect(text).toContain("Підходів: <b>14 з 14</b>");
-    expect(text).toContain("Тяжкість: <b>4/5</b>");
+    expect(text).toContain("Складність: <b>4/5</b>");
     expect(text).not.toContain("Рекорди");
-    expect(text).toContain("Наступне: <b>Все тіло B</b>");
+    expect(text).toContain("Наступне тренування: <b>Все тіло B (ноги, спина, груди)</b>");
     expect(view().buttons).toHaveLength(0);
     // P1.5.6: кожне натискання — рівно один answerCallbackQuery.
     expect(answers()).toHaveLength(presses + 1);
@@ -299,7 +299,7 @@ describe("P1.5 повтори, застарілі кнопки й продовж
     await tap(five);
     expect(lastAnswer()).toBe("Оцінку вже записано");
     expect((await workoutRow())!.effort).toBe(3);
-    expect(view().text).toContain("Тяжкість: <b>3/5</b>");
+    expect(view().text).toContain("Складність: <b>3/5</b>");
   });
 
   it("P1.5.4 продовження після «перезапуску»: нове повідомлення-екран слота 3, нового тренування немає", async () => {
@@ -598,8 +598,8 @@ describe("1b.3: назви тренувань (P3.2, P3.3)", () => {
   it("день без title → «День A» на екрані, у підсумку й у /prohrama", async () => {
     await env.DB.prepare("UPDATE program_days SET title = NULL").run();
     await say("/prohrama");
-    expect(view().text).toContain("<b>День A</b>\n1.");
-    expect(view().text).toContain("➡️ <b>Наступне: День A</b>");
+    expect(view().text).toContain("<b>День A</b> · ноги, груди, спина\n1.");
+    expect(view().text).toContain("➡️ <b>Наступне тренування: День A (ноги, груди, спина)</b>");
     await say("/trening");
     expect(view().text).toContain("День A · вправа 1/5");
     await say("/prohrama");
@@ -617,7 +617,7 @@ describe("1b.3: назви тренувань (P3.2, P3.3)", () => {
       expect(b.callback_data).not.toContain(LONG);
     }
     await say("/prohrama");
-    expect(view().text).toContain(`<b>${LONG}</b>\n1.`);
+    expect(view().text).toContain(`<b>${LONG}</b> · ноги, груди, спина\n1.`);
     expect(view().text).toContain(`Зараз триває: <b>${LONG}</b>`);
     // Підсумок і /progres: закриваємо тренування A.
     const w = await workoutRow();

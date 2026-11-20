@@ -7,7 +7,7 @@ import { BTN, ANSWER, NOT_UNDERSTOOD, NO_PROGRAM, RATING_TEXT, screenText as ren
 
 // Повторний експорт: решта коду й тести імпортують ці імена звідси.
 export { ANSWER, NOT_UNDERSTOOD, NO_PROGRAM, RATING_TEXT, summaryText };
-export { TELEGRAM_TEXT_MAX, clip, dayName, fmtInt, fmtKg } from "./texts";
+export { TELEGRAM_TEXT_MAX, clip, dayHint, dayLabel, dayName, fmtInt, fmtKg } from "./texts";
 export type { SummaryTextModel as SummaryModel } from "./texts";
 
 export interface ScreenSet {
