@@ -180,6 +180,12 @@ describe("/yizha: норма на дату, ліниве створення", ()
     expect(sent()).toHaveLength(2); // жодних питань
   });
 
+  it("вік рахується від року локальної дати: m 1996, strength (Δ 0) у 2026 → 2760, а не 2750 (вік 31)", async () => {
+    await profile({ ...FULL, goal: "strength" });
+    await say("/yizha");
+    expect((await targetRows()).results[0]).toMatchObject({ kcal: 2760 });
+  });
+
   it("вага для норми — «Зараз» із body_weights (середнє W0), а не з анкети", async () => {
     await profile(FULL); // анкета: 80 кг
     await repo.upsertBodyWeight(OWNER, "2026-11-19", 700, 0);
@@ -198,7 +204,8 @@ describe("/yizha: норма на дату, ліниве створення", ()
     await say("/yizha");
     const t = lastText();
     expect(t).toContain("1 400 / 2 480");
-    expect(t).toContain("Не підтверджено: 1");
+    expect(t.split("
+")).toContain("⏳ Не підтверджено: 1"); // рівно 1, а не 15
     expect(t).toContain("…ще 2");
     expect(t.length).toBeLessThanOrEqual(4096);
     expect(t.split("\n").filter((l) => l.startsWith("•"))).toHaveLength(12);

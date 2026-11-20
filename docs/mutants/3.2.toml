@@ -99,4 +99,4 @@ file = "src/bot/food-flow.ts"
 old = '''kg!, Number(today.slice(0, 4)))'''
 new = '''kg!, Number(today.slice(0, 4)) + 1)'''
 why = "вік у нормі зсунутий на рік (рік локальної дати + 1)"
-match = "P3[.]2[.]4|P3[.]2[.]3"
+match = "вік рахується від року"
