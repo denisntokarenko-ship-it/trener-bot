@@ -116,3 +116,18 @@ Worker `https://trener-prod.adhd-bot.workers.dev` (до переносу 2026-11
 - **Свідок фейків (борг F-0).** Код 200 від фейків нічого не доводить (200 дає і «дедуп», і «чужий»). Після запуску читай прод: `npx wrangler d1 execute trener-prod --remote --env production --command "SELECT update_id FROM processed_updates WHERE update_id IN (900100, 900101)"` і `SELECT count(*) FROM users` — очікування й трактування в «Перевірці 1.5». Фейки лишають у `processed_updates` прода 1–2 синтетичні рядки; крон прибере їх за 3 доби.
 - **Time Travel репетиція (preview, 2026-11-19).** Тимчасова таблиця: рядок X=`before` → `time-travel info` (bookmark) → X=`after` → `time-travel restore … --bookmark=<bm>` → X=`before`. Restore друкує bookmark для скасування самого restore. Між bookmark і restore не пиши в БД нічого, що шкода втратити.
 - **tail у файл.** `npx wrangler tail --env production --format json > файл` у фоні; `&` усередині Bash-інструмента процес не тримає — запускати окремим фоновим завданням.
+
+## Реліз Фази 1b — факти (2026-11-20, 1b.5)
+
+Деплой і міграції Фази 1b зроблено ще до 1b.5 (після переносу акаунта): прод і preview на коді `main` (`ddcbb3b`), міграції `0002_profile_plan` і `0003_day_titles_backfill` у `d1_migrations` обох баз. 1b.5 — верифікація (лише SELECT і tail), не повторний деплой.
+
+- **Стан прода (SELECT):** `exercises` = 30 (`video_url` у 29; `NULL` лише `face-pull` — борг R-1b.1), `exercise_substitutes` = 40; каталог прода й preview ідентичний (`slug, video_url` — однакова контрольна сума). `users` = 1 (власник), `programs`/`program_days`/`workouts`/`workout_sets` = 0: база нова після переносу акаунта, власник анкету на проді ще не проходив — програма з'явиться після `/start` → анкета → «✅ Прийняти». Знімок «до/після»: 0/0/0 → 0/0/0 (нічого не мігрувалось і не деплоїлось у цьому кроці).
+- **Версія прода:** `/health` віддає лише `ok` (без git sha — борг із `fix/day-titles`). Звірка деплою з main — `npx wrangler deployments list --env production`: остання версія `3e1d24fb…` створена 15:49:41 UTC, merge `ddcbb3b` — 15:49:07 UTC, тобто деплой після мержу.
+- **Бекап до будь-яких змін:** `npm run backup:prod` → `backups/prod-<дата>.sql` (34 КБ, у `.gitignore`); bookmark Time Travel на момент верифікації — `npx wrangler d1 time-travel info trener-prod --env production`.
+
+### План відкату Фази 1b
+
+1. Код: `npx wrangler rollback --env production` (попередня версія Worker) або `git switch -c rollback origin/<попередній коміт> && npm run deploy:prod`. Код 1b.2+ без міграцій 0002/0003 не працює (читає нові стовпці), код ≤ 1.x з міграціями 0002/0003 має працювати (стовпці лише додані; не перевірялось) — тому відкочувати спершу код, базу чіпати останньою.
+2. База: нових даних власника поки немає (0 програм/тренувань) → `time-travel restore --bookmark=<з info>` безпечний. Коли дані з'являться — спершу `npm run backup:prod`, бо restore стирає все після bookmark.
+3. Міграції 0002 (`ALTER … ADD COLUMN` із CHECK) і 0003 (бекфіл `title`) вручну не відкочуються — лише Time Travel.
+- **tail production (5 хв, 2026-11-20 16:15 UTC):** один тік крону — `outcome: ok`, `cpuTime` 6 мс, `exceptions: []`, `scriptVersion` `3e1d24fb…` (та сама, що в `deployments list`). Натискань кнопок у вікні не було: `cpuTime` натискання < 10 мс — не перевірено (потрібен живий прохід людини, див. PR 1b.5).
