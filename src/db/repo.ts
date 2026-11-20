@@ -3,7 +3,8 @@
 // processed_updates (службова, ключ — update_id) і abandonStale (крон по всіх користувачах).
 import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
 import type { Db } from "./client";
-import { exerciseSubstitutes, exercises, processedUpdates, programDays, programExercises, programs, users, workoutSets, workouts } from "./schema";
+import type { Limit, Plan, PlanCatalogItem } from "../domain/plan";
+import { exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, startWeights, userProfiles, users, workoutSets, workouts } from "./schema";
 
 export const FIRST_NAME_MAX = 64;
 /** active старше за цей вік закривається як abandoned (phase-1-flow.md). */
@@ -29,7 +30,7 @@ export interface ActiveProgram {
   id: number;
   name: string;
   /** За position. */
-  days: { id: number; code: string; position: number }[];
+  days: { id: number; code: string; position: number; title: string | null }[];
 }
 
 export interface Slot {
@@ -47,6 +48,8 @@ export interface ProgramDay {
   programId: number;
   code: string;
   position: number;
+  /** Назва дня (0002); NULL → показ «День <code>». */
+  title: string | null;
   /** За position. */
   slots: Slot[];
 }
@@ -129,6 +132,23 @@ const workoutColumns = {
   awaitInput: workouts.awaitInput,
 };
 
+export type ProfileRow = typeof userProfiles.$inferSelect;
+/** Поля профілю, які анкета пише по одному; ключ і час ставить repo. */
+export type ProfilePatch = Partial<Omit<ProfileRow, "userId" | "createdAt" | "updatedAt">>;
+export type OnboardingRow = typeof onboardingState.$inferSelect;
+export type OnboardingPatch = Partial<Omit<OnboardingRow, "userId" | "startedAt" | "updatedAt">>;
+export interface StartWeight {
+  exerciseId: number;
+  weightKg: number;
+  reps: number;
+}
+export type ActivatePlanResult = { ok: true; programId: number } | { ok: false; error: "ACTIVE_WORKOUT" | "NO_USER" | "BAD_PLAN" };
+
+/** Прапорці обмежень «knee,back» → масив; невідомі токени відкидаються. */
+export function parseLimits(raw: string | null | undefined): Limit[] {
+  return (raw ?? "").split(",").filter((x): x is Limit => x === "knee" || x === "back" || x === "shoulder" || x === "wrist");
+}
+
 function toExercise(row: typeof exercises.$inferSelect): Exercise {
   const { cuesUk, ...rest } = row;
   return { ...rest, cues: cuesUk.split("\n") };
@@ -176,7 +196,7 @@ export function createRepo(db: Db) {
         .get();
       if (!program) return null;
       const days = await db
-        .select({ id: programDays.id, code: programDays.code, position: programDays.position })
+        .select({ id: programDays.id, code: programDays.code, position: programDays.position, title: programDays.title })
         .from(programDays)
         .where(eq(programDays.programId, program.id))
         .orderBy(asc(programDays.position))
@@ -188,7 +208,7 @@ export function createRepo(db: Db) {
     async getProgramDay(userId: number, code: string): Promise<ProgramDay | null> {
       const rows = await db
         .select({
-          day: { id: programDays.id, programId: programDays.programId, code: programDays.code, position: programDays.position },
+          day: { id: programDays.id, programId: programDays.programId, code: programDays.code, position: programDays.position, title: programDays.title },
           slot: programExercises,
           exercise: exercises,
         })
@@ -439,6 +459,115 @@ export function createRepo(db: Db) {
         .orderBy(desc(workouts.startedAt), desc(workouts.id))
         .get();
       return row ?? null;
+    },
+
+    /** Профіль користувача; рядка немає — null. */
+    async getProfile(userId: number): Promise<ProfileRow | null> {
+      return (await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).get()) ?? null;
+    },
+
+    /** Створює профіль або оновлює лише передані поля (відповідь анкети пишеться одразу, повтор — upsert). */
+    async upsertProfile(userId: number, patch: ProfilePatch, now: number): Promise<void> {
+      await db
+        .insert(userProfiles)
+        .values({ ...patch, userId, createdAt: now, updatedAt: now })
+        .onConflictDoUpdate({ target: userProfiles.userId, set: { ...patch, updatedAt: now } })
+        .run();
+    },
+
+    async getOnboarding(userId: number): Promise<OnboardingRow | null> {
+      return (await db.select().from(onboardingState).where(eq(onboardingState.userId, userId)).get()) ?? null;
+    },
+
+    /** Створює стан анкети або оновлює передані поля; started_at при оновленні не чіпає. */
+    async upsertOnboarding(userId: number, patch: OnboardingPatch, now: number): Promise<void> {
+      await db
+        .insert(onboardingState)
+        .values({ status: "active", step: "welcome", ...patch, userId, startedAt: now, updatedAt: now })
+        .onConflictDoUpdate({ target: onboardingState.userId, set: { ...patch, updatedAt: now } })
+        .run();
+    },
+
+    /** Запис робочої ваги вправи; повтор — upsert (N3). */
+    async setStartWeight(userId: number, exerciseId: number, weightKg: number, reps: number, now: number): Promise<void> {
+      await db
+        .insert(startWeights)
+        .values({ userId, exerciseId, weightKg, reps, createdAt: now })
+        .onConflictDoUpdate({ target: [startWeights.userId, startWeights.exerciseId], set: { weightKg, reps, createdAt: now } })
+        .run();
+    },
+
+    async getStartWeight(userId: number, exerciseId: number): Promise<StartWeight | null> {
+      const row = await db
+        .select({ exerciseId: startWeights.exerciseId, weightKg: startWeights.weightKg, reps: startWeights.reps })
+        .from(startWeights)
+        .where(and(eq(startWeights.userId, userId), eq(startWeights.exerciseId, exerciseId)))
+        .get();
+      return row ?? null;
+    },
+
+    async getStartWeights(userId: number): Promise<StartWeight[]> {
+      return db
+        .select({ exerciseId: startWeights.exerciseId, weightKg: startWeights.weightKg, reps: startWeights.reps })
+        .from(startWeights)
+        .where(eq(startWeights.userId, userId))
+        .orderBy(asc(startWeights.exerciseId))
+        .all();
+    },
+
+    /** «Не знаю» після раніше введеної ваги: прибирає запис. */
+    async clearStartWeight(userId: number, exerciseId: number): Promise<void> {
+      await db.delete(startWeights).where(and(eq(startWeights.userId, userId), eq(startWeights.exerciseId, exerciseId))).run();
+    },
+
+    /** Каталог для buildPlan: лише вправи з заповненими метаданими (pattern NULL для генератора не існує). */
+    async getPlanCatalog(): Promise<PlanCatalogItem[]> {
+      const rows = await db.select().from(exercises).orderBy(asc(exercises.id)).all();
+      return rows.flatMap((r) =>
+        r.pattern && r.kind && r.place && r.minLevel !== null
+          ? [{ id: r.id, pattern: r.pattern, kind: r.kind, place: r.place, minLevel: r.minLevel, stress: parseLimits(r.stress), equipment: r.equipment }]
+          : [],
+      );
+    },
+
+    /**
+     * Активує план одним батчем D1: стара програма active = 0, нова active = 1 + дні + слоти. workouts і
+     * workout_sets не чіпаються. Є active-тренування — ACTIVE_WORKOUT без запису. Нова програма має
+     * заздалегідь взятий id, дні й слоти знаходять її за id (назва не унікальна); кожен крок захищено
+     * умовою «нова програма існує», тож відмова гарду не лишає напівзаписаного плану.
+     */
+    async activatePlan(userId: number, plan: Plan, now: number): Promise<ActivatePlanResult> {
+      if (plan.days.length === 0 || plan.days.some((d) => d.slots.length === 0)) return { ok: false, error: "BAD_PLAN" };
+      if (await this.getActiveWorkout(userId)) return { ok: false, error: "ACTIVE_WORKOUT" };
+      const idRow = await db.get<{ next: number }>(sql`SELECT COALESCE(MAX(id), 0) + 1 AS next FROM programs`);
+      const pid = idRow?.next ?? 1;
+      const d1 = db.$client;
+      const noActive = "NOT EXISTS (SELECT 1 FROM workouts w WHERE w.user_id = ? AND w.status = 'active')";
+      const exists = "EXISTS (SELECT 1 FROM programs np WHERE np.id = ? AND np.user_id = ?)";
+      const stmts = [
+        d1
+          .prepare(`UPDATE programs SET active = 0 WHERE user_id = ? AND active = 1 AND ${noActive} AND EXISTS (SELECT 1 FROM users u WHERE u.id = ?)`)
+          .bind(userId, userId, userId),
+        d1
+          .prepare(`INSERT INTO programs (id, user_id, name, active, created_at) SELECT ?, u.id, ?, 1, ? FROM users u WHERE u.id = ? AND ${noActive}`)
+          .bind(pid, plan.name, now, userId, userId),
+        ...plan.days.flatMap((day, i) => [
+          d1
+            .prepare(`INSERT INTO program_days (program_id, code, position, title) SELECT ?, ?, ?, ? WHERE ${exists}`)
+            .bind(pid, day.code, i + 1, day.title, pid, userId),
+          ...day.slots.map((slot, j) =>
+            d1
+              .prepare(
+                `INSERT INTO program_exercises (program_day_id, exercise_id, position, sets, rep_min, rep_max)
+                 SELECT d.id, ?, ?, ?, ?, ? FROM program_days d WHERE d.program_id = ? AND d.code = ? AND ${exists}`,
+              )
+              .bind(slot.exerciseId, j + 1, slot.sets, slot.repMin, slot.repMax, pid, day.code, pid, userId),
+          ),
+        ]),
+      ];
+      const res = await d1.batch(stmts);
+      if (res[1]?.meta.changes === 1) return { ok: true, programId: pid };
+      return (await this.getActiveWorkout(userId)) ? { ok: false, error: "ACTIVE_WORKOUT" } : { ok: false, error: "NO_USER" };
     },
   };
 }

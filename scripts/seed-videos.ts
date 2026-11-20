@@ -1,0 +1,35 @@
+// Відео техніки (docs/spec/phase-1b.md, §9): slug → https://www.youtube.com/watch?v=… або null.
+// Кожне посилання знайдено пошуком і звірено через YouTube oEmbed (існує, назва — про цю вправу), тривалість ≤ 8 хв, не Shorts.
+// null = надійного не знайдено → рядок у «Борг» PROGRESS.md. Формат перевіряє isVideoUrl у seed-core.ts.
+export const VIDEOS: Record<string, string | null> = {
+  "barbell-squat": "https://www.youtube.com/watch?v=5Lm6U4zNzi0",
+  "barbell-bench-press": "https://www.youtube.com/watch?v=nWo_m0REGMA",
+  "lat-pulldown": "https://www.youtube.com/watch?v=owvUwhgRgnU",
+  "seated-dumbbell-press": "https://www.youtube.com/watch?v=JTbTDTz-gP4",
+  "cable-crunch": "https://www.youtube.com/watch?v=7JHGoiVuv48",
+  "barbell-romanian-deadlift": "https://www.youtube.com/watch?v=MLmOTjlbqkw",
+  "leg-press": "https://www.youtube.com/watch?v=ZD0-VB6x1rA",
+  "seated-cable-row": "https://www.youtube.com/watch?v=tIiHEdxvU1M",
+  "machine-chest-press": "https://www.youtube.com/watch?v=iLLXdDxSnss",
+  "hanging-leg-raise": "https://www.youtube.com/watch?v=eos2mBvwfbM",
+  "goblet-squat": "https://www.youtube.com/watch?v=3eP9ZkvnH5Y",
+  "dumbbell-bench-press": "https://www.youtube.com/watch?v=2emCsxi6VqM",
+  "pull-up": "https://www.youtube.com/watch?v=uK5Pvcg-ogw",
+  "barbell-overhead-press": "https://www.youtube.com/watch?v=rLTulc8Gbe8",
+  "dumbbell-romanian-deadlift": "https://www.youtube.com/watch?v=w8618QnyZi8",
+  "dumbbell-row": "https://www.youtube.com/watch?v=mXh-Ogf3V4Y",
+  "dips": "https://www.youtube.com/watch?v=DS_4Tq-nTKs",
+  "hanging-knee-raise": "https://www.youtube.com/watch?v=eJv8lDUllmQ",
+  "push-up": "https://www.youtube.com/watch?v=7VDBGQSpgcI",
+  "dumbbell-lunge": "https://www.youtube.com/watch?v=vNrkKOiksCs",
+  "glute-bridge": "https://www.youtube.com/watch?v=Xllwopeekb4",
+  "dumbbell-overhead-press": "https://www.youtube.com/watch?v=QBgVVF5ByBU",
+  "dumbbell-lateral-raise": "https://www.youtube.com/watch?v=baR_rjv8DyQ",
+  "incline-dumbbell-press": "https://www.youtube.com/watch?v=ZixeFw_iHVY",
+  "leg-curl": "https://www.youtube.com/watch?v=ZfyDQOviOfk",
+  "leg-extension": "https://www.youtube.com/watch?v=qz8QvMGHJu0",
+  "face-pull": null, // рев'ю 1b.1 В1: відео thBbuIwMzBw — тренування широчайших, не тяга до обличчя; надійного немає → «Борг»
+  "barbell-row": "https://www.youtube.com/watch?v=F9wrtuXJQZY",
+  "dead-bug": "https://www.youtube.com/watch?v=XStveWETjvk",
+  "dumbbell-reverse-fly": "https://www.youtube.com/watch?v=8o5yQpn0FOU",
+};

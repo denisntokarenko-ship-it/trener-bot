@@ -5,6 +5,10 @@
 
 // Типи — з enum схеми, одне джерело (рев'ю 1.1, дрібниця 4). `import type` node стирає під час запуску.
 import type { Equipment, MuscleGroup } from "../src/db/repo.ts";
+import { DAY_TITLES } from "../src/domain/plan.ts";
+import type { ExerciseKind, Limit, Pattern } from "../src/domain/plan.ts";
+import { isVideoUrl } from "../src/domain/video.ts";
+import { VIDEOS } from "./seed-videos.ts";
 
 export interface CatalogEntry {
   id: number;
@@ -18,10 +22,43 @@ export interface CatalogEntry {
   cues: [string, string, string];
   /** Слаги замін «чим замінити цю вправу», у порядку з таблиці каталогу. */
   substitutes: string[];
+  /** Метадані для генератора плану (phase-1b.md §3). */
+  pattern: Pattern;
+  kind: ExerciseKind;
+  place: "gym" | "both";
+  minLevel: 1 | 2 | 3;
+  stress: Limit[];
+  /** Посилання на відео техніки (§9) або null — тоді рядок у «Борг» PROGRESS.md. */
+  videoUrl: string | null;
 }
 
+type BaseEntry = Omit<CatalogEntry, "pattern" | "kind" | "place" | "minLevel" | "stress" | "videoUrl">;
+
 // Таблиця «Каталог і програма» в docs/spec/phase-1.md. Кроки блоків і тренажерів — припущення (open-questions.md).
-export const CATALOG: CatalogEntry[] = [
+/** Метадані існуючих 18 вправ (phase-1b.md §3): pattern, place, min_level, stress; kind = accessory для 5, 10, 18. */
+const META: Record<number, [Pattern, "gym" | "both", 1 | 2 | 3, Limit[]]> = {
+  1: ["squat", "gym", 1, ["knee", "back"]],
+  2: ["hpush", "gym", 1, ["shoulder"]],
+  3: ["vpull", "gym", 1, []],
+  4: ["vpush", "gym", 1, ["shoulder"]],
+  5: ["core", "gym", 1, ["back"]],
+  6: ["hinge", "gym", 1, ["back"]],
+  7: ["squat", "gym", 1, ["knee"]],
+  8: ["hpull", "gym", 1, []],
+  9: ["hpush", "gym", 1, ["shoulder"]],
+  10: ["core", "gym", 2, ["shoulder"]],
+  11: ["squat", "both", 1, ["knee"]],
+  12: ["hpush", "gym", 1, ["shoulder"]],
+  13: ["vpull", "gym", 2, ["shoulder"]],
+  14: ["vpush", "gym", 2, ["shoulder", "back"]],
+  15: ["hinge", "both", 1, ["back"]],
+  16: ["hpull", "both", 1, ["back"]],
+  17: ["hpush", "gym", 2, ["shoulder", "wrist"]],
+  18: ["core", "gym", 1, ["shoulder"]],
+};
+const ACCESSORY_IDS = new Set([5, 10, 18]);
+
+const BASE: BaseEntry[] = [
   { id: 1, slug: "barbell-squat", nameUk: "Присідання зі штангою", equipment: "barbell", stepKg: 5, minKg: 20, group: "legs",
     cues: ["Спина рівна, корпус напружений, погляд уперед", "Коліна йдуть за носками, не зводь їх усередину", "Опускайся до паралелі, вставай через пʼяти"],
     substitutes: ["leg-press", "goblet-squat"] },
@@ -78,6 +115,59 @@ export const CATALOG: CatalogEntry[] = [
     substitutes: [] },
 ];
 
+/** Нові вправи 19–30 (phase-1b.md §3): кроки за правилом спеки, підказки — безпека спершу. */
+const NEW: Omit<CatalogEntry, "videoUrl">[] = [
+  { id: 19, slug: "push-up", nameUk: "Віджимання від підлоги", equipment: "bodyweight", stepKg: 0, minKg: 0, group: "chest", pattern: "hpush", kind: "accessory", place: "both", minLevel: 1, stress: ["wrist", "shoulder"],
+    cues: ["Тіло рівне, прес і сідниці напружені", "Лікті під кутом близько 45°, не розводь їх убік", "Опускайся до грудей, відштовхуйся без ривка"],
+    substitutes: ["dumbbell-bench-press", "machine-chest-press"] },
+  { id: 20, slug: "dumbbell-lunge", nameUk: "Випади з гантелями", equipment: "dumbbell", stepKg: 2, minKg: 2, group: "legs", pattern: "squat", kind: "accessory", place: "both", minLevel: 1, stress: ["knee"],
+    cues: ["Корпус прямо, гантелі опущені вздовж тіла", "Коліно передньої ноги не виходить за носок далеко", "Опускайся контрольовано, відштовхуйся передньою ногою"],
+    substitutes: ["goblet-squat", "leg-press"] },
+  { id: 21, slug: "glute-bridge", nameUk: "Ягодичний місток", equipment: "bodyweight", stepKg: 0, minKg: 0, group: "legs", pattern: "hinge", kind: "accessory", place: "both", minLevel: 1, stress: [],
+    cues: ["Поперек не прогинай, прес напружений", "Стопи близько до сідниць, спирайся на пʼяти", "Вгорі стисни сідниці, опускайся повільно"],
+    substitutes: ["dumbbell-romanian-deadlift", "barbell-romanian-deadlift"] },
+  { id: 22, slug: "dumbbell-overhead-press", nameUk: "Жим гантелей стоячи", equipment: "dumbbell", stepKg: 2, minKg: 2, group: "shoulders", pattern: "vpush", kind: "compound", place: "both", minLevel: 1, stress: ["shoulder"],
+    cues: ["Прес і сідниці напружені, поперек не прогинай", "Гантелі від рівня плечей, лікті трохи вперед", "Вижимай угору, не бий гантелями одна об одну"],
+    substitutes: ["seated-dumbbell-press", "barbell-overhead-press"] },
+  { id: 23, slug: "dumbbell-lateral-raise", nameUk: "Розведення гантелей убік", equipment: "dumbbell", stepKg: 2, minKg: 2, group: "shoulders", pattern: "delt", kind: "accessory", place: "both", minLevel: 1, stress: ["shoulder"],
+    cues: ["Бери легку вагу, корпус не розгойдуй", "Лікті трохи зігнуті, піднімай до рівня плечей", "Опускай повільно, не скидай гантелі вниз"],
+    substitutes: ["face-pull", "dumbbell-reverse-fly"] },
+  { id: 24, slug: "incline-dumbbell-press", nameUk: "Жим гантелей на похилій", equipment: "dumbbell", stepKg: 2, minKg: 2, group: "chest", pattern: "hpush", kind: "compound", place: "gym", minLevel: 2, stress: ["shoulder"],
+    cues: ["Лопатки зведені, стопи впираються в підлогу", "Опускай гантелі до верху грудей під контролем", "Тисни вгору без ривка, лікті близько 45°"],
+    substitutes: ["dumbbell-bench-press", "barbell-bench-press"] },
+  { id: 25, slug: "leg-curl", nameUk: "Згинання ніг у тренажері", equipment: "machine", stepKg: 5, minKg: 5, group: "legs", pattern: "legacc", kind: "accessory", place: "gym", minLevel: 1, stress: [],
+    cues: ["Налаштуй вісь тренажера на рівень колін", "Притисни таз до опори, рухайся без ривка", "Повертай вагу повільно, не скидай блок"],
+    substitutes: ["leg-extension"] },
+  { id: 26, slug: "leg-extension", nameUk: "Розгинання ніг у тренажері", equipment: "machine", stepKg: 5, minKg: 5, group: "legs", pattern: "legacc", kind: "accessory", place: "gym", minLevel: 1, stress: ["knee"],
+    cues: ["Бери легку вагу, спина притиснута до спинки", "Не випрямляй коліна різко до замка вгорі", "Опускай вагу повільно, під контролем"],
+    substitutes: ["leg-curl"] },
+  { id: 27, slug: "face-pull", nameUk: "Тяга до обличчя на блоці", equipment: "cable", stepKg: 5, minKg: 5, group: "shoulders", pattern: "delt", kind: "accessory", place: "gym", minLevel: 1, stress: [],
+    cues: ["Бери легку вагу, корпус не відхиляй назад", "Тягни канат до рівня обличчя, лікті вгору", "Зведи лопатки, повертай руки повільно"],
+    substitutes: ["dumbbell-reverse-fly", "dumbbell-lateral-raise"] },
+  { id: 28, slug: "barbell-row", nameUk: "Тяга штанги в нахилі", equipment: "barbell", stepKg: 5, minKg: 20, group: "back", pattern: "hpull", kind: "compound", place: "gym", minLevel: 2, stress: ["back"],
+    cues: ["Спина рівна весь рух, поперек не округлюй", "Нахил корпусу близько 45°, коліна зігнуті", "Тягни гриф до живота, опускай повільно"],
+    substitutes: ["seated-cable-row", "dumbbell-row"] },
+  { id: 29, slug: "dead-bug", nameUk: "«Мертвий жук»", equipment: "bodyweight", stepKg: 0, minKg: 0, group: "core", pattern: "core", kind: "accessory", place: "both", minLevel: 1, stress: [],
+    cues: ["Поперек притиснутий до підлоги весь рух", "Рухай протилежні руку й ногу повільно", "Видихай на розгинанні, не прогинай спину"],
+    substitutes: ["hanging-knee-raise", "cable-crunch"] },
+  { id: 30, slug: "dumbbell-reverse-fly", nameUk: "Розведення гантелей у нахилі", equipment: "dumbbell", stepKg: 2, minKg: 2, group: "back", pattern: "delt", kind: "accessory", place: "both", minLevel: 1, stress: ["back"],
+    cues: ["Бери легку вагу, спина рівна, шия нейтральна", "Лікті трохи зігнуті, розводь до рівня плечей", "Зведи лопатки вгорі, опускай повільно"],
+    substitutes: ["face-pull", "dumbbell-lateral-raise"] },
+];
+
+/** Каталог 1–30: старі 18 (BASE + META) і нові 12 (NEW). videoUrl — зі scripts/seed-videos.ts; хибний формат — виняток. */
+export const CATALOG: CatalogEntry[] = [
+  ...BASE.map((e): Omit<CatalogEntry, "videoUrl"> => {
+    const [pattern, place, minLevel, stress] = META[e.id]!;
+    return { ...e, pattern, kind: ACCESSORY_IDS.has(e.id) ? "accessory" : "compound", place, minLevel, stress };
+  }),
+  ...NEW,
+].map((e) => {
+  const videoUrl = VIDEOS[e.slug] ?? null;
+  if (videoUrl !== null && !isVideoUrl(videoUrl)) throw new Error(`Хибне video_url для ${e.slug}`);
+  return { ...e, videoUrl };
+});
+
 export interface SlotSeed {
   slug: string;
   sets: number;
@@ -131,11 +221,12 @@ export function seedStatements(now: number): string[] {
 
   for (const e of CATALOG) {
     out.push(
-      "INSERT INTO exercises (id, slug, name_uk, equipment, weight_step_kg, min_weight_kg, muscle_group, cues_uk, video_url) " +
-        `VALUES (${num(e.id)}, ${q(e.slug)}, ${q(e.nameUk)}, ${q(e.equipment)}, ${num(e.stepKg)}, ${num(e.minKg)}, ${q(e.group)}, ${q(e.cues.join("\n"))}, NULL) ` +
+      "INSERT INTO exercises (id, slug, name_uk, equipment, weight_step_kg, min_weight_kg, muscle_group, cues_uk, video_url, pattern, kind, place, min_level, stress) " +
+        `VALUES (${num(e.id)}, ${q(e.slug)}, ${q(e.nameUk)}, ${q(e.equipment)}, ${num(e.stepKg)}, ${num(e.minKg)}, ${q(e.group)}, ${q(e.cues.join("\n"))}, ${e.videoUrl === null ? "NULL" : q(e.videoUrl)}, ${q(e.pattern)}, ${q(e.kind)}, ${q(e.place)}, ${num(e.minLevel)}, ${q(e.stress.join(","))}) ` +
         "ON CONFLICT (slug) DO UPDATE SET name_uk = excluded.name_uk, equipment = excluded.equipment, " +
         "weight_step_kg = excluded.weight_step_kg, min_weight_kg = excluded.min_weight_kg, " +
-        "muscle_group = excluded.muscle_group, cues_uk = excluded.cues_uk",
+        "muscle_group = excluded.muscle_group, cues_uk = excluded.cues_uk, video_url = excluded.video_url, " +
+        "pattern = excluded.pattern, kind = excluded.kind, place = excluded.place, min_level = excluded.min_level, stress = excluded.stress",
     );
   }
 
@@ -157,8 +248,8 @@ export function seedStatements(now: number): string[] {
 
   PROGRAM_DAYS.forEach((day, i) => {
     out.push(
-      "INSERT INTO program_days (program_id, code, position) " +
-        `SELECT p.id, ${q(day.code)}, ${num(i + 1)} FROM programs p WHERE p.active = 1 AND p.name = ${q(PROGRAM_NAME)} ` +
+      "INSERT INTO program_days (program_id, code, position, title) " +
+        `SELECT p.id, ${q(day.code)}, ${num(i + 1)}, ${q(DAY_TITLES[day.code]!)} FROM programs p WHERE p.active = 1 AND p.name = ${q(PROGRAM_NAME)} ` +
         "ON CONFLICT DO NOTHING",
     );
     day.slots.forEach((slot, j) => {
