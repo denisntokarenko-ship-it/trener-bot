@@ -204,8 +204,7 @@ describe("/yizha: норма на дату, ліниве створення", ()
     await say("/yizha");
     const t = lastText();
     expect(t).toContain("1 400 / 2 480");
-    expect(t.split("
-")).toContain("⏳ Не підтверджено: 1"); // рівно 1, а не 15
+    expect(t.split("\n")).toContain("⏳ Не підтверджено: 1"); // рівно 1, а не 15
     expect(t).toContain("…ще 2");
     expect(t.length).toBeLessThanOrEqual(4096);
     expect(t.split("\n").filter((l) => l.startsWith("•"))).toHaveLength(12);
