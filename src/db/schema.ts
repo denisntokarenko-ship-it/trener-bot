@@ -332,3 +332,160 @@ export const cronState = sqliteTable(
   },
   (t) => [check("cron_state_single", sql`${t.id} = 1`)],
 );
+
+// --- Фаза 3 (0007): харчування, норма КБЖУ, облік витрат на ШІ (docs/spec/phase-3.md §1) ---
+
+const LOCAL_DATE_GLOB = "[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]";
+
+export const FOOD_SOURCES = ["seed", "ai_estimate", "manual"] as const;
+export type FoodSource = (typeof FOOD_SOURCES)[number];
+export const MEAL_STATUSES = ["pending", "confirmed", "cancelled"] as const;
+export type MealStatus = (typeof MEAL_STATUSES)[number];
+export const MEAL_CONFIDENCES = ["low", "medium", "high"] as const;
+export type MealConfidence = (typeof MEAL_CONFIDENCES)[number];
+export const TARGET_REASONS = ["formula", "trend", "manual"] as const;
+export type TargetReason = (typeof TARGET_REASONS)[number];
+
+/** Каталог продуктів спільний для всіх користувачів (без user_id), як `exercises`. Макроси — десяті грама на 100 г. */
+export const foods = sqliteTable(
+  "foods",
+  {
+    id: integer("id").primaryKey(),
+    nameUk: text("name_uk").notNull(),
+    kcal100: integer("kcal_100").notNull(),
+    protein100Dg: integer("protein_100_dg").notNull(),
+    fat100Dg: integer("fat_100_dg").notNull(),
+    carbs100Dg: integer("carbs_100_dg").notNull(),
+    source: text("source", { enum: FOOD_SOURCES }).notNull(),
+    /** fdc_id у USDA SR Legacy для `seed`; ключ ідемпотентності сиду. */
+    fdcRef: text("fdc_ref"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    check("foods_name_len", sql`length(${t.nameUk}) BETWEEN 1 AND 60`),
+    check("foods_kcal", sql`${t.kcal100} BETWEEN 0 AND 900`),
+    check("foods_protein", sql`${t.protein100Dg} BETWEEN 0 AND 1000`),
+    check("foods_fat", sql`${t.fat100Dg} BETWEEN 0 AND 1000`),
+    check("foods_carbs", sql`${t.carbs100Dg} BETWEEN 0 AND 1000`),
+    check("foods_macros_sum", sql`${t.protein100Dg} + ${t.fat100Dg} + ${t.carbs100Dg} <= 1000`),
+    check("foods_source", sql`${t.source} IN ('seed', 'ai_estimate', 'manual')`),
+    uniqueIndex("foods_fdc_ref_uq").on(t.fdcRef).where(sql`${t.fdcRef} IS NOT NULL`),
+  ],
+);
+
+/** `alias` — лише результат `normalizeAlias` (src/domain/text.ts). */
+export const foodAliases = sqliteTable(
+  "food_aliases",
+  {
+    alias: text("alias").primaryKey(),
+    foodId: integer("food_id").notNull().references(() => foods.id, { onDelete: "cascade" }),
+  },
+  (t) => [check("food_aliases_alias", sql`${t.alias} <> ''`), index("food_aliases_food").on(t.foodId)],
+);
+
+export const meals = sqliteTable(
+  "meals",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull().references(() => users.id),
+    status: text("status", { enum: MEAL_STATUSES }).notNull(),
+    /** UTC мс (message.date фото × 1000). */
+    eatenAt: integer("eaten_at").notNull(),
+    /** За `users.tz` на момент `eaten_at`; після запису не змінюється. */
+    localDate: text("local_date").notNull(),
+    photoFileId: text("photo_file_id"),
+    caption: text("caption"),
+    aiModel: text("ai_model").notNull(),
+    aiRawJson: text("ai_raw_json").notNull(),
+    messageId: integer("message_id"),
+    awaitGramsAt: integer("await_grams_at"),
+    createdAt: integer("created_at").notNull(),
+    confirmedAt: integer("confirmed_at"),
+  },
+  (t) => [
+    check("meals_status", sql`${t.status} IN ('pending', 'confirmed', 'cancelled')`),
+    check("meals_local_date", sql`${t.localDate} GLOB ${sql.raw(`'${LOCAL_DATE_GLOB}'`)}`),
+    check("meals_caption_len", sql`${t.caption} IS NULL OR length(${t.caption}) <= 300`),
+    check("meals_raw_len", sql`length(${t.aiRawJson}) <= 8192`),
+    index("meals_user_date_status").on(t.userId, t.localDate, t.status),
+  ],
+);
+
+/** Позиція прийому. Знімок КБЖУ (чотири поля разом або жодного) з'являється при `confirmMeal`. */
+export const mealItems = sqliteTable(
+  "meal_items",
+  {
+    mealId: integer("meal_id").notNull().references(() => meals.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    foodId: integer("food_id").notNull().references(() => foods.id),
+    grams: integer("grams").notNull(),
+    confidence: text("confidence", { enum: MEAL_CONFIDENCES }).notNull(),
+    kcal: integer("kcal"),
+    proteinDg: integer("protein_dg"),
+    fatDg: integer("fat_dg"),
+    carbsDg: integer("carbs_dg"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.mealId, t.position] }),
+    check("meal_items_position", sql`${t.position} BETWEEN 1 AND 8`),
+    check("meal_items_grams", sql`${t.grams} BETWEEN 1 AND 2000`),
+    check("meal_items_confidence", sql`${t.confidence} IN ('low', 'medium', 'high')`),
+    check("meal_items_snapshot_nonneg", sql`${t.kcal} >= 0 AND ${t.proteinDg} >= 0 AND ${t.fatDg} >= 0 AND ${t.carbsDg} >= 0`),
+    check(
+      "meal_items_snapshot_all_or_none",
+      sql`(${t.kcal} IS NULL) = (${t.proteinDg} IS NULL) AND (${t.kcal} IS NULL) = (${t.fatDg} IS NULL) AND (${t.kcal} IS NULL) = (${t.carbsDg} IS NULL)`,
+    ),
+    index("meal_items_food").on(t.foodId),
+  ],
+);
+
+/** Чинна норма на дату D — рядок з максимальним `valid_from <= D`. */
+export const nutritionTargets = sqliteTable(
+  "nutrition_targets",
+  {
+    userId: integer("user_id").notNull().references(() => users.id),
+    validFrom: text("valid_from").notNull(),
+    kcal: integer("kcal").notNull(),
+    proteinG: integer("protein_g").notNull(),
+    fatG: integer("fat_g").notNull(),
+    carbsG: integer("carbs_g").notNull(),
+    reason: text("reason", { enum: TARGET_REASONS }).notNull(),
+    /** Для `trend` — дата пропозиції (ключ ідемпотентності). */
+    sourceDate: text("source_date"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.validFrom] }),
+    check("nutrition_targets_valid_from", sql`${t.validFrom} GLOB ${sql.raw(`'${LOCAL_DATE_GLOB}'`)}`),
+    check("nutrition_targets_kcal", sql`${t.kcal} BETWEEN 800 AND 6000`),
+    check("nutrition_targets_macros", sql`${t.proteinG} >= 0 AND ${t.fatG} >= 0 AND ${t.carbsG} >= 0`),
+    check("nutrition_targets_reason", sql`${t.reason} IN ('formula', 'trend', 'manual')`),
+    check("nutrition_targets_source_date", sql`${t.sourceDate} IS NULL OR ${t.sourceDate} GLOB ${sql.raw(`'${LOCAL_DATE_GLOB}'`)}`),
+    uniqueIndex("nutrition_targets_source_uq").on(t.userId, t.sourceDate).where(sql`${t.sourceDate} IS NOT NULL`),
+  ],
+);
+
+/** Резервування, що стає фактом: рядок з'являється до виклику з оцінкою, після відповіді оновлюється ціною з `usage`. */
+export const aiUsage = sqliteTable(
+  "ai_usage",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull().references(() => users.id),
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull(),
+    outputTokens: integer("output_tokens").notNull(),
+    /** Мільйонні частки USD ($0,01 = 10 000). */
+    costMicro: integer("cost_micro").notNull(),
+    /** Без закритого CHECK: Фаза 4 додасть `chat` без перебудови таблиці. */
+    purpose: text("purpose").notNull(),
+    localDate: text("local_date").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    check("ai_usage_tokens", sql`${t.inputTokens} >= 0 AND ${t.outputTokens} >= 0`),
+    check("ai_usage_cost", sql`${t.costMicro} >= 0`),
+    check("ai_usage_purpose", sql`length(${t.purpose}) BETWEEN 1 AND 32`),
+    check("ai_usage_local_date", sql`${t.localDate} GLOB ${sql.raw(`'${LOCAL_DATE_GLOB}'`)}`),
+    index("ai_usage_user_date").on(t.userId, t.localDate),
+  ],
+);

@@ -1,0 +1,230 @@
+test = "npx vitest run --reporter=dot test/text.test.ts test/foods-seed.test.ts test/nutrition-repo.test.ts"
+timeout = 300
+
+# --- Обов'язкові з промпту 3.1 ---
+
+[[mutant]]
+id = "M1"
+file = "src/db/repo.ts"
+old = '''AND m.local_date = ${localDate} AND m.status = 'confirmed''''
+new = '''AND m.local_date = ${localDate}'''
+why = "dayTotals без фільтра status"
+match = "P3[.]1[.]1"
+
+[[mutant]]
+id = "M2"
+file = "src/db/repo.ts"
+old = '''COALESCE(SUM(mi.kcal), 0) AS kcal'''
+new = '''COALESCE(SUM(mi.grams * (SELECT f.kcal_100 FROM foods f WHERE f.id = mi.food_id) / 100), 0) AS kcal'''
+why = "dayTotals рахує ккал з foods замість знімка"
+match = "P3[.]1[.]2"
+
+[[mutant]]
+id = "M3"
+file = "src/domain/text.ts"
+old = '''.toLowerCase()'''
+new = '''.trim()'''
+why = "normalizeAlias без зведення регістру"
+match = "P3[.]1[.]3|апострофи й регістр"
+
+[[mutant]]
+id = "M4"
+file = "src/db/repo.ts"
+old = '''      const res = await db.$client
+        .prepare(
+          `INSERT INTO ai_usage (user_id, model, input_tokens, output_tokens, cost_micro, purpose, local_date, created_at)
+           SELECT u.id, ?, 0, 0, ?, ?, ?, ? FROM users u
+           WHERE u.id = ? AND (SELECT COALESCE(SUM(cost_micro), 0) FROM ai_usage WHERE user_id = u.id AND local_date = ?) + ? <= ?`,
+        )
+        .bind(r.model, r.estMicro, r.purpose, r.localDate, now, userId, r.localDate, r.estMicro, r.limitMicro)
+        .run();
+'''
+new = '''      if ((await this.aiSpendToday(userId, r.localDate)) + r.estMicro > r.limitMicro) return null;
+      const res = await db.$client
+        .prepare("INSERT INTO ai_usage (user_id, model, input_tokens, output_tokens, cost_micro, purpose, local_date, created_at) SELECT u.id, ?, 0, 0, ?, ?, ?, ? FROM users u WHERE u.id = ? AND ? = ? AND ? <= ?")
+        .bind(r.model, r.estMicro, r.purpose, r.localDate, now, userId, r.localDate, r.localDate, r.estMicro, r.estMicro)
+        .run();
+'''
+why = "перевірка суми окремо від INSERT (не атомарно): паралельні резервування обходять ліміт"
+match = "10 паралельних"
+
+[[mutant]]
+id = "M5"
+file = "src/db/repo.ts"
+old = '''confirmed_at = ?, await_grams_at = NULL WHERE id = ? AND user_id = ? AND status = 'pending''''
+new = '''confirmed_at = ?, await_grams_at = NULL WHERE id = ? AND ? IS NOT NULL AND status = 'pending''''
+why = "confirmMeal без перевірки власника"
+match = "P3[.]1[.]5"
+
+[[mutant]]
+id = "M6"
+file = "src/db/repo.ts"
+old = '''FROM meals WHERE id = ${mealId} AND user_id = ${userId}'''
+new = '''FROM meals WHERE id = ${mealId} AND ${userId} IS NOT NULL'''
+why = "getMeal віддає чужий прийом"
+match = "P3[.]1[.]5"
+
+[[mutant]]
+id = "M7"
+file = "src/db/repo.ts"
+old = '''kcal = (meal_items.grams * f.kcal_100 + 50) / 100,'''
+new = '''kcal = (meal_items.grams * f.kcal_100) / 100,'''
+why = "знімок ккал без округлення «половина вгору»"
+match = "половина вгору"
+
+[[mutant]]
+id = "M8"
+file = "src/db/repo.ts"
+old = '''if (foodIds.length > 0) stmts.push(orphanEstimates(d1, foodIds));'''
+new = ''''''
+why = "cancelMeal не чистить осиротілі ai_estimate"
+match = "cancelMeal: pending"
+
+[[mutant]]
+id = "M9"
+file = "src/db/repo.ts"
+old = '''AND NOT EXISTS (SELECT 1 FROM meal_items mi WHERE mi.food_id = foods.id)`)
+    .bind(...foodIds)'''
+new = '''`)
+    .bind(...foodIds)'''
+why = "чистка каталогу без захисту «продукт ще в іншому прийомі»"
+match = "cancelMeal: pending"
+
+[[mutant]]
+id = "M10"
+file = "src/db/repo.ts"
+old = '''const raced = await repo.findFoodByAlias(key);
+        if (raced) return raced;
+        throw e;'''
+new = '''throw e;'''
+why = "insertEstimatedFood без відновлення після гонки аліаса"
+match = "один foods; паралельно"
+
+[[mutant]]
+id = "M11"
+file = "src/db/repo.ts"
+old = '''UPDATE ai_usage SET input_tokens = ?, output_tokens = ?, cost_micro = ? WHERE id = ? AND user_id = ?'''
+new = '''UPDATE ai_usage SET input_tokens = ?, output_tokens = ?, cost_micro = ? WHERE id = ? AND ? IS NOT NULL'''
+why = "settleAiUsage змінює чужий рядок"
+match = "settle/release чужого"
+
+[[mutant]]
+id = "M12"
+file = "src/db/repo.ts"
+old = '''DELETE FROM ai_usage WHERE id = ? AND user_id = ? AND input_tokens = 0 AND output_tokens = 0'''
+new = '''DELETE FROM ai_usage WHERE id = ? AND user_id = ?'''
+why = "releaseAiUsage стирає вже розрахований факт"
+match = "факт оплати не вилучається"
+
+[[mutant]]
+id = "M13"
+file = "src/db/repo.ts"
+old = '''FROM ai_usage WHERE user_id = ${userId} AND local_date = ${localDate}'''
+new = '''FROM ai_usage WHERE user_id = ${userId} AND ${localDate} IS NOT NULL'''
+why = "aiSpendToday без фільтра за локальною датою"
+match = "локальну дату"
+
+[[mutant]]
+id = "M14"
+file = "src/db/repo.ts"
+old = '''FROM ai_usage WHERE user_id = u.id AND local_date = ?) + ? <= ?'''
+new = '''FROM ai_usage WHERE local_date = ?) + ? <= ?'''
+why = "ліміт рахується по всіх користувачах"
+match = "ліміт тримається"
+
+[[mutant]]
+id = "M15"
+file = "src/db/repo.ts"
+old = '''ORDER BY valid_from DESC LIMIT 1'''
+new = '''ORDER BY valid_from ASC LIMIT 1'''
+why = "getTargetOn бере найстарішу норму"
+match = "getTargetOn"
+
+[[mutant]]
+id = "M16"
+file = "src/db/repo.ts"
+old = '''if (removed.length >= meal.items.length) return false;'''
+new = ''''''
+why = "updateMealGrams дозволяє вилучити всі позиції"
+match = "усе вилучити"
+
+[[mutant]]
+id = "M17"
+file = "src/db/repo.ts"
+old = '''UPDATE meals SET status = 'cancelled', await_grams_at = NULL WHERE status = 'pending' AND created_at < ?'''
+new = '''UPDATE meals SET status = 'cancelled', await_grams_at = NULL WHERE status = 'pending' AND ? IS NOT NULL'''
+why = "expirePendingMeals скасовує й свіжі прийоми"
+match = "expirePendingMeals"
+
+[[mutant]]
+id = "M18"
+file = "scripts/foods-seed-core.ts"
+old = '''if (desc !== e.fdc_desc) throw'''
+new = '''if (false) throw'''
+why = "build-foods-seed не звіряє опис"
+match = "опис у CSV"
+
+[[mutant]]
+id = "M19"
+file = "scripts/foods-seed-core.ts"
+old = '''if (prev !== undefined && prev !== e.name_uk) throw'''
+new = '''if (false) throw'''
+why = "build-foods-seed пропускає дубль аліаса"
+match = "дубль нормалізованого"
+
+[[mutant]]
+id = "M20"
+file = "migrations/0007_nutrition.sql"
+old = '''("meal_items"."kcal" IS NULL) = ("meal_items"."protein_dg" IS NULL) AND '''
+new = ''''''
+why = "CHECK «усі чотири знімки або жодного» без protein_dg"
+match = "P3[.]1[.]7"
+
+# --- Виправлення за рев'ю 3.1 ---
+
+[[mutant]]
+id = "M21"
+file = "src/db/repo.ts"
+old = ''' AND (SELECT COUNT(*) FROM meal_items WHERE meal_id = ?) > 1`)
+              .bind(mealId, c.position, mealId, userId, mealId)'''
+new = '''`)
+              .bind(mealId, c.position, mealId, userId)'''
+why = "В1: DELETE без перевірки «лишається ≥ 1 позиція»"
+match = "В1: два паралельні"
+
+[[mutant]]
+id = "M22"
+file = "src/db/repo.ts"
+old = '''WHERE user_id = ${userId} AND status = 'pending' AND await_grams_at IS NOT NULL'''
+new = '''WHERE ${userId} IS NOT NULL AND status = 'pending' AND await_grams_at IS NOT NULL'''
+why = "В3: awaitingGramsMeal без фільтра user_id"
+match = "В3: awaitingGramsMeal"
+
+[[mutant]]
+id = "M23"
+file = "src/db/repo.ts"
+old = '''DELETE FROM foods WHERE source = 'ai_estimate' AND created_at < ? AND NOT EXISTS'''
+new = '''DELETE FROM foods WHERE source = 'ai_estimate' AND ? IS NOT NULL AND NOT EXISTS'''
+why = "В4: expirePendingMeals чистить і свіжі сироти"
+match = "В4: свіжа осиротіла"
+
+[[mutant]]
+id = "M24"
+file = "src/db/repo.ts"
+old = '''WHERE id = ? AND user_id = ? AND input_tokens = 0 AND output_tokens = 0")
+        .bind(actual.inputTokens'''
+new = '''WHERE id = ? AND user_id = ?")
+        .bind(actual.inputTokens'''
+why = "В2: settle перезаписує вже розрахований рядок"
+match = "В2: settle без вхідних"
+
+[[mutant]]
+id = "M25"
+file = "src/db/repo.ts"
+old = ''' AND status = 'pending' AND EXISTS (SELECT 1 FROM meal_items WHERE meal_id = ?)")
+          .bind(now, mealId, userId, mealId)'''
+new = ''' AND status = 'pending' AND ? IS NOT NULL")
+          .bind(now, mealId, userId, mealId)'''
+why = "В1: confirmMeal підтверджує порожній прийом"
+match = "В1: два паралельні"
+

@@ -1,13 +1,14 @@
 // Єдиний вхід у D1. Функції над даними користувача приймають userId (N8): чужий рядок для них не існує —
 // читання дає null / [], запис — false без змін (phase-1.md, «Ізоляція»). Винятки без userId:
-// processed_updates (службова, ключ — update_id), abandonStale і getReminderUsers (крон по всіх користувачах) та cron_state (один рядок).
+// processed_updates (службова, ключ — update_id), foods і food_aliases (спільний каталог, як exercises), expirePendingMeals, abandonStale і getReminderUsers (крон по всіх користувачах) та cron_state (один рядок).
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import type { Db } from "./client";
 import type { Limit, Plan, PlanCatalogItem } from "../domain/plan";
 import type { ProgressSetRow } from "../domain/records";
 import { parseReminderTime, parseTrainingDays } from "../domain/reminders";
 import { parseTimezone } from "../domain/settings";
-import { bodyWeights, cronState, exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, remindersSent, startWeights, userProfiles, users, workoutSets, workouts, type ReminderKind } from "./schema";
+import { normalizeAlias } from "../domain/text";
+import { bodyWeights, cronState, exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, remindersSent, startWeights, userProfiles, users, workoutSets, workouts, type FoodSource, type MealConfidence, type MealStatus, type ReminderKind, type TargetReason } from "./schema";
 
 export const FIRST_NAME_MAX = 64;
 /** active старше за цей вік закривається як abandoned (phase-1-flow.md). */
@@ -163,6 +164,121 @@ export interface StartWeight {
 }
 export type ActivatePlanResult = { ok: true; programId: number } | { ok: false; error: "ACTIVE_WORKOUT" | "NO_USER" | "BAD_PLAN" };
 
+// --- Фаза 3: харчування (phase-3.md §1). Макроси — десяті грама, ккал — цілі. ---
+
+/** Продукт каталогу; значення — на 100 г. */
+export interface Food {
+  id: number;
+  nameUk: string;
+  kcal100: number;
+  protein100Dg: number;
+  fat100Dg: number;
+  carbs100Dg: number;
+  source: FoodSource;
+  fdcRef: string | null;
+}
+/** Оцінка моделі для невідомого продукту (значення на 100 г, макроси вже в десятих грама). */
+export interface EstimatedFood {
+  nameUk: string;
+  kcal100: number;
+  protein100Dg: number;
+  fat100Dg: number;
+  carbs100Dg: number;
+}
+export interface NewMeal {
+  eatenAt: number;
+  localDate: string;
+  photoFileId: string | null;
+  caption: string | null;
+  aiModel: string;
+  aiRawJson: string;
+  messageId?: number | null;
+  /** 1–8 позицій; `position` = індекс + 1. */
+  items: { foodId: number; grams: number; confidence: MealConfidence }[];
+}
+export interface Nutrients {
+  kcal: number;
+  proteinDg: number;
+  fatDg: number;
+  carbsDg: number;
+}
+export interface MealItemView {
+  position: number;
+  foodId: number;
+  nameUk: string;
+  grams: number;
+  confidence: MealConfidence;
+  source: FoodSource;
+  /** Поточні значення з `foods` (показ `pending`). */
+  food: Nutrients;
+  /** Знімок на момент підтвердження; `null` — ще `pending`. */
+  snapshot: Nutrients | null;
+}
+export interface MealView {
+  id: number;
+  userId: number;
+  status: MealStatus;
+  eatenAt: number;
+  localDate: string;
+  photoFileId: string | null;
+  caption: string | null;
+  aiModel: string;
+  messageId: number | null;
+  awaitGramsAt: number | null;
+  createdAt: number;
+  confirmedAt: number | null;
+  items: MealItemView[];
+}
+export interface AiUsageReservation {
+  model: string;
+  purpose: string;
+  localDate: string;
+  /** Оцінка вартості виклику, мікро-USD. */
+  estMicro: number;
+  /** Денний ліміт, мікро-USD. */
+  limitMicro: number;
+}
+export interface AiUsageActual {
+  inputTokens: number;
+  outputTokens: number;
+  costMicro: number;
+}
+export interface NutritionTarget {
+  validFrom: string;
+  kcal: number;
+  proteinG: number;
+  fatG: number;
+  carbsG: number;
+  reason: TargetReason;
+  sourceDate: string | null;
+}
+
+interface FoodRow {
+  id: number;
+  name_uk: string;
+  kcal_100: number;
+  protein_100_dg: number;
+  fat_100_dg: number;
+  carbs_100_dg: number;
+  source: FoodSource;
+  fdc_ref: string | null;
+}
+const FOOD_COLUMNS = "f.id AS id, f.name_uk AS name_uk, f.kcal_100 AS kcal_100, f.protein_100_dg AS protein_100_dg, f.fat_100_dg AS fat_100_dg, f.carbs_100_dg AS carbs_100_dg, f.source AS source, f.fdc_ref AS fdc_ref";
+function toFood(r: FoodRow): Food {
+  return { id: r.id, nameUk: r.name_uk, kcal100: r.kcal_100, protein100Dg: r.protein_100_dg, fat100Dg: r.fat_100_dg, carbs100Dg: r.carbs_100_dg, source: r.source, fdcRef: r.fdc_ref };
+}
+
+/** DELETE осиротілих `ai_estimate` серед `foodIds` (жодної позиції): аліаси йдуть каскадом. Страж NOT EXISTS не дає зачепити продукт у чужому прийомі. */
+function orphanEstimates(d1: D1Database, foodIds: number[]): D1PreparedStatement {
+  const marks = foodIds.map(() => "?").join(", ");
+  return d1
+    .prepare(`DELETE FROM foods WHERE source = 'ai_estimate' AND id IN (${marks}) AND NOT EXISTS (SELECT 1 FROM meal_items mi WHERE mi.food_id = foods.id)`)
+    .bind(...foodIds);
+}
+
+/** Прийом `pending`, що належить користувачеві: умова-страж для кроків batch. */
+const OWN_PENDING_MEAL = "EXISTS (SELECT 1 FROM meals gm WHERE gm.id = ? AND gm.user_id = ? AND gm.status = 'pending')";
+
 /** Прапорці обмежень «knee,back» → масив; невідомі токени відкидаються. */
 export function parseLimits(raw: string | null | undefined): Limit[] {
   return (raw ?? "").split(",").filter((x): x is Limit => x === "knee" || x === "back" || x === "shoulder" || x === "wrist");
@@ -174,7 +290,7 @@ function toExercise(row: typeof exercises.$inferSelect): Exercise {
 }
 
 export function createRepo(db: Db) {
-  return {
+  const repo = {
     /** Створює профіль або оновлює first_name; tz і created_at не чіпає. Повертає кількість записаних рядків: без зміни імені — 0. */
     async upsertUser(userId: number, firstName: string, now: number): Promise<number> {
       const name = [...firstName].slice(0, FIRST_NAME_MAX).join("");
@@ -806,7 +922,305 @@ export function createRepo(db: Db) {
       const row = await db.select({ tickAt: cronState.lastTickAt, okAt: cronState.lastOkAt }).from(cronState).where(eq(cronState.id, 1)).get();
       return row ?? null;
     },
+
+    // --- Фаза 3: каталог продуктів і прийоми їжі. foods/food_aliases — спільні (без userId), решта — лише власні рядки. ---
+
+    /** Продукт за аліасом (нормалізується тут же, нормалізація ідемпотентна); невалідний аліас або немає — null. */
+    async findFoodByAlias(alias: string): Promise<Food | null> {
+      const key = normalizeAlias(alias);
+      if (key === null) return null;
+      const rows = await db.all<FoodRow>(sql`
+        SELECT ${sql.raw(FOOD_COLUMNS)} FROM food_aliases a JOIN foods f ON f.id = a.food_id WHERE a.alias = ${key}`);
+      return rows[0] ? toFood(rows[0]) : null;
+    },
+
+    /**
+     * Оцінка моделі як новий продукт `ai_estimate` з аліасом `normalizeAlias(nameUk)`. Ідемпотентно за аліасом:
+     * є — повертає наявний, нового рядка немає (також при гонці: аліас-конфлікт відкочує весь batch).
+     * Невалідна назва (порожня після нормалізації, > 60 символів) або значення поза межами схеми — null, нічого не записано.
+     */
+    async insertEstimatedFood(f: EstimatedFood, now: number): Promise<Food | null> {
+      const key = normalizeAlias(f.nameUk);
+      if (key === null || [...f.nameUk].length > 60) return null;
+      const dg = [f.protein100Dg, f.fat100Dg, f.carbs100Dg];
+      if (!Number.isInteger(f.kcal100) || f.kcal100 < 0 || f.kcal100 > 900) return null;
+      if (dg.some((v) => !Number.isInteger(v) || v < 0 || v > 1000) || dg[0]! + dg[1]! + dg[2]! > 1000) return null;
+      const existing = await repo.findFoodByAlias(key);
+      if (existing) return existing;
+      const d1 = db.$client;
+      try {
+        await d1.batch([
+          d1
+            .prepare("INSERT INTO foods (name_uk, kcal_100, protein_100_dg, fat_100_dg, carbs_100_dg, source, fdc_ref, created_at) VALUES (?, ?, ?, ?, ?, 'ai_estimate', NULL, ?)")
+            .bind(f.nameUk, f.kcal100, f.protein100Dg, f.fat100Dg, f.carbs100Dg, now),
+          // Рядок щойно вставлений у цьому ж batch (одна транзакція): MAX(id) — він.
+          d1.prepare("INSERT INTO food_aliases (alias, food_id) VALUES (?, (SELECT MAX(id) FROM foods))").bind(key),
+        ]);
+      } catch (e) {
+        const raced = await repo.findFoodByAlias(key);
+        if (raced) return raced;
+        throw e;
+      }
+      return repo.findFoodByAlias(key);
+    },
+
+    /**
+     * `pending`-прийом з позиціями одним batch. Немає користувача або позицій не 1–8 → null. Знімка КБЖУ немає до confirmMeal.
+     * Значення поза межами схеми (грами не цілі 1–2000, дата не `YYYY-MM-DD`, caption > 300, ai_raw_json > 8192) — null без запису.
+     * Невідомий food_id відхиляє FK — виняток, batch відкочується цілком.
+     */
+    async createPendingMeal(userId: number, m: NewMeal, now: number): Promise<number | null> {
+      if (m.items.length < 1 || m.items.length > 8) return null;
+      if (m.items.some((it) => !Number.isInteger(it.grams) || it.grams < 1 || it.grams > 2000)) return null;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(m.localDate) || [...(m.caption ?? "")].length > 300 || [...m.aiRawJson].length > 8192) return null;
+      const u = await db.select({ id: users.id }).from(users).where(eq(users.id, userId)).get();
+      if (!u) return null;
+      const d1 = db.$client;
+      const res = await d1.batch([
+        d1
+          .prepare(
+            `INSERT INTO meals (user_id, status, eaten_at, local_date, photo_file_id, caption, ai_model, ai_raw_json, message_id, await_grams_at, created_at, confirmed_at)
+             VALUES (?, 'pending', ?, ?, ?, ?, ?, ?, ?, NULL, ?, NULL)`,
+          )
+          .bind(userId, m.eatenAt, m.localDate, m.photoFileId, m.caption, m.aiModel, m.aiRawJson, m.messageId ?? null, now),
+        // Прийом щойно вставлений у цьому ж batch: його id — найбільший серед прийомів користувача (AUTOINCREMENT).
+        ...m.items.map((it, i) =>
+          d1
+            .prepare("INSERT INTO meal_items (meal_id, position, food_id, grams, confidence) VALUES ((SELECT MAX(id) FROM meals WHERE user_id = ?), ?, ?, ?, ?)")
+            .bind(userId, i + 1, it.foodId, it.grams, it.confidence),
+        ),
+      ]);
+      return res[0]?.meta.last_row_id ?? null;
+    },
+
+    /** Прийом з позиціями; чужий або неіснуючий — null. */
+    async getMeal(userId: number, mealId: number): Promise<MealView | null> {
+      const rows = await db.all<{
+        id: number; user_id: number; status: MealStatus; eaten_at: number; local_date: string; photo_file_id: string | null; caption: string | null;
+        ai_model: string; message_id: number | null; await_grams_at: number | null; created_at: number; confirmed_at: number | null;
+      }>(sql`
+        SELECT id, user_id, status, eaten_at, local_date, photo_file_id, caption, ai_model, message_id, await_grams_at, created_at, confirmed_at
+        FROM meals WHERE id = ${mealId} AND user_id = ${userId}`);
+      const m = rows[0];
+      if (!m) return null;
+      const items = await db.all<{
+        position: number; food_id: number; name_uk: string; grams: number; confidence: MealConfidence; source: FoodSource;
+        kcal_100: number; protein_100_dg: number; fat_100_dg: number; carbs_100_dg: number;
+        kcal: number | null; protein_dg: number | null; fat_dg: number | null; carbs_dg: number | null;
+      }>(sql`
+        SELECT mi.position AS position, mi.food_id AS food_id, f.name_uk AS name_uk, mi.grams AS grams, mi.confidence AS confidence, f.source AS source,
+               f.kcal_100 AS kcal_100, f.protein_100_dg AS protein_100_dg, f.fat_100_dg AS fat_100_dg, f.carbs_100_dg AS carbs_100_dg,
+               mi.kcal AS kcal, mi.protein_dg AS protein_dg, mi.fat_dg AS fat_dg, mi.carbs_dg AS carbs_dg
+        FROM meal_items mi JOIN foods f ON f.id = mi.food_id
+        WHERE mi.meal_id = ${mealId} ORDER BY mi.position`);
+      return {
+        id: m.id,
+        userId: m.user_id,
+        status: m.status,
+        eatenAt: m.eaten_at,
+        localDate: m.local_date,
+        photoFileId: m.photo_file_id,
+        caption: m.caption,
+        aiModel: m.ai_model,
+        messageId: m.message_id,
+        awaitGramsAt: m.await_grams_at,
+        createdAt: m.created_at,
+        confirmedAt: m.confirmed_at,
+        items: items.map((r) => ({
+          position: r.position,
+          foodId: r.food_id,
+          nameUk: r.name_uk,
+          grams: r.grams,
+          confidence: r.confidence,
+          source: r.source,
+          food: { kcal: r.kcal_100, proteinDg: r.protein_100_dg, fatDg: r.fat_100_dg, carbsDg: r.carbs_100_dg },
+          snapshot: r.kcal === null ? null : { kcal: r.kcal, proteinDg: r.protein_dg ?? 0, fatDg: r.fat_dg ?? 0, carbsDg: r.carbs_dg ?? 0 },
+        })),
+      };
+    },
+
+    /** `pending`-прийом користувача, що чекає грами (`await_grams_at` не старший за ttlMs); найсвіжіший. */
+    async awaitingGramsMeal(userId: number, now: number, ttlMs: number): Promise<MealView | null> {
+      const rows = await db.all<{ id: number }>(sql`
+        SELECT id FROM meals
+        WHERE user_id = ${userId} AND status = 'pending' AND await_grams_at IS NOT NULL AND await_grams_at >= ${now - ttlMs}
+        ORDER BY await_grams_at DESC, id DESC LIMIT 1`);
+      return rows[0] ? repo.getMeal(userId, rows[0].id) : null;
+    },
+
+    /**
+     * pending → confirmed і знімок КБЖУ в позиціях — один batch. Знімок за формулою (грами × x_100 + 50) div 100 (ціле, половина вгору),
+     * лише де його ще немає. true — прийом щойно підтверджено; повторний виклик, чужий прийом, не `pending` — false без змін.
+     */
+    async confirmMeal(userId: number, mealId: number, now: number): Promise<boolean> {
+      const d1 = db.$client;
+      const res = await d1.batch([
+        // Порожній прийом (усі позиції вилучено) не підтверджується: dayTotals показав би «їв», якого не було.
+        d1
+          .prepare("UPDATE meals SET status = 'confirmed', confirmed_at = ?, await_grams_at = NULL WHERE id = ? AND user_id = ? AND status = 'pending' AND EXISTS (SELECT 1 FROM meal_items WHERE meal_id = ?)")
+          .bind(now, mealId, userId, mealId),
+        d1
+          .prepare(
+            `UPDATE meal_items SET
+               kcal = (meal_items.grams * f.kcal_100 + 50) / 100,
+               protein_dg = (meal_items.grams * f.protein_100_dg + 50) / 100,
+               fat_dg = (meal_items.grams * f.fat_100_dg + 50) / 100,
+               carbs_dg = (meal_items.grams * f.carbs_100_dg + 50) / 100
+             FROM foods f
+             WHERE f.id = meal_items.food_id AND meal_items.meal_id = ? AND meal_items.kcal IS NULL
+               AND EXISTS (SELECT 1 FROM meals gm WHERE gm.id = ? AND gm.user_id = ? AND gm.status = 'confirmed')`,
+          )
+          .bind(mealId, mealId, userId),
+      ]);
+      return res[0]?.meta.changes === 1;
+    },
+
+    /**
+     * Нові грами для позицій власного `pending`-прийому: `grams` 1–2000 — змінити, 0 — вилучити позицію (`position` не перенумеровується).
+     * Знімає очікування грамів. false без змін: чужий/не `pending`, невідома або повторена позиція, грами поза 0–2000,
+     * вилучені всі позиції. Осиротілі `ai_estimate`-продукти вилучених позицій прибираються.
+     */
+    async updateMealGrams(userId: number, mealId: number, changes: { position: number; grams: number }[]): Promise<boolean> {
+      const meal = await repo.getMeal(userId, mealId);
+      if (!meal || meal.status !== "pending") return false;
+      const byPos = new Map(meal.items.map((it) => [it.position, it]));
+      const seen = new Set<number>();
+      for (const c of changes) {
+        if (!byPos.has(c.position) || seen.has(c.position) || !Number.isInteger(c.grams) || c.grams < 0 || c.grams > 2000) return false;
+        seen.add(c.position);
+      }
+      const removed = changes.filter((c) => c.grams === 0).map((c) => byPos.get(c.position)!.foodId);
+      if (removed.length >= meal.items.length) return false;
+      const d1 = db.$client;
+      // Лічильник вище міг застаріти (паралельна правка того ж прийому): «щонайменше одна позиція лишається» знову перевіряє сам DELETE.
+      const stmts = changes.map((c) =>
+        c.grams === 0
+          ? d1
+              .prepare(`DELETE FROM meal_items WHERE meal_id = ? AND position = ? AND ${OWN_PENDING_MEAL} AND (SELECT COUNT(*) FROM meal_items WHERE meal_id = ?) > 1`)
+              .bind(mealId, c.position, mealId, userId, mealId)
+          : d1.prepare(`UPDATE meal_items SET grams = ? WHERE meal_id = ? AND position = ? AND ${OWN_PENDING_MEAL}`).bind(c.grams, mealId, c.position, mealId, userId),
+      );
+      const deleteIdx = changes.flatMap((c, i) => (c.grams === 0 ? [i] : []));
+      stmts.push(d1.prepare("UPDATE meals SET await_grams_at = NULL WHERE id = ? AND user_id = ? AND status = 'pending'").bind(mealId, userId));
+      const metaIdx = stmts.length - 1;
+      if (removed.length > 0) stmts.push(orphanEstimates(d1, removed));
+      const res = await d1.batch(stmts);
+      return res[metaIdx]?.meta.changes === 1 && deleteIdx.every((i) => res[i]?.meta.changes === 1);
+    },
+
+    /**
+     * Скасування: `pending` → `cancelled` з вилученням позицій і осиротілих `ai_estimate`-продуктів (відкинута оцінка не стає еталоном);
+     * `confirmed` → `cancelled` — позиції й знімок лишаються для історії, у dayTotals не входять. true — стан змінився;
+     * повторне скасування, чужий прийом — false без помилки.
+     */
+    async cancelMeal(userId: number, mealId: number): Promise<boolean> {
+      const meal = await repo.getMeal(userId, mealId);
+      if (!meal || meal.status === "cancelled") return false;
+      const d1 = db.$client;
+      const foodIds = meal.status === "pending" ? [...new Set(meal.items.map((it) => it.foodId))] : [];
+      const stmts = [
+        d1.prepare(`DELETE FROM meal_items WHERE meal_id = ? AND ${OWN_PENDING_MEAL}`).bind(mealId, mealId, userId),
+        d1.prepare("UPDATE meals SET status = 'cancelled', await_grams_at = NULL WHERE id = ? AND user_id = ? AND status IN ('pending', 'confirmed')").bind(mealId, userId),
+      ];
+      if (foodIds.length > 0) stmts.push(orphanEstimates(d1, foodIds));
+      const res = await d1.batch(stmts);
+      return res[1]?.meta.changes === 1;
+    },
+
+    /**
+     * Крон (усі користувачі, без userId): `pending`, створені до `cutoff` (UTC мс), → `cancelled` з вилученням позицій;
+     * осиротілі `ai_estimate` старші за `cutoff` — геть (також від збою між створенням продукту й прийому). Повертає кількість скасованих.
+     */
+    async expirePendingMeals(cutoff: number): Promise<number> {
+      const d1 = db.$client;
+      const res = await d1.batch([
+        d1.prepare("DELETE FROM meal_items WHERE meal_id IN (SELECT id FROM meals WHERE status = 'pending' AND created_at < ?)").bind(cutoff),
+        d1.prepare("UPDATE meals SET status = 'cancelled', await_grams_at = NULL WHERE status = 'pending' AND created_at < ?").bind(cutoff),
+        d1
+          .prepare("DELETE FROM foods WHERE source = 'ai_estimate' AND created_at < ? AND NOT EXISTS (SELECT 1 FROM meal_items mi WHERE mi.food_id = foods.id)")
+          .bind(cutoff),
+      ]);
+      return res[1]?.meta.changes ?? 0;
+    },
+
+    /** Сума знімків за локальну дату — лише `confirmed`. Порожній день — нулі. */
+    async dayTotals(userId: number, localDate: string): Promise<Nutrients> {
+      const rows = await db.all<{ kcal: number; protein: number; fat: number; carbs: number }>(sql`
+        SELECT COALESCE(SUM(mi.kcal), 0) AS kcal, COALESCE(SUM(mi.protein_dg), 0) AS protein,
+               COALESCE(SUM(mi.fat_dg), 0) AS fat, COALESCE(SUM(mi.carbs_dg), 0) AS carbs
+        FROM meal_items mi JOIN meals m ON m.id = mi.meal_id
+        WHERE m.user_id = ${userId} AND m.local_date = ${localDate} AND m.status = 'confirmed'`);
+      const r = rows[0];
+      return { kcal: r?.kcal ?? 0, proteinDg: r?.protein ?? 0, fatDg: r?.fat ?? 0, carbsDg: r?.carbs ?? 0 };
+    },
+
+    /**
+     * Резервування ліміту витрат на ШІ: умовний атомарний INSERT (перевірка суми й запис — один оператор, паралельні виклики не обходять ліміт).
+     * Повертає id рядка або null, якщо `сума за локальну дату + estMicro > limitMicro` чи користувача немає.
+     */
+    async reserveAiUsage(userId: number, r: AiUsageReservation, now: number): Promise<number | null> {
+      const res = await db.$client
+        .prepare(
+          `INSERT INTO ai_usage (user_id, model, input_tokens, output_tokens, cost_micro, purpose, local_date, created_at)
+           SELECT u.id, ?, 0, 0, ?, ?, ?, ? FROM users u
+           WHERE u.id = ? AND (SELECT COALESCE(SUM(cost_micro), 0) FROM ai_usage WHERE user_id = u.id AND local_date = ?) + ? <= ?`,
+        )
+        .bind(r.model, r.estMicro, r.purpose, r.localDate, now, userId, r.localDate, r.estMicro, r.limitMicro)
+        .run();
+      return res.meta.changes === 1 ? res.meta.last_row_id : null;
+    },
+
+    /** Оцінка → факт: токени й ціна з `usage` відповіді (input ≥ 1). false — чужий, неіснуючий або вже розрахований рядок. */
+    async settleAiUsage(userId: number, usageId: number, actual: AiUsageActual): Promise<boolean> {
+      // Стан «резервування» = токени 0/0, «факт» = input ≥ 1 (відповідь API завжди має вхідні токени). Тому settle без вхідних токенів відхиляється
+      // (інакше факт 0/0 став би знову вилучним), а повторний settle не перезаписує вже розраховане.
+      if (!Number.isInteger(actual.inputTokens) || actual.inputTokens < 1 || !Number.isInteger(actual.outputTokens) || actual.outputTokens < 0) return false;
+      const res = await db.$client
+        .prepare("UPDATE ai_usage SET input_tokens = ?, output_tokens = ?, cost_micro = ? WHERE id = ? AND user_id = ? AND input_tokens = 0 AND output_tokens = 0")
+        .bind(actual.inputTokens, actual.outputTokens, actual.costMicro, usageId, userId)
+        .run();
+      return res.meta.changes === 1;
+    },
+
+    /** Повернути ліміт: вилучає лише ще не закрите резервування (токени 0/0); факт оплати не стирається. */
+    async releaseAiUsage(userId: number, usageId: number): Promise<boolean> {
+      const res = await db.$client
+        .prepare("DELETE FROM ai_usage WHERE id = ? AND user_id = ? AND input_tokens = 0 AND output_tokens = 0")
+        .bind(usageId, userId)
+        .run();
+      return res.meta.changes === 1;
+    },
+
+    /** Витрати на ШІ за локальну дату (мікро-USD), резервування включно. */
+    async aiSpendToday(userId: number, localDate: string): Promise<number> {
+      const rows = await db.all<{ spent: number }>(sql`
+        SELECT COALESCE(SUM(cost_micro), 0) AS spent FROM ai_usage WHERE user_id = ${userId} AND local_date = ${localDate}`);
+      return rows[0]?.spent ?? 0;
+    },
+
+    /** Норма з датою початку. Ідемпотентно (PK `user, valid_from` і `user, source_date`): true — записано, false — вже було або немає користувача. */
+    async insertTarget(userId: number, t: NutritionTarget, now: number): Promise<boolean> {
+      const res = await db.$client
+        .prepare(
+          `INSERT INTO nutrition_targets (user_id, valid_from, kcal, protein_g, fat_g, carbs_g, reason, source_date, created_at)
+           SELECT u.id, ?, ?, ?, ?, ?, ?, ?, ? FROM users u WHERE u.id = ?
+           ON CONFLICT DO NOTHING`,
+        )
+        .bind(t.validFrom, t.kcal, t.proteinG, t.fatG, t.carbsG, t.reason, t.sourceDate, now, userId)
+        .run();
+      return res.meta.changes === 1;
+    },
+
+    /** Чинна норма на локальну дату: рядок з максимальним `valid_from <= localDate`. */
+    async getTargetOn(userId: number, localDate: string): Promise<NutritionTarget | null> {
+      const rows = await db.all<{ valid_from: string; kcal: number; protein_g: number; fat_g: number; carbs_g: number; reason: TargetReason; source_date: string | null }>(sql`
+        SELECT valid_from, kcal, protein_g, fat_g, carbs_g, reason, source_date FROM nutrition_targets
+        WHERE user_id = ${userId} AND valid_from <= ${localDate} ORDER BY valid_from DESC LIMIT 1`);
+      const r = rows[0];
+      return r ? { validFrom: r.valid_from, kcal: r.kcal, proteinG: r.protein_g, fatG: r.fat_g, carbsG: r.carbs_g, reason: r.reason, sourceDate: r.source_date } : null;
+    },
   };
+  return repo;
 }
 
 export type Repo = ReturnType<typeof createRepo>;

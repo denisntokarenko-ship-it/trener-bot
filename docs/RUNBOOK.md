@@ -89,6 +89,10 @@ D1 не має down-міграцій. Варіанти — від кращого
 
 Хибне припущення про крок чи мінімум ваги → правка `CATALOG` у `scripts/seed-core.ts` і повторний сид (каталог — upsert за `slug`). Програму, дні й слоти повторний сид не змінює — лише дописує відсутні.
 
+### Сид продуктів (Фаза 3, 3.1)
+
+Каталог продуктів — окремий сид: `npm run seed:foods:preview` (або `:prod`, `:local`) → `.seed-foods.sql` → `wrangler d1 execute --file`. Потребує міграції `0007`. Ідемпотентний (ключ — `foods.fdc_ref`): повтор — 0 записаних рядків. **Сид продуктів — до першого фото** (Д2 рев'ю 3.1): `ON CONFLICT (alias) DO NOTHING` віддав би аліас уже наявному `ai_estimate`. Після сиду: `SELECT COUNT(*) FROM foods f WHERE NOT EXISTS (SELECT 1 FROM food_aliases a WHERE a.food_id = f.id)` має бути 0. Перебудова `scripts/foods-seed.json` з мапи — `node scripts/build-foods-seed.ts <папка CSV SR Legacy> <дата>` (CSV: fdc.nal.usda.gov, SR Legacy 2018-04; не комітиться); скрипт падає на розбіжності опису з `fdc_desc` і на дубль аліаса.
+
 ## Відкат міграції 0001 (тренування)
 
 Як для 0000: Time Travel або вручну, діти раніше батьків (FK):

@@ -12,3 +12,4 @@ coverage
 
 # Згенерований SQL сиду (npm run seed:sql)
 .seed.sql
+.seed-foods.sql
