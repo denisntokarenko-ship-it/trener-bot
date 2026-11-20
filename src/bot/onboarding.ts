@@ -266,7 +266,14 @@ export function createOnboardingFlow(repo: Repo, now: () => number) {
       case "new":
         await moveAndShow(ctx, userId, st, { step: "welcome", sub: 0 });
         return;
-      case "ok":
+      case "ok0":
+      case "ok1":
+      case "ok2":
+        // Кнопка несе варіант екрана: інший варіант у стані — це застарілий екран (рев'ю В1).
+        if (Number(value.slice(2)) !== st.planVariant) {
+          await editTapped(ctx, userId, st, await render(userId, st));
+          return MSG.stale;
+        }
         return accept(ctx, userId, st);
       default:
         return MSG.stale;
@@ -355,7 +362,8 @@ export function createOnboardingFlow(repo: Repo, now: () => number) {
     if (isEnumStep(step)) {
       const opt = ENUMS[step].opts.find((o) => o.value === value);
       if (!opt) return MSG.stale;
-      await repo.upsertProfile(userId, { [ENUMS[step].field]: opt.stored }, now());
+      const leavingOther = step === "goal" && opt.stored !== "other" && (await repo.getProfile(userId))?.goal === "other";
+      await repo.upsertProfile(userId, { [ENUMS[step].field]: opt.stored, ...(leavingOther ? { goalNote: null } : {}) }, now());
       await show(forward(st));
       return;
     }

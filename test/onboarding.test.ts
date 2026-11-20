@@ -533,7 +533,8 @@ describe("P2.8–P2.10 підтвердження плану", () => {
     const slot = day.slots[0]!;
     await repo.upsertSet(OWNER, { workoutId: w.id, programExerciseId: slot.id, exerciseId: 1, setNo: 1, weightKg: 60, reps: 8, prescribedWeightKg: 60, prescribedReps: 8, skipped: false });
     await repo.finishWorkout(OWNER, w.id, 3, 6_000);
-    const snapshot = JSON.stringify((await env.DB.prepare("SELECT * FROM workout_sets").all()).results);
+    const snap = async () => JSON.stringify([(await env.DB.prepare("SELECT * FROM workouts").all()).results, (await env.DB.prepare("SELECT * FROM workout_sets").all()).results]);
+    const snapshot = await snap();
     await repo.upsertOnboarding(OWNER, { status: "active", step: "activity" }, 1);
     await repo.upsertProfile(OWNER, { goal: "muscle" }, 1);
     await say("/start");
@@ -544,7 +545,7 @@ describe("P2.8–P2.10 підтвердження плану", () => {
     await tap(accept);
     expect(await programsCount()).toBe(2);
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM programs WHERE active = 1").first<{ n: number }>())!.n).toBe(1);
-    expect(JSON.stringify((await env.DB.prepare("SELECT * FROM workout_sets").all()).results)).toBe(snapshot);
+    expect(await snap()).toBe(snapshot);
     expect((await state())?.status).toBe("done");
     expect(lastText()).toContain("Готово");
     expect(lastText()).toContain("Наступне тренування");
@@ -565,7 +566,7 @@ describe("P2.8–P2.10 підтвердження плану", () => {
     await say("/trening");
     const before = await programsCount();
     // екран плану — попереднє повідомлення; кнопка з нього
-    await tap("o:pl:ok");
+    await tap("o:pl:ok0");
     expect(lastAnswer()).toBe("Заверши тренування (/trening) і повтори");
     expect(await programsCount()).toBe(before);
     expect((await state())?.status).toBe("active");
@@ -699,5 +700,100 @@ describe("callback_data і межі", () => {
       daysPerWeek: 3, sessionMin: 60, limits: [], variant: 0, weightsUsed: 0, weightsTotal: 0,
     });
     expect(screen.text).toContain("Жим &lt;b&gt; &amp; тяга");
+  });
+});
+
+describe("рев'ю 1b.2", () => {
+  async function toPlan(): Promise<void> {
+    await say("/start");
+    await press("▶️");
+    await press("💪 Набрати");
+    await press("➡️ Далі");
+    await skip(5);
+    await press("➡️ Далі");
+    await skip(9);
+    expect((await state())?.step).toBe("plan");
+  }
+
+  it("В1: [✅] зі старого екрана плану (інший варіант у стані) не активує невидимий варіант", async () => {
+    await toPlan();
+    const oldOk = button("✅ Прийняти").callback_data; // варіант 1 (ok0)
+    expect(oldOk).toBe("o:pl:ok0");
+    await press("🔁"); // стан: варіант 2
+    await tap(oldOk);
+    expect(lastAnswer()).toBe("Це вже неактуально");
+    expect(await programsCount()).toBe(0);
+    expect((await state())?.status).toBe("active");
+    await tap(button("✅ Прийняти").callback_data); // актуальний екран — приймається
+    expect(await programsCount()).toBe(1);
+  });
+
+  it("Д1: зміна цілі з «Інше» на іншу очищає goal_note", async () => {
+    await say("/start");
+    await press("▶️");
+    await press("✍️ Інше");
+    await say("свій текст");
+    await press("⬅️ Назад");
+    await press("⬅️ Назад");
+    await press("💪 Набрати");
+    expect(await profile()).toMatchObject({ goal: "muscle", goalNote: null });
+  });
+
+  it("Д2: три довгі нотатки з & не ламають HTML профілю (≤ 4096, без обрізаної сутності)", async () => {
+    await ownerWithProgram();
+    const long = "&".repeat(300);
+    await repo.upsertProfile(OWNER, { goal: "muscle", goalNote: long, limitsNote: long, dietNote: long }, 1);
+    await say("/profil");
+    const t = lastText();
+    expect(t.length).toBeLessThanOrEqual(4096);
+    expect(t.replace(/&amp;/g, "").includes("&")).toBe(false);
+    expect((t.match(/<i>/g) ?? []).length).toBe((t.match(/<\/i>/g) ?? []).length);
+  });
+
+  it("Д3: значення чужого кроку (o:m:3 на кроці days) ігнорується", async () => {
+    await say("/start");
+    await press("▶️");
+    await press("💪 Набрати");
+    await press("➡️ Далі");
+    await press("Новачок");
+    expect((await state())?.step).toBe("days");
+    await tap("o:m:3");
+    expect(lastAnswer()).toBe("Це вже неактуально");
+    expect((await profile())?.mealsPerDay ?? null).toBeNull();
+    expect((await state())?.step).toBe("days");
+  });
+
+  it("Д3: стан plan без цілі повертає на goal, нічого не пише", async () => {
+    await repo.upsertUser(OWNER, "Денис", 0);
+    await repo.upsertOnboarding(OWNER, { status: "active", step: "plan" }, 1);
+    await tap("o:pl:ok0");
+    expect(lastAnswer()).toBe("Це вже неактуально");
+    expect((await state())?.step).toBe("goal");
+    expect(await programsCount()).toBe(0);
+  });
+
+  it("Д3: без доступних якорів крок lifts пропускається, «Назад» із sex веде в limits_note", async () => {
+    await say("/start");
+    await press("▶️");
+    await press("💪 Набрати");
+    await press("➡️ Далі");
+    await press("Новачок");
+    await press("3 дні");
+    await press("60 хв");
+    await press("Вдома");
+    for (const l of ["Коліна", "Спина", "Плечі"]) await press(l);
+    await press("✅ Готово");
+    await press("➡️ Далі");
+    expect((await state())?.step).toBe("sex");
+    await press("⬅️ Назад");
+    expect((await state())?.step).toBe("limits_note");
+  });
+
+  it("Д3: після текстової відповіді з попереднього екрана знімається клавіатура", async () => {
+    await say("/start");
+    await press("▶️");
+    await press("💪 Набрати");
+    await say("уточнення");
+    expect(tg.calls.some((c) => c.method === "editMessageReplyMarkup")).toBe(true);
   });
 });

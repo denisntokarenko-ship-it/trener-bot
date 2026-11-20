@@ -151,6 +151,8 @@ export const LIMIT_OPTS = [
 export const LIMIT_LABELS: Record<string, string> = { knee: "коліна", back: "спина", shoulder: "плечі", wrist: "зап'ястя" };
 
 const TOTAL = 15;
+/** Нотатка для екрана профілю: скорочується до екранування, щоб clip() не різав HTML-сутність. */
+const short = (s: string, n = 100): string => (s.length > n ? `${[...s].slice(0, n).join("")}…` : s);
 const head = (n: number, title: string): string => `<b>${title}</b>\n<i>Питання ${n} з ${TOTAL}</i>`;
 
 export interface Screen {
@@ -202,7 +204,7 @@ export function enumScreen(step: EnumStep, profile: ProfileRow | null, o: { hint
 
 export function goalNoteScreen(profile: ProfileRow | null): Screen {
   const other = profile?.goal === "other";
-  const note = profile?.goalNote ? `\nЗараз: <i>${esc(profile.goalNote)}</i>` : "";
+  const note = profile?.goalNote ? `\nЗараз: <i>${esc(short(profile.goalNote))}</i>` : "";
   const text =
     (other
       ? "<b>✍️ Опиши свою ціль</b>\nНапиши кількома словами, чого хочеш."
@@ -318,7 +320,7 @@ export function planScreen(v: PlanView): Screen {
   }
   lines.push("", `<i>Варіант ${v.variant + 1} з 3. Нічого не зміниться, поки не натиснеш «Прийняти».</i>`);
   const kb = new InlineKeyboard()
-    .text("✅ Прийняти", obStep("plan", "ok"))
+    .text("✅ Прийняти", obStep("plan", `ok${v.variant}`))
     .row()
     .text("🔁 Інший варіант", obStep("plan", "alt"))
     .text("✏️ Змінити дні", obStep("plan", "days"));
@@ -338,7 +340,7 @@ export function emptyDayScreen(): Screen {
 }
 
 export function planAcceptedText(planName: string, nextDay: string): string {
-  return `✅ <b>Готово!</b> План активовано: ${esc(planName)}.\nНаступне тренування: <b>${esc(nextDay)}</b>. Почати — /trening`;
+  return `✅ <b>Готово!</b> Активовано: ${esc(planName)}.\nНаступне тренування: <b>${esc(nextDay)}</b>. Почати — /trening`;
 }
 
 // --- Продовження, профіль ---
@@ -382,7 +384,7 @@ export function profileScreen(
       const l = profile.limits.split(",").filter(Boolean).map((x) => LIMIT_LABELS[x] ?? x);
       lines.push(`🩹 Обмеження: ${l.length ? l.join(", ") : "немає"}`);
     }
-    if (profile.limitsNote) lines.push(`<i>${esc(profile.limitsNote)}</i>`);
+    if (profile.limitsNote) lines.push(`<i>${esc(short(profile.limitsNote))}</i>`);
     const body: string[] = [];
     if (profile.sex) body.push(profile.sex === "m" ? "чоловік" : "жінка");
     if (profile.birthYear) body.push(`${profile.birthYear} р.н.`);
@@ -394,7 +396,7 @@ export function profileScreen(
     if (profile.sleepBand) life.push(`сон ${SLEEP_TEXT[profile.sleepBand] ?? profile.sleepBand}`);
     if (profile.activity) life.push(`активність ${ACTIVITY_TEXT[profile.activity] ?? profile.activity}`);
     if (life.length) lines.push(`🍽 ${life.join(" · ")}`);
-    if (profile.dietNote) lines.push(`<i>${esc(profile.dietNote)}</i>`);
+    if (profile.dietNote) lines.push(`<i>${esc(short(profile.dietNote))}</i>`);
   }
   if (weights.length) lines.push(`⚖️ Робочі ваги: ${weights.map((w) => `${esc(w.name)} ${fmtKg(w.weight.weightKg)}×${w.weight.reps}`).join("; ")}`);
   const kb = new InlineKeyboard();
