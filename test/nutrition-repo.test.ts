@@ -134,8 +134,16 @@ describe("каталог: аліаси й оцінки (P3.1.3, P3.1.6)", () => 
     expect(await repo.insertEstimatedFood({ nameUk: "()", kcal100: 1, protein100Dg: 0, fat100Dg: 0, carbs100Dg: 0 }, NOW)).toBeNull();
   });
 
-  it("insertEstimatedFood: значення поза CHECK (Б+Ж+В > 100 г) відхиляє, нічого не лишає", async () => {
-    await expect(repo.insertEstimatedFood({ nameUk: "Нісенітниця", kcal100: 100, protein100Dg: 600, fat100Dg: 600, carbs100Dg: 0 }, NOW)).rejects.toThrow();
+  it("insertEstimatedFood: значення поза межами схеми (Б+Ж+В > 100 г, 61 символ, ккал 901, не цілі) — null, нічого не лишає (Д1)", async () => {
+    await expect(repo.insertEstimatedFood({ nameUk: "Нісенітниця", kcal100: 100, protein100Dg: 600, fat100Dg: 600, carbs100Dg: 0 }, NOW)).resolves.toBeNull(); // Д1: null, не виняток
+    const bad = [
+      { nameUk: "я".repeat(61), kcal100: 1, protein100Dg: 0, fat100Dg: 0, carbs100Dg: 0 },
+      { nameUk: "Гарячий", kcal100: 901, protein100Dg: 0, fat100Dg: 0, carbs100Dg: 0 },
+      { nameUk: "Дробовий", kcal100: 10.5, protein100Dg: 0, fat100Dg: 0, carbs100Dg: 0 },
+      { nameUk: "Мінусовий", kcal100: 10, protein100Dg: -1, fat100Dg: 0, carbs100Dg: 0 },
+      { nameUk: "Забагато", kcal100: 10, protein100Dg: 500, fat100Dg: 400, carbs100Dg: 101 },
+    ];
+    for (const b of bad) expect(await repo.insertEstimatedFood(b, NOW), b.nameUk.slice(0, 12)).toBeNull();
     expect(await count("foods")).toBe(0);
     expect(await count("food_aliases")).toBe(0);
   });
@@ -154,7 +162,8 @@ describe("прийоми: створення, правка, скасування
 
     expect(await repo.createPendingMeal(999, meal([{ foodId: a, grams: 1, confidence: "low" }]), NOW)).toBeNull();
     expect(await repo.createPendingMeal(U, meal([]), NOW)).toBeNull();
-    await expect(repo.createPendingMeal(U, meal([{ foodId: a, grams: 10, confidence: "low" }, { foodId: a, grams: 0, confidence: "low" }]), NOW)).rejects.toThrow();
+    // Невідомий food_id у другій позиції: FK відхиляє, batch відкочується цілком — ні прийому, ні першої позиції.
+    await expect(repo.createPendingMeal(U, meal([{ foodId: a, grams: 10, confidence: "low" }, { foodId: 999_999, grams: 10, confidence: "low" }]), NOW)).rejects.toThrow();
     expect(await count("meals")).toBe(1);
     expect(await count("meal_items")).toBe(2);
   });
@@ -382,5 +391,86 @@ describe("норма (nutrition_targets)", () => {
   it("CHECK: kcal 800–6000", async () => {
     await expect(repo.insertTarget(U, t("2026-11-01", 700), NOW)).rejects.toThrow();
     await expect(repo.insertTarget(U, t("2026-11-01", 6001), NOW)).rejects.toThrow();
+  });
+});
+
+describe("виправлення за рев'ю 3.1", () => {
+  it("В1: два паралельні updateMealGrams, що разом вилучили б усі позиції, — лишається одна, рівно один true; confirm порожнього відмовляє", async () => {
+    const a = await seedFood("а", 100, 10, 10, 10);
+    const id = await pending(U, [{ foodId: a, grams: 100, confidence: "high" }, { foodId: a, grams: 200, confidence: "high" }]);
+    const r = await Promise.all([repo.updateMealGrams(U, id, [{ position: 1, grams: 0 }]), repo.updateMealGrams(U, id, [{ position: 2, grams: 0 }])]);
+    expect(r.filter(Boolean)).toHaveLength(1);
+    expect((await repo.getMeal(U, id))?.items).toHaveLength(1);
+    expect(await repo.confirmMeal(U, id, NOW)).toBe(true);
+
+    // Пояс: порожній pending (позиції зникли будь-яким шляхом) не підтверджується.
+    const empty = await pending(U, [{ foodId: a, grams: 100, confidence: "high" }]);
+    await env.DB.prepare("DELETE FROM meal_items WHERE meal_id = ?").bind(empty).run();
+    expect(await repo.confirmMeal(U, empty, NOW)).toBe(false);
+    expect((await repo.getMeal(U, empty))?.status).toBe("pending");
+  });
+
+  it("В1: вилучення двох із трьох позицій одним викликом — працює, лишається одна", async () => {
+    const a = await seedFood("а", 100, 10, 10, 10);
+    const id = await pending(U, [1, 2, 3].map(() => ({ foodId: a, grams: 100, confidence: "high" as const })));
+    expect(await repo.updateMealGrams(U, id, [{ position: 1, grams: 0 }, { position: 3, grams: 0 }])).toBe(true);
+    expect((await repo.getMeal(U, id))?.items.map((i) => i.position)).toEqual([2]);
+  });
+
+  it("В2: settle без вхідних токенів відхиляється, повторний settle не перезаписує, release розрахованого — false", async () => {
+    const res = { model: "claude-sonnet-5-5", purpose: "food_photo", localDate: DAY, estMicro: 15_000, limitMicro: 300_000 };
+    const id = (await repo.reserveAiUsage(U, res, NOW))!;
+    expect(await repo.settleAiUsage(U, id, { inputTokens: 0, outputTokens: 0, costMicro: 9_000 })).toBe(false);
+    expect(await repo.aiSpendToday(U, DAY)).toBe(15_000); // усе ще резервування
+    expect(await repo.settleAiUsage(U, id, { inputTokens: 3000, outputTokens: 400, costMicro: 9_000 })).toBe(true);
+    expect(await repo.settleAiUsage(U, id, { inputTokens: 1, outputTokens: 1, costMicro: 1 })).toBe(false);
+    expect(await repo.aiSpendToday(U, DAY)).toBe(9_000);
+    expect(await repo.releaseAiUsage(U, id)).toBe(false);
+    expect(await repo.aiSpendToday(U, DAY)).toBe(9_000);
+  });
+
+  it("В3: awaitingGramsMeal не бачить очікування іншого користувача, навіть свіжішого", async () => {
+    const a = await seedFood("а", 100, 0, 0, 0);
+    const mine = await pending(U, [{ foodId: a, grams: 10, confidence: "high" }]);
+    const theirs = await pending(OTHER, [{ foodId: a, grams: 10, confidence: "high" }]);
+    await env.DB.prepare("UPDATE meals SET await_grams_at = ? WHERE id = ?").bind(NOW - 120_000, mine).run();
+    await env.DB.prepare("UPDATE meals SET await_grams_at = ? WHERE id = ?").bind(NOW - 1_000, theirs).run();
+    expect((await repo.awaitingGramsMeal(U, NOW, 900_000))?.id).toBe(mine);
+    expect((await repo.awaitingGramsMeal(OTHER, NOW, 900_000))?.id).toBe(theirs);
+  });
+
+  it("В4: свіжа осиротіла ai_estimate (між insertEstimatedFood і createPendingMeal) переживає expirePendingMeals", async () => {
+    const fresh = (await repo.insertEstimatedFood({ nameUk: "Свіжа оцінка", kcal100: 100, protein100Dg: 10, fat100Dg: 10, carbs100Dg: 10 }, 60_000))!;
+    await repo.expirePendingMeals(50_000); // cutoff старший за створення продукту
+    expect(await repo.findFoodByAlias("свіжа оцінка")).not.toBeNull();
+    expect(await repo.createPendingMeal(U, meal([{ foodId: fresh.id, grams: 100, confidence: "low" }]), 60_000)).not.toBeNull();
+  });
+
+  it("Д1: createPendingMeal — null без запису для грамів 0/2001/1,5, caption 301, ai_raw_json 8193, дати не за форматом", async () => {
+    const a = await seedFood("а", 100, 0, 0, 0);
+    const ok = [{ foodId: a, grams: 10, confidence: "low" as const }];
+    const bad: NewMeal[] = [
+      meal([{ foodId: a, grams: 0, confidence: "low" }]),
+      meal([{ foodId: a, grams: 2001, confidence: "low" }]),
+      meal([{ foodId: a, grams: 1.5, confidence: "low" }]),
+      { ...meal(ok), caption: "я".repeat(301) },
+      { ...meal(ok), aiRawJson: "x".repeat(8193) },
+      meal(ok, "20.11.2026"),
+    ];
+    for (const m of bad) expect(await repo.createPendingMeal(U, m, NOW)).toBeNull();
+    expect(await count("meals")).toBe(0);
+    expect(await repo.createPendingMeal(U, { ...meal(ok), caption: "я".repeat(300) }, NOW)).not.toBeNull();
+  });
+
+  it("Д5: методи працюють після деструктурування repo (без this)", async () => {
+    const { insertEstimatedFood, findFoodByAlias, createPendingMeal, getMeal, updateMealGrams, cancelMeal, awaitingGramsMeal } = repo;
+    const f = (await insertEstimatedFood({ nameUk: "Окрема", kcal100: 100, protein100Dg: 10, fat100Dg: 10, carbs100Dg: 10 }, NOW))!;
+    expect((await insertEstimatedFood({ nameUk: "окрема", kcal100: 1, protein100Dg: 0, fat100Dg: 0, carbs100Dg: 0 }, NOW))?.id).toBe(f.id);
+    expect(await findFoodByAlias("Окрема")).not.toBeNull();
+    const id = (await createPendingMeal(U, meal([{ foodId: f.id, grams: 10, confidence: "low" }, { foodId: f.id, grams: 20, confidence: "low" }]), NOW))!;
+    expect(await updateMealGrams(U, id, [{ position: 1, grams: 30 }])).toBe(true);
+    expect((await getMeal(U, id))?.items[0]?.grams).toBe(30);
+    expect(await awaitingGramsMeal(U, NOW, 1000)).toBeNull();
+    expect(await cancelMeal(U, id)).toBe(true);
   });
 });

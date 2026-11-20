@@ -93,7 +93,7 @@ match = "cancelMeal: pending"
 [[mutant]]
 id = "M10"
 file = "src/db/repo.ts"
-old = '''const raced = await this.findFoodByAlias(key);
+old = '''const raced = await repo.findFoodByAlias(key);
         if (raced) return raced;
         throw e;'''
 new = '''throw e;'''
@@ -111,8 +111,8 @@ match = "settle/release чужого"
 [[mutant]]
 id = "M12"
 file = "src/db/repo.ts"
-old = ''' AND input_tokens = 0 AND output_tokens = 0'''
-new = ''''''
+old = '''DELETE FROM ai_usage WHERE id = ? AND user_id = ? AND input_tokens = 0 AND output_tokens = 0'''
+new = '''DELETE FROM ai_usage WHERE id = ? AND user_id = ?'''
 why = "releaseAiUsage стирає вже розрахований факт"
 match = "факт оплати не вилучається"
 
@@ -179,4 +179,52 @@ old = '''("meal_items"."kcal" IS NULL) = ("meal_items"."protein_dg" IS NULL) AND
 new = ''''''
 why = "CHECK «усі чотири знімки або жодного» без protein_dg"
 match = "P3[.]1[.]7"
+
+# --- Виправлення за рев'ю 3.1 ---
+
+[[mutant]]
+id = "M21"
+file = "src/db/repo.ts"
+old = ''' AND (SELECT COUNT(*) FROM meal_items WHERE meal_id = ?) > 1`)
+              .bind(mealId, c.position, mealId, userId, mealId)'''
+new = '''`)
+              .bind(mealId, c.position, mealId, userId)'''
+why = "В1: DELETE без перевірки «лишається ≥ 1 позиція»"
+match = "В1: два паралельні"
+
+[[mutant]]
+id = "M22"
+file = "src/db/repo.ts"
+old = '''WHERE user_id = ${userId} AND status = 'pending' AND await_grams_at IS NOT NULL'''
+new = '''WHERE ${userId} IS NOT NULL AND status = 'pending' AND await_grams_at IS NOT NULL'''
+why = "В3: awaitingGramsMeal без фільтра user_id"
+match = "В3: awaitingGramsMeal"
+
+[[mutant]]
+id = "M23"
+file = "src/db/repo.ts"
+old = '''DELETE FROM foods WHERE source = 'ai_estimate' AND created_at < ? AND NOT EXISTS'''
+new = '''DELETE FROM foods WHERE source = 'ai_estimate' AND ? IS NOT NULL AND NOT EXISTS'''
+why = "В4: expirePendingMeals чистить і свіжі сироти"
+match = "В4: свіжа осиротіла"
+
+[[mutant]]
+id = "M24"
+file = "src/db/repo.ts"
+old = '''WHERE id = ? AND user_id = ? AND input_tokens = 0 AND output_tokens = 0")
+        .bind(actual.inputTokens'''
+new = '''WHERE id = ? AND user_id = ?")
+        .bind(actual.inputTokens'''
+why = "В2: settle перезаписує вже розрахований рядок"
+match = "В2: settle без вхідних"
+
+[[mutant]]
+id = "M25"
+file = "src/db/repo.ts"
+old = ''' AND status = 'pending' AND EXISTS (SELECT 1 FROM meal_items WHERE meal_id = ?)")
+          .bind(now, mealId, userId, mealId)'''
+new = ''' AND status = 'pending' AND ? IS NOT NULL")
+          .bind(now, mealId, userId, mealId)'''
+why = "В1: confirmMeal підтверджує порожній прийом"
+match = "В1: два паралельні"
 

@@ -290,7 +290,7 @@ function toExercise(row: typeof exercises.$inferSelect): Exercise {
 }
 
 export function createRepo(db: Db) {
-  return {
+  const repo = {
     /** Створює профіль або оновлює first_name; tz і created_at не чіпає. Повертає кількість записаних рядків: без зміни імені — 0. */
     async upsertUser(userId: number, firstName: string, now: number): Promise<number> {
       const name = [...firstName].slice(0, FIRST_NAME_MAX).join("");
@@ -936,12 +936,16 @@ export function createRepo(db: Db) {
 
     /**
      * Оцінка моделі як новий продукт `ai_estimate` з аліасом `normalizeAlias(nameUk)`. Ідемпотентно за аліасом:
-     * є — повертає наявний, нового рядка немає (також при гонці: аліас-конфлікт відкочує весь batch). Невалідна назва — null.
+     * є — повертає наявний, нового рядка немає (також при гонці: аліас-конфлікт відкочує весь batch).
+     * Невалідна назва (порожня після нормалізації, > 60 символів) або значення поза межами схеми — null, нічого не записано.
      */
     async insertEstimatedFood(f: EstimatedFood, now: number): Promise<Food | null> {
       const key = normalizeAlias(f.nameUk);
-      if (key === null) return null;
-      const existing = await this.findFoodByAlias(key);
+      if (key === null || [...f.nameUk].length > 60) return null;
+      const dg = [f.protein100Dg, f.fat100Dg, f.carbs100Dg];
+      if (!Number.isInteger(f.kcal100) || f.kcal100 < 0 || f.kcal100 > 900) return null;
+      if (dg.some((v) => !Number.isInteger(v) || v < 0 || v > 1000) || dg[0]! + dg[1]! + dg[2]! > 1000) return null;
+      const existing = await repo.findFoodByAlias(key);
       if (existing) return existing;
       const d1 = db.$client;
       try {
@@ -953,19 +957,22 @@ export function createRepo(db: Db) {
           d1.prepare("INSERT INTO food_aliases (alias, food_id) VALUES (?, (SELECT MAX(id) FROM foods))").bind(key),
         ]);
       } catch (e) {
-        const raced = await this.findFoodByAlias(key);
+        const raced = await repo.findFoodByAlias(key);
         if (raced) return raced;
         throw e;
       }
-      return this.findFoodByAlias(key);
+      return repo.findFoodByAlias(key);
     },
 
     /**
      * `pending`-прийом з позиціями одним batch. Немає користувача або позицій не 1–8 → null. Знімка КБЖУ немає до confirmMeal.
-     * Невалідні значення (грами, дата, невідомий food_id) відхиляють CHECK/FK — batch відкочується цілком.
+     * Значення поза межами схеми (грами не цілі 1–2000, дата не `YYYY-MM-DD`, caption > 300, ai_raw_json > 8192) — null без запису.
+     * Невідомий food_id відхиляє FK — виняток, batch відкочується цілком.
      */
     async createPendingMeal(userId: number, m: NewMeal, now: number): Promise<number | null> {
       if (m.items.length < 1 || m.items.length > 8) return null;
+      if (m.items.some((it) => !Number.isInteger(it.grams) || it.grams < 1 || it.grams > 2000)) return null;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(m.localDate) || [...(m.caption ?? "")].length > 300 || [...m.aiRawJson].length > 8192) return null;
       const u = await db.select({ id: users.id }).from(users).where(eq(users.id, userId)).get();
       if (!u) return null;
       const d1 = db.$client;
@@ -1038,7 +1045,7 @@ export function createRepo(db: Db) {
         SELECT id FROM meals
         WHERE user_id = ${userId} AND status = 'pending' AND await_grams_at IS NOT NULL AND await_grams_at >= ${now - ttlMs}
         ORDER BY await_grams_at DESC, id DESC LIMIT 1`);
-      return rows[0] ? this.getMeal(userId, rows[0].id) : null;
+      return rows[0] ? repo.getMeal(userId, rows[0].id) : null;
     },
 
     /**
@@ -1048,7 +1055,10 @@ export function createRepo(db: Db) {
     async confirmMeal(userId: number, mealId: number, now: number): Promise<boolean> {
       const d1 = db.$client;
       const res = await d1.batch([
-        d1.prepare("UPDATE meals SET status = 'confirmed', confirmed_at = ?, await_grams_at = NULL WHERE id = ? AND user_id = ? AND status = 'pending'").bind(now, mealId, userId),
+        // Порожній прийом (усі позиції вилучено) не підтверджується: dayTotals показав би «їв», якого не було.
+        d1
+          .prepare("UPDATE meals SET status = 'confirmed', confirmed_at = ?, await_grams_at = NULL WHERE id = ? AND user_id = ? AND status = 'pending' AND EXISTS (SELECT 1 FROM meal_items WHERE meal_id = ?)")
+          .bind(now, mealId, userId, mealId),
         d1
           .prepare(
             `UPDATE meal_items SET
@@ -1071,7 +1081,7 @@ export function createRepo(db: Db) {
      * вилучені всі позиції. Осиротілі `ai_estimate`-продукти вилучених позицій прибираються.
      */
     async updateMealGrams(userId: number, mealId: number, changes: { position: number; grams: number }[]): Promise<boolean> {
-      const meal = await this.getMeal(userId, mealId);
+      const meal = await repo.getMeal(userId, mealId);
       if (!meal || meal.status !== "pending") return false;
       const byPos = new Map(meal.items.map((it) => [it.position, it]));
       const seen = new Set<number>();
@@ -1082,16 +1092,20 @@ export function createRepo(db: Db) {
       const removed = changes.filter((c) => c.grams === 0).map((c) => byPos.get(c.position)!.foodId);
       if (removed.length >= meal.items.length) return false;
       const d1 = db.$client;
+      // Лічильник вище міг застаріти (паралельна правка того ж прийому): «щонайменше одна позиція лишається» знову перевіряє сам DELETE.
       const stmts = changes.map((c) =>
         c.grams === 0
-          ? d1.prepare(`DELETE FROM meal_items WHERE meal_id = ? AND position = ? AND ${OWN_PENDING_MEAL}`).bind(mealId, c.position, mealId, userId)
+          ? d1
+              .prepare(`DELETE FROM meal_items WHERE meal_id = ? AND position = ? AND ${OWN_PENDING_MEAL} AND (SELECT COUNT(*) FROM meal_items WHERE meal_id = ?) > 1`)
+              .bind(mealId, c.position, mealId, userId, mealId)
           : d1.prepare(`UPDATE meal_items SET grams = ? WHERE meal_id = ? AND position = ? AND ${OWN_PENDING_MEAL}`).bind(c.grams, mealId, c.position, mealId, userId),
       );
+      const deleteIdx = changes.flatMap((c, i) => (c.grams === 0 ? [i] : []));
       stmts.push(d1.prepare("UPDATE meals SET await_grams_at = NULL WHERE id = ? AND user_id = ? AND status = 'pending'").bind(mealId, userId));
       const metaIdx = stmts.length - 1;
       if (removed.length > 0) stmts.push(orphanEstimates(d1, removed));
       const res = await d1.batch(stmts);
-      return res[metaIdx]?.meta.changes === 1;
+      return res[metaIdx]?.meta.changes === 1 && deleteIdx.every((i) => res[i]?.meta.changes === 1);
     },
 
     /**
@@ -1100,7 +1114,7 @@ export function createRepo(db: Db) {
      * повторне скасування, чужий прийом — false без помилки.
      */
     async cancelMeal(userId: number, mealId: number): Promise<boolean> {
-      const meal = await this.getMeal(userId, mealId);
+      const meal = await repo.getMeal(userId, mealId);
       if (!meal || meal.status === "cancelled") return false;
       const d1 = db.$client;
       const foodIds = meal.status === "pending" ? [...new Set(meal.items.map((it) => it.foodId))] : [];
@@ -1156,10 +1170,13 @@ export function createRepo(db: Db) {
       return res.meta.changes === 1 ? res.meta.last_row_id : null;
     },
 
-    /** Оцінка → факт: токени й ціна з `usage` відповіді. false — чужий або неіснуючий рядок. */
+    /** Оцінка → факт: токени й ціна з `usage` відповіді (input ≥ 1). false — чужий, неіснуючий або вже розрахований рядок. */
     async settleAiUsage(userId: number, usageId: number, actual: AiUsageActual): Promise<boolean> {
+      // Стан «резервування» = токени 0/0, «факт» = input ≥ 1 (відповідь API завжди має вхідні токени). Тому settle без вхідних токенів відхиляється
+      // (інакше факт 0/0 став би знову вилучним), а повторний settle не перезаписує вже розраховане.
+      if (!Number.isInteger(actual.inputTokens) || actual.inputTokens < 1 || !Number.isInteger(actual.outputTokens) || actual.outputTokens < 0) return false;
       const res = await db.$client
-        .prepare("UPDATE ai_usage SET input_tokens = ?, output_tokens = ?, cost_micro = ? WHERE id = ? AND user_id = ?")
+        .prepare("UPDATE ai_usage SET input_tokens = ?, output_tokens = ?, cost_micro = ? WHERE id = ? AND user_id = ? AND input_tokens = 0 AND output_tokens = 0")
         .bind(actual.inputTokens, actual.outputTokens, actual.costMicro, usageId, userId)
         .run();
       return res.meta.changes === 1;
@@ -1203,6 +1220,7 @@ export function createRepo(db: Db) {
       return r ? { validFrom: r.valid_from, kcal: r.kcal, proteinG: r.protein_g, fatG: r.fat_g, carbsG: r.carbs_g, reason: r.reason, sourceDate: r.source_date } : null;
     },
   };
+  return repo;
 }
 
 export type Repo = ReturnType<typeof createRepo>;
