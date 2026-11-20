@@ -2,7 +2,8 @@
 import { Bot, BotError } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import type { Repo } from "../db/repo";
-import { SOMETHING_WRONG, greeting } from "./texts";
+import { createOnboardingFlow } from "./onboarding";
+import { SOMETHING_WRONG } from "./texts";
 import { createWorkoutFlow } from "./workout-flow";
 import { NOT_UNDERSTOOD } from "./workout-view";
 
@@ -26,6 +27,7 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
   });
 
   const flow = createWorkoutFlow(repo, now);
+  const onboarding = createOnboardingFlow(repo, now);
 
   // Будь-яка команда знімає очікування ваги й виконується далі (phase-1-flow.md, «Введення ваги», п. 5).
   bot.use(async (ctx, next) => {
@@ -33,13 +35,18 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
     await next();
   });
 
-  bot.command("start", (ctx) => ctx.reply(greeting(ctx.from?.first_name ?? "")));
+  bot.command("start", (ctx) => onboarding.start(ctx));
+  bot.command("profil", (ctx) => onboarding.profil(ctx));
   bot.command("trening", (ctx) => flow.trening(ctx));
   bot.command("progres", (ctx) => flow.progres(ctx));
   bot.command("prohrama", (ctx) => flow.prohrama(ctx));
-  bot.on("callback_query:data", (ctx) => flow.callback(ctx));
+  bot.on("callback_query:data", (ctx) => (ctx.callbackQuery.data.startsWith("o:") ? onboarding.callback(ctx) : flow.callback(ctx)));
   bot.on("callback_query", (ctx) => ctx.answerCallbackQuery());
-  bot.on("message:text", (ctx) => flow.text(ctx));
+  // Текст: вага підходу, що чекає, має пріоритет над анкетою (phase-1b.md, «Потік»); інакше — анкета, інакше «Не зрозумів».
+  bot.on("message:text", async (ctx) => {
+    if (!(await flow.awaitsWeight(ctx)) && (await onboarding.text(ctx))) return;
+    await flow.text(ctx);
+  });
   bot.on("message", (ctx) => ctx.reply(NOT_UNDERSTOOD));
 
   return bot;

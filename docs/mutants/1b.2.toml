@@ -1,0 +1,59 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+# --- Обов'язкові з промпту 1b.2: apply лише після кнопки, стартові ваги з профілю, ізоляція userId ---
+
+[[mutant]]
+id = "M1"
+file = "src/bot/onboarding.ts"
+old = '''        const next = await save(userId, st, { planVariant: (st.planVariant + 1) % 3 });'''
+new = '''        await repo.activatePlan(userId, (buildPlan(planProfile(await repo.getProfile(userId)), await repo.getPlanCatalog(), 0) as { plan: never }).plan, now());
+        const next = await save(userId, st, { planVariant: (st.planVariant + 1) % 3 });'''
+why = "план застосовується без [✅ Прийняти] (на [🔁])"
+match = "підтвердження плану"
+
+[[mutant]]
+id = "M2"
+file = "src/bot/workout-flow.ts"
+old = '''h.length === 0 ? await repo.getStartWeight(userId, exercise.id) : null'''
+new = '''null'''
+why = "стартові ваги з профілю не доходять до прогресії"
+match = "кг × 6"
+
+[[mutant]]
+id = "M3"
+file = "src/db/repo.ts"
+old = '''.where(and(eq(startWeights.userId, userId), eq(startWeights.exerciseId, exerciseId)))
+        .get();'''
+new = '''.where(eq(startWeights.exerciseId, exerciseId))
+        .get();'''
+why = "getStartWeight без userId — чужа робоча вага"
+match = "чужий userId|іншого користувача"
+
+# --- Додаткові ---
+
+[[mutant]]
+id = "M4"
+file = "src/bot/onboarding.ts"
+old = '''    "level", "days", "minutes", "place", "limits", "lifts",'''
+new = '''    "goal", "level", "days", "minutes", "place", "limits", "lifts",'''
+why = "ціль можна пропустити"
+match = "Пропустити"
+
+[[mutant]]
+id = "M5"
+file = "src/bot/onboarding.ts"
+old = '''    if (!st || st.status !== "active") {
+      await dropKeyboard(ctx);'''
+new = '''    if (!st) {
+      await dropKeyboard(ctx);'''
+why = "повторне [✅] після done застосовує план знову"
+match = "P2.8|Прийняти|план"
+
+[[mutant]]
+id = "M6"
+file = "src/domain/onboarding.ts"
+old = '''Math.floor(g / step) * step'''
+new = '''Math.round(g / step) * step'''
+why = "робоча вага округлюється не вниз до кроку"
+match = "робоч|62"

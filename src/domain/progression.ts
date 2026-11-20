@@ -35,6 +35,12 @@ export interface ProgressionSlot {
   repMax: number;
 }
 
+/** Робоча вага з анкети (start_weights): діє лише поки в вправи немає історії (phase-1b.md, §2). */
+export interface StartWeight {
+  weightKg: number;
+  reps: number;
+}
+
 interface Analyzed {
   /** Робоча вага сесії, г. */
   w: number;
@@ -70,6 +76,7 @@ export function nextPrescription(
   history: readonly ProgressionSession[],
   exercise: ProgressionExercise,
   slot: ProgressionSlot,
+  start: StartWeight | null = null,
 ): Prescription {
   const stepG = toGrams(exercise.weightStepKg);
   const minG = toGrams(exercise.minWeightKg);
@@ -85,8 +92,12 @@ export function nextPrescription(
   const last = counted.at(-1);
   const prev = counted.at(-2);
 
-  // 1. Калібрування.
-  if (!last) return out(minG, slot.repMin, "calibration");
+  // 1. Калібрування. Робоча вага з анкети замінює мінімальну; повтори < repMin — вага × 0,9 (нормалізує norm).
+  if (!last) {
+    if (!start) return out(minG, slot.repMin, "calibration");
+    const g = toGrams(start.weightKg);
+    return out(start.reps >= slot.repMin ? g : Math.floor((g * 9) / 10), slot.repMin, "calibration");
+  }
   // 4. Розвантаження: дві останні — невдачі з однаковою W (лічильник лише поспіль і за тієї самої W).
   if (prev && last.failure && prev.failure && prev.w === last.w) {
     return out(Math.floor((last.w * 9) / 10), slot.repMin, "deload");
