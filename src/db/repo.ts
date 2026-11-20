@@ -5,6 +5,8 @@ import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import type { Db } from "./client";
 import type { Limit, Plan, PlanCatalogItem } from "../domain/plan";
 import type { ProgressSetRow } from "../domain/records";
+import { parseReminderTime, parseTrainingDays } from "../domain/reminders";
+import { parseTimezone } from "../domain/settings";
 import { bodyWeights, cronState, exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, remindersSent, startWeights, userProfiles, users, workoutSets, workouts, type ReminderKind } from "./schema";
 
 export const FIRST_NAME_MAX = 64;
@@ -147,6 +149,13 @@ export interface ReminderUserRow {
   remindTime: string | null;
   weighTime: string | null;
 }
+export interface UserSettings {
+  tz: string;
+  trainingDays: string;
+  remindTime: string | null;
+  weighTime: string | null;
+}
+export type SettingsPatch = Partial<UserSettings>;
 export interface StartWeight {
   exerciseId: number;
   weightKg: number;
@@ -304,6 +313,45 @@ export function createRepo(db: Db) {
         .where(and(eq(workouts.id, workoutId), eq(workouts.userId, userId), eq(workouts.status, "active")))
         .run();
       return res.meta.changes === 1;
+    },
+
+    /** Розклад нагадувань і пояс користувача; користувача немає — null. */
+    async getUserSettings(userId: number): Promise<UserSettings | null> {
+      const row = await db
+        .select({ tz: users.tz, trainingDays: users.trainingDays, remindTime: users.remindTime, weighTime: users.weighTime })
+        .from(users)
+        .where(eq(users.id, userId))
+        .get();
+      return row ?? null;
+    },
+
+    /**
+     * Змінює лише передані поля (`undefined` — не чіпати, `null` у часі — вимкнути). Кожне значення проходить ту саму
+     * перевірку, що й у кроні; будь-яке невалідне → нічого не пишемо, null. Пояс зберігається канонічним (ICU).
+     * Повертає стан після запису; користувача немає — null.
+     */
+    async updateUserSettings(userId: number, patch: SettingsPatch): Promise<UserSettings | null> {
+      const set: SettingsPatch = {};
+      if (patch.trainingDays !== undefined) {
+        if (parseTrainingDays(patch.trainingDays) === null) return null;
+        set.trainingDays = patch.trainingDays;
+      }
+      for (const k of ["remindTime", "weighTime"] as const) {
+        const v = patch[k];
+        if (v === undefined) continue;
+        if (v !== null && parseReminderTime(v) === null) return null;
+        set[k] = v;
+      }
+      if (patch.tz !== undefined) {
+        const tz = parseTimezone(patch.tz);
+        if (tz === null) return null;
+        set.tz = tz;
+      }
+      if (Object.keys(set).length > 0) {
+        const res = await db.update(users).set(set).where(eq(users.id, userId)).run();
+        if (res.meta.changes !== 1) return null;
+      }
+      return this.getUserSettings(userId);
     },
 
     /** Часовий пояс користувача (IANA); профілю немає — null. */

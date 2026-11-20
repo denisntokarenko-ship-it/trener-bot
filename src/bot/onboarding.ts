@@ -8,12 +8,14 @@ import {
 } from "../domain/onboarding";
 import { DEFAULTS, buildPlan, type Level, type Place, type PlanProfile } from "../domain/plan";
 import { nextDayCode } from "../domain/progression";
+import { parseTrainingDays } from "../domain/reminders";
+import { defaultTrainingDays } from "../domain/settings";
 import {
   ENUMS, MSG, PROFILE_CODE, RESUME_CODE, LIMIT_OPTS, badLift, emptyDayScreen, enumScreen, goalNoteScreen, isEnumStep,
   liftScreen, limitsScreen, newPlanKeyboard, noteScreen, numberScreen, parseOb, planAcceptedText, planScreen, profileScreen,
   resumeScreen, welcomeScreen, type Screen,
 } from "./onboarding-view";
-import { SOMETHING_WRONG, dayLabel, greeting } from "./texts";
+import { SOMETHING_WRONG, dayLabel, greeting, settingsDaysReset } from "./texts";
 
 const HTML = "HTML" as const;
 const isNotModified = (e: unknown): boolean => e instanceof GrammyError && /not modified/i.test(e.description);
@@ -287,14 +289,24 @@ export function createOnboardingFlow(repo: Repo, now: () => number) {
       await editTapped(ctx, userId, st, built.error === "EMPTY_DAY" ? emptyDayScreen() : await render(userId, st));
       return MSG.stale;
     }
+    const settings = await repo.getUserSettings(userId);
     const res = await repo.activatePlan(userId, built.plan, now());
     if (!res.ok) return res.error === "ACTIVE_WORKOUT" ? MSG.activeWorkout : MSG.failed;
     await save(userId, st, { status: "done" });
+    // Дні нагадувань (Фаза 2): N — тренувань на тиждень з профілю (а не днів програми: «Верх/Низ» = 2 дні на 4 тренування).
+    // Скидаємо, лише коли кількість обраних днів не збігається з N; при збігу власні дні лишаються.
+    const n = planProfile(profile).daysPerWeek ?? DEFAULTS.daysPerWeek;
+    const before = settings ? (parseTrainingDays(settings.trainingDays) ?? []).length : n;
+    let resetLine = "";
+    if (before !== n) {
+      const days = defaultTrainingDays(n);
+      if (await repo.updateUserSettings(userId, { trainingDays: days })) resetLine = `\n${settingsDaysReset(n, parseTrainingDays(days) ?? [])}`;
+    }
     const program = await repo.getActiveProgram(userId);
     const code = program ? nextDayCode(await repo.getLastDoneWorkout(userId), program.days) : null;
     const day = program?.days.some((d) => d.code === code) && code ? await repo.getProgramDay(userId, code) : null;
     const nextName = day ? dayLabel(day) : "—";
-    await editTapped(ctx, userId, st, { text: planAcceptedText(built.plan.name, nextName) });
+    await editTapped(ctx, userId, st, { text: planAcceptedText(built.plan.name, nextName) + resetLine });
     return undefined;
   }
 
