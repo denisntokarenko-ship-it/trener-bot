@@ -6,8 +6,8 @@ timeout = 300
 [[mutant]]
 id = "M1"
 file = "src/domain/time.ts"
-old = '''timeZone: tz, year'''
-new = '''timeZone: "UTC", year'''
+old = '''timeZone: tz,'''
+new = '''timeZone: "UTC",'''
 why = "localDate за UTC замість users.tz — 00:30 за Києвом потрапляє в попередню добу"
 match = "23:30 і 00:30|25\\.10\\.2026|users\\.tz"
 

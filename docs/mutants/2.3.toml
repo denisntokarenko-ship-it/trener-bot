@@ -7,10 +7,12 @@ timeout = 300
 id = "M1"
 file = "src/reminders.ts"
 old = '''  if (await c.repo.hasReminder(user.id, kind, date)) return "skipped";
-  if (!(await wanted(c.repo, user, kind, date))) return "skipped";
+  const program = kind === "weigh" ? null : await c.repo.getActiveProgram(user.id);
+  if (!(await wanted(c.repo, user, kind, date, program))) return "skipped";
   // 1. Заявка: 0 рядків — інший тік уже взяв.
   if (!(await c.repo.claimReminder(user.id, kind, date, c.now))) return "skipped";'''
-new = '''  if (!(await wanted(c.repo, user, kind, date))) return "skipped";
+new = '''  const program = kind === "weigh" ? null : await c.repo.getActiveProgram(user.id);
+  if (!(await wanted(c.repo, user, kind, date, program))) return "skipped";
   await c.repo.claimReminder(user.id, kind, date, c.now);'''
 why = "прибрати перевірку reminders_sent (і попередню, і за результатом claim) — другий тік шле дубль"
 match = "другий тік|два виклики|гонка"
@@ -165,18 +167,16 @@ match = "перша сесія"
 [[mutant]]
 id = "M18"
 file = "src/reminders.ts"
-old = '''const toUtc = localDayStartUtc(addDays(date, 1), user.tz);
-  const program'''
-new = '''const toUtc = Date.parse(`${addDays(date, 1)}T00:00:00Z`);
-  const program'''
+old = '''const toUtc = localDayStartUtc(addDays(date, 1), user.tz);'''
+new = '''const toUtc = Date.parse(`${addDays(date, 1)}T00:00:00Z`);'''
 why = "межа тижня за UTC-північчю замість локальної — тренування Пн 00:10 за Києвом потрапляє в минулий тиждень"
 match = "тиждень рахується за локальними датами"
 
 [[mutant]]
 id = "M19"
 file = "src/app.ts"
-old = '''Math.max(0, Math.floor((nowMs - tick) / 60_000))'''
-new = '''Math.max(0, Math.round((nowMs - tick) / 60_000))'''
+old = '''Math.max(0, Math.floor((nowMs - at) / 60_000))'''
+new = '''Math.max(0, Math.round((nowMs - at) / 60_000))'''
 why = "вік крону округлюється, а не усікається — 7 хв 59 с показано як 8m"
 match = "вік у хвилинах"
 
