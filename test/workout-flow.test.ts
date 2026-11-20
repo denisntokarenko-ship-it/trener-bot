@@ -485,6 +485,22 @@ describe("P2.3 рекорди", () => {
     // Жим лежачи — перша сесія: рекорду немає.
     expect(view().text).not.toContain("Жим лежачи —");
   });
+
+  it("R-2 В2: рекорд у підсумку — по всій історії, без вікна 30 сесій (той самий агрегат, що /progres)", async () => {
+    // Присідання: 70 кг у найпершій сесії, далі 39 сесій по 50 кг; сьогодні 60 кг — не рекорд (70 > 60).
+    const day = 86_400_000;
+    await seedDone("A", T0 - day * 41, [{ slot: 0, weight: 70, reps: 5 }]);
+    for (let i = 40; i >= 2; i--) await seedDone("A", T0 - day * i, [{ slot: 0, weight: 50, reps: 8 }]);
+    await seedDone("B", T0 - day, [{ slot: 0, weight: 40, reps: 8 }]);
+    await say("/trening");
+    await press("⚖️");
+    await say("60");
+    await press("✅");
+    while (!view().text.startsWith("✅ <b>Готово!</b>")) await press("✅");
+    await press("4");
+    expect(view().text).not.toContain("Присідання зі штангою —");
+    expect((await env.DB.prepare("SELECT MAX(weight_kg) AS w FROM workout_sets s JOIN workouts w ON w.id = s.workout_id WHERE w.status = 'done' AND w.started_at >= ?").bind(T0).first<{ w: number }>())?.w).toBe(60);
+  });
 });
 
 describe("P2.4 техніка", () => {
