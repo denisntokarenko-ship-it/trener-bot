@@ -1,7 +1,7 @@
 // Єдиний вхід у D1. Функції над даними користувача приймають userId (N8): чужий рядок для них не існує —
 // читання дає null / [], запис — false без змін (phase-1.md, «Ізоляція»). Винятки без userId:
 // processed_updates (службова, ключ — update_id) і abandonStale (крон по всіх користувачах).
-import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "./client";
 import type { Limit, Plan, PlanCatalogItem } from "../domain/plan";
 import { exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, startWeights, userProfiles, users, workoutSets, workouts } from "./schema";
@@ -265,6 +265,13 @@ export function createRepo(db: Db) {
     async getExercise(exerciseId: number): Promise<Exercise | null> {
       const row = await db.select().from(exercises).where(eq(exercises.id, exerciseId)).get();
       return row ? toExercise(row) : null;
+    },
+
+    /** Вправи каталогу за id (для показу плану); порядок — за id, невідомі id пропускаються. */
+    async getExercises(ids: readonly number[]): Promise<Exercise[]> {
+      if (ids.length === 0) return [];
+      const rows = await db.select().from(exercises).where(inArray(exercises.id, [...ids])).orderBy(asc(exercises.id)).all();
+      return rows.map(toExercise);
     },
 
     /** Чим можна замінити вправу (exercise_substitutes), у порядку каталогу заміни. */

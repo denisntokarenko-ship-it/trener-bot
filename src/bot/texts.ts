@@ -12,3 +12,8 @@ export function greeting(firstName: string): string {
 }
 
 export const SOMETHING_WRONG = "Щось пішло не так, спробуй ще раз";
+
+/** Екранування користувацьких рядків для parse_mode HTML (нотатки, імʼя, назви). */
+export function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}

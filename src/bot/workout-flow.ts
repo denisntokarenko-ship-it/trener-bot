@@ -86,7 +86,10 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
     const key = `${exercise.id}:${slot.id}`;
     const hit = memo?.get(key);
     if (hit) return hit;
-    const p = repo.getExerciseHistory(userId, exercise.id, 3).then((h) => nextPrescription(h, exercise, slot));
+    // Робоча вага з анкети діє лише без історії вправи (phase-1b.md, §2).
+    const p = repo.getExerciseHistory(userId, exercise.id, 3).then(async (h) =>
+      nextPrescription(h, exercise, slot, h.length === 0 ? await repo.getStartWeight(userId, exercise.id) : null),
+    );
     memo?.set(key, p);
     return p;
   };
@@ -443,6 +446,12 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       } finally {
         await ctx.answerCallbackQuery(text ? { text } : undefined);
       }
+    },
+
+    /** Чи тренування чекає вагу тексту: тоді текст належить підходу, не анкеті. */
+    async awaitsWeight(ctx: Context): Promise<boolean> {
+      const workout = await repo.getActiveWorkout(ctx.from!.id);
+      return parseAwait(workout?.awaitInput ?? null) !== null;
     },
 
     /** Будь-яка команда при очікуванні ваги знімає його (і виконується далі). */

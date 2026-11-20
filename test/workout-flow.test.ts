@@ -553,7 +553,7 @@ describe("F-1 В1: призначення через БД на ≥ 2 сесія�
 });
 
 describe("F-1 В2: кількість запитів D1 на натискання", () => {
-  it("✅ другого підходу того самого слота: ≤ 7 запитів D1 (було 9)", async () => {
+  it("✅ другого підходу того самого слота: ≤ 8 запитів D1 (було 9; +1 читання start_weights, лише без історії вправи — 1b.2)", async () => {
     await say("/trening");
     await press("✅"); // підхід 1
     const next = button("✅").callback_data;
@@ -571,7 +571,7 @@ describe("F-1 В2: кількість запитів D1 на натисканн�
     const handler = telegramHandler(counted, { fetch: tg.fetch, botInfo, now: () => nowMs });
     await handleRequest(webhookRequest(cbUpdate(next)), counted, handler);
     expect(await setCount()).toBe(2);
-    expect(queries).toBeLessThanOrEqual(7);
+    expect(queries).toBeLessThanOrEqual(8);
   });
 });
 
