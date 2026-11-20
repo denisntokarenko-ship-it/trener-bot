@@ -98,6 +98,9 @@ export function fakeTelegram() {
 /** Усі таблиці від дочірніх до батьківських — у такому порядку їх чистить resetDb (FK у D1 увімкнені). */
 export const TABLES = [
   "workout_sets",
+  "start_weights",
+  "onboarding_state",
+  "user_profiles",
   "workouts",
   "program_exercises",
   "program_days",

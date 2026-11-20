@@ -1,0 +1,70 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+# --- Обов'язкові з промпту 1b.1: спліт для 4 днів, виключення за обмеженням, «одна активна програма» ---
+
+[[mutant]]
+id = "M1"
+file = "src/domain/plan.ts"
+old = '''  4: { low: ["UP", "LO"], adv: ["UP", "LO"] },'''
+new = '''  4: { low: ["FA", "FB"], adv: ["FA", "FB"] },'''
+why = "спліт 4 днів: Верх/Низ → Все тіло"
+match = "4 дн\\.|4 дні"
+
+[[mutant]]
+id = "M2"
+file = "src/domain/plan.ts"
+old = '''    if (item.stress.some((s) => limits.has(s))) continue;'''
+new = '''    // (мутація) обмеження не враховуються'''
+why = "виключення вправ за обмеженням прибрано"
+match = "knee"
+
+[[mutant]]
+id = "M3"
+file = "src/db/repo.ts"
+old = '''UPDATE programs SET active = 0 WHERE user_id = ?'''
+new = '''UPDATE programs SET active = 0 WHERE id = -1 AND user_id = ?'''
+why = "стару програму не архівує: дві активні"
+match = "активація|активн"
+
+# --- Додаткові ---
+
+[[mutant]]
+id = "M4"
+file = "src/db/repo.ts"
+old = '''.where(eq(userProfiles.userId, userId)).get()) ?? null;'''
+new = '''.get()) ?? null;'''
+why = "getProfile без userId — чужий профіль"
+match = "upsertProfile пише"
+
+[[mutant]]
+id = "M5"
+file = "src/domain/plan.ts"
+old = '''compound: [4, 6], accessory: [8, 10]'''
+new = '''compound: [4, 8], accessory: [8, 10]'''
+why = "strength: повтори compound 4–6 → 4–8"
+match = "ціль"
+
+[[mutant]]
+id = "M6"
+file = "src/domain/plan.ts"
+old = '''fewerSets: true, noBarbell: true'''
+new = '''fewerSets: false, noBarbell: true'''
+why = "health: −1 підхід вимкнено"
+match = "підходи"
+
+[[mutant]]
+id = "M7"
+file = "src/domain/plan.ts"
+old = '''if (item.minLevel > LEVEL_NUM[level]) continue;'''
+new = '''// (мутація) рівень не враховується'''
+why = "novice отримує вправи min_level 2"
+match = "min_level 2|новачок"
+
+[[mutant]]
+id = "M8"
+file = "src/db/repo.ts"
+old = '''AND d.code = ? AND ${exists}`'''
+new = '''AND ${exists}`'''
+why = "слот пишеться в усі дні програми, а не за кодом"
+match = "дні мають назви|UNIQUE|slots"

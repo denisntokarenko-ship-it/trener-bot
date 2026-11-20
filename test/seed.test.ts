@@ -19,20 +19,22 @@ async function counts(): Promise<Record<string, number>> {
 beforeEach(resetDb);
 
 describe("сид (P1.1.1–2)", () => {
-  it("чиста БД + профіль власника → 18 вправ, заміни за таблицею, одна активна програма A/B зі слотами", async () => {
+  it("чиста БД + профіль власника → 30 вправ, заміни за таблицею, одна активна програма A/B зі слотами", async () => {
     await repo.upsertUser(111, "Денис", 0);
     await seed();
 
     const ex = await env.DB.prepare("SELECT id, slug, equipment, weight_step_kg, min_weight_kg, muscle_group, video_url FROM exercises ORDER BY id").all();
-    expect(ex.results).toHaveLength(18);
+    expect(ex.results).toHaveLength(30);
     expect(ex.results).toEqual(
-      CATALOG.map((e) => ({ id: e.id, slug: e.slug, equipment: e.equipment, weight_step_kg: e.stepKg, min_weight_kg: e.minKg, muscle_group: e.group, video_url: null })),
+      CATALOG.map((e) => ({ id: e.id, slug: e.slug, equipment: e.equipment, weight_step_kg: e.stepKg, min_weight_kg: e.minKg, muscle_group: e.group, video_url: e.videoUrl })),
     );
 
     // Таблиця каталогу phase-1.md, стовпчик «Заміни» — номерами.
     const subs = await env.DB.prepare("SELECT exercise_id AS e, substitute_id AS s FROM exercise_substitutes ORDER BY e, s").all();
     const expected = [[1, 7], [1, 11], [2, 9], [2, 12], [3, 13], [3, 16], [4, 14], [5, 10], [5, 18], [6, 15], [7, 1], [7, 11], [8, 16], [9, 2], [9, 12], [9, 17], [10, 5], [10, 18]];
-    expect(subs.results.map((r) => [r.e, r.s])).toEqual(expected);
+    // Старі 18 пар лишились як були (спека 1.1); нові — за каталогом 1b.1.
+    expect(subs.results.map((r) => [r.e, r.s]).filter(([e]) => Number(e) <= 18)).toEqual(expected);
+    expect(subs.results.length).toBeGreaterThan(expected.length);
 
     const program = await repo.getActiveProgram(111);
     expect(program?.name).toBe("Full body A/B");
@@ -53,7 +55,7 @@ describe("сид (P1.1.1–2)", () => {
     const first = await counts();
     await seed(2_000);
     expect(await counts()).toEqual(first);
-    expect(first).toMatchObject({ exercises: 18, exercise_substitutes: 18, programs: 1, program_days: 2, program_exercises: 10 });
+    expect(first).toMatchObject({ exercises: 30, exercise_substitutes: 40, programs: 1, program_days: 2, program_exercises: 10 });
   });
 
   it("повторний сид оновлює крок вправи (хибне припущення → правка сида), програму не чіпає", async () => {
@@ -69,7 +71,7 @@ describe("сид (P1.1.1–2)", () => {
 
   it("без профілю в users сид кладе каталог, програми не створює", async () => {
     await seed();
-    expect(await count("exercises")).toBe(18);
+    expect(await count("exercises")).toBe(30);
     expect(await count("programs")).toBe(0);
   });
 

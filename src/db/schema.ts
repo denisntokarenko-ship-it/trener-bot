@@ -37,6 +37,13 @@ export const exercises = sqliteTable(
     muscleGroup: text("muscle_group", { enum: ["legs", "chest", "back", "shoulders", "core"] }).notNull(),
     cuesUk: text("cues_uk").notNull(),
     videoUrl: text("video_url"),
+    // Фаза 1b (міграція 0002): стовпці для генератора плану. Nullable, заповнює сид; CHECK — у SQL міграції
+    // (ALTER TABLE ADD COLUMN … CHECK), тут лише типи: таблицю exercises не перебудовуємо (на неї вказують FK).
+    pattern: text("pattern", { enum: ["squat", "hinge", "hpush", "vpush", "hpull", "vpull", "core", "delt", "legacc"] }),
+    kind: text("kind", { enum: ["compound", "accessory"] }),
+    place: text("place", { enum: ["gym", "both"] }),
+    minLevel: integer("min_level"),
+    stress: text("stress"),
   },
   (t) => [
     check("exercises_slug_kebab", sql`${t.slug} <> '' AND ${t.slug} NOT GLOB '*[^a-z0-9-]*'`),
@@ -91,6 +98,8 @@ export const programDays = sqliteTable(
     programId: integer("program_id").notNull().references(() => programs.id),
     code: text("code").notNull(),
     position: integer("position").notNull(),
+    /** Назва дня для людини (0002, CHECK ≤ 40 у SQL); NULL → показ «День <code>». */
+    title: text("title"),
   },
   (t) => [
     check("program_days_code_len", sql`length(${t.code}) BETWEEN 1 AND 8`),
@@ -170,5 +179,101 @@ export const workoutSets = sqliteTable(
     ),
     unique("workout_sets_workout_exercise_set").on(t.workoutId, t.exerciseId, t.setNo),
     index("workout_sets_exercise_workout").on(t.exerciseId, t.workoutId),
+  ],
+);
+
+// --- Фаза 1b: профіль, анкета, стартові ваги (docs/spec/phase-1b.md, §2). Час — UTC мс. ---
+
+const GOALS_SQL = "'lose_fat', 'muscle', 'recomp', 'strength', 'health', 'other'";
+
+/** Профіль користувача. Усе, крім ключа й часу, nullable; `goal NULL` = анкета не пройдена. */
+export const userProfiles = sqliteTable(
+  "user_profiles",
+  {
+    userId: integer("user_id").primaryKey().references(() => users.id),
+    goal: text("goal", { enum: ["lose_fat", "muscle", "recomp", "strength", "health", "other"] }),
+    goalNote: text("goal_note"),
+    level: text("level", { enum: ["novice", "mid", "adv"] }),
+    daysPerWeek: integer("days_per_week"),
+    sessionMin: integer("session_min"),
+    place: text("place", { enum: ["gym", "home"] }),
+    /** Прапорці через кому з {knee, back, shoulder, wrist}; '' = немає. */
+    limits: text("limits"),
+    limitsNote: text("limits_note"),
+    sex: text("sex", { enum: ["m", "f"] }),
+    birthYear: integer("birth_year"),
+    heightCm: integer("height_cm"),
+    weightKg: real("weight_kg"),
+    mealsPerDay: integer("meals_per_day"),
+    dietNote: text("diet_note"),
+    sleepBand: text("sleep_band", { enum: ["lt6", "6_7", "7_8", "8p"] }),
+    activity: text("activity", { enum: ["low", "mid", "high"] }),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [
+    check("user_profiles_goal", sql`${t.goal} IS NULL OR ${t.goal} IN (${sql.raw(GOALS_SQL)})`),
+    check("user_profiles_goal_note", sql`${t.goalNote} IS NULL OR length(${t.goalNote}) <= 300`),
+    check("user_profiles_level", sql`${t.level} IS NULL OR ${t.level} IN ('novice', 'mid', 'adv')`),
+    check("user_profiles_days", sql`${t.daysPerWeek} IS NULL OR ${t.daysPerWeek} BETWEEN 2 AND 5`),
+    check("user_profiles_session_min", sql`${t.sessionMin} IS NULL OR ${t.sessionMin} IN (30, 45, 60, 90)`),
+    check("user_profiles_place", sql`${t.place} IS NULL OR ${t.place} IN ('gym', 'home')`),
+    // Лише дозволені прапорці через кому: без токенів поза переліком, без порожніх (',,'), країв-ком і літер-залишків.
+    check(
+      "user_profiles_limits",
+      sql`${t.limits} IS NULL OR ${t.limits} = '' OR (${t.limits} NOT LIKE ',%' AND ${t.limits} NOT LIKE '%,' AND ${t.limits} NOT LIKE '%,,%' AND replace(replace(replace(replace(replace(${t.limits}, 'knee', ''), 'back', ''), 'shoulder', ''), 'wrist', ''), ',', '') = '')`,
+    ),
+    check("user_profiles_limits_note", sql`${t.limitsNote} IS NULL OR length(${t.limitsNote}) <= 300`),
+    check("user_profiles_sex", sql`${t.sex} IS NULL OR ${t.sex} IN ('m', 'f')`),
+    check("user_profiles_birth_year", sql`${t.birthYear} IS NULL OR ${t.birthYear} BETWEEN 1930 AND 2020`),
+    check("user_profiles_height", sql`${t.heightCm} IS NULL OR ${t.heightCm} BETWEEN 120 AND 230`),
+    check("user_profiles_weight", sql`${t.weightKg} IS NULL OR ${t.weightKg} BETWEEN 30 AND 300`),
+    check("user_profiles_meals", sql`${t.mealsPerDay} IS NULL OR ${t.mealsPerDay} BETWEEN 1 AND 5`),
+    check("user_profiles_diet_note", sql`${t.dietNote} IS NULL OR length(${t.dietNote}) <= 300`),
+    check("user_profiles_sleep", sql`${t.sleepBand} IS NULL OR ${t.sleepBand} IN ('lt6', '6_7', '7_8', '8p')`),
+    check("user_profiles_activity", sql`${t.activity} IS NULL OR ${t.activity} IN ('low', 'mid', 'high')`),
+  ],
+);
+
+export const ONBOARDING_STEPS = [
+  "welcome", "goal", "goal_note", "level", "days", "minutes", "place", "limits", "limits_note", "lifts",
+  "sex", "birth", "height", "weight", "meals", "diet", "sleep", "activity", "plan",
+] as const;
+
+/** Стан анкети: лише крок; відповіді лежать у профілі й start_weights. */
+export const onboardingState = sqliteTable(
+  "onboarding_state",
+  {
+    userId: integer("user_id").primaryKey().references(() => users.id),
+    status: text("status", { enum: ["active", "done"] }).notNull(),
+    step: text("step", { enum: ONBOARDING_STEPS }).notNull(),
+    sub: integer("sub").notNull().default(0),
+    msgId: integer("msg_id"),
+    planVariant: integer("plan_variant").notNull().default(0),
+    startedAt: integer("started_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [
+    check("onboarding_state_status", sql`${t.status} IN ('active', 'done')`),
+    check("onboarding_state_step", sql`${t.step} IN (${sql.raw(ONBOARDING_STEPS.map((s) => `'${s}'`).join(", "))})`),
+    check("onboarding_state_sub", sql`${t.sub} BETWEEN 0 AND 3`),
+    check("onboarding_state_variant", sql`${t.planVariant} BETWEEN 0 AND 2`),
+  ],
+);
+
+/** Робочі ваги з анкети: стартова вага прогресії замість калібрування (діє лише без історії вправи). */
+export const startWeights = sqliteTable(
+  "start_weights",
+  {
+    userId: integer("user_id").notNull().references(() => users.id),
+    exerciseId: integer("exercise_id").notNull().references(() => exercises.id),
+    weightKg: real("weight_kg").notNull(),
+    reps: integer("reps").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.exerciseId] }),
+    check("start_weights_weight", sql`${t.weightKg} >= 0`),
+    check("start_weights_reps", sql`${t.reps} BETWEEN 1 AND 30`),
   ],
 );

@@ -83,6 +83,7 @@ describe("programText", () => {
     programId: 1,
     code,
     position: 1,
+    title: null,
     slots: names.map((n, i) => ({ id: i + 1, position: i + 1, sets: 3, repMin: 6, repMax: 10, exercise: { nameUk: n } as never })),
   });
   const model = (activeDayCode: string | null) => ({
