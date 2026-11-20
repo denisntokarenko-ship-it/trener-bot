@@ -31,7 +31,7 @@
 | 2.2 | Повний /progres | Sonnet 5.5 | medium | phase-2/02-progress-report | ✅ | — |
 | 2.3 | Нагадування й недільний звіт | Opus 5.5 | high | phase-2/03-reminders | ✅ | ✅ |
 | 2.4 | Налаштування /nalashtuvannia | Sonnet 5.5 | medium | phase-2/04-settings | ✅ | — |
-| 2.5 | Деплой Фази 2 у прод | Opus 5.5 | xhigh | phase-2/05-prod-release | 🟡 | ⬜ |
+| 2.5 | Деплой Фази 2 у прод | Opus 5.5 | xhigh | phase-2/05-prod-release | 🟡 | ✅ |
 | R-2 | Незалежне рев'ю Фази 2 | Opus 5.5 | high | review/phase-2 | ⬜ | — |
 | F-2 | Виправлення за рев'ю Фази 2 | Opus 5.5 | high | fix/phase-2-review | ⬜ | — |
 | 3.0 | Специфікація Фази 3 | Opus 5.5 | high | docs/spec-phase-3 | ✅ | ✅ |
