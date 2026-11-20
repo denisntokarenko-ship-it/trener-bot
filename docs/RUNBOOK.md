@@ -148,3 +148,16 @@ Worker `https://trener-prod.adhd-bot.workers.dev` (до переносу 2026-11
 3. **Зіпсовано дані** (лише тоді — Time Travel): спершу ще раз `npm run backup:prod` (restore стирає все після bookmark: тренування, вагу, `reminders_sent`), потім код (крок 2), потім `time-travel restore … --bookmark=<до міграції>`; свідок — `d1_migrations` = 0000–0003 і `count(*)` таблиць зі знімка «до» (PR-коментар).
 4. **Нагадування заважають** (шле не те / дублює), а решта працює: не відкат, а `/nalashtuvannia` → вимкнути (`remind_time`/`weigh_time` = NULL) у власника; крон тоді лише прибирає. Глобально — `wrangler rollback` (крок 2).
 5. Вручну міграції не відкочуються (`ALTER … ADD COLUMN` з CHECK у 0005) — лише Time Travel (30 днів на Paid) або файл `backups/` (розділ «Відкат пізніше ніж за 7 днів»).
+
+Значення відкату цього релізу (версія до релізу `3e1d24fb-…`, bookmark, знімок «до») — у коментарі PR #32, не в git.
+
+### Що сталося (2026-11-20, UTC)
+
+- **18:57 бекап:** `backups/prod-20261120-185745.sql`, 34 217 байт, `CREATE TABLE` для всіх 13 таблиць; рядків `workout_sets` — **0** (і `workouts` = 0): власник на проді анкету не завершив (`onboarding_state` = 1, `user_profiles` = 0), «реальних даних» ще немає. Bookmark — `time-travel info` одразу після бекапу.
+- **D1 не приймає довгий `UNION ALL`** (`too many terms in compound SELECT`) — знімок лічильників одним рядком з підзапитами: `SELECT (SELECT count(*) FROM users) users, (SELECT count(*) FROM workouts) workouts, …`.
+- **18:58 міграції 0004→0005→0006** — по одній, усі ✅. Після: `d1_migrations` 0000–0006, 16 таблиць (+`body_weights`, `reminders_sent`, `cron_state`), у власника бекфіл `training_days='1,3,5'` (профілю немає → ELSE), `remind_time` 08:00, `weigh_time` 07:30.
+- **18:58 деплой:** `npm run deploy:prod -- --message "main 78529d5 (2.5)"` → версія `95478ee1-…`; `deployments list` показує повідомлення з sha — так звіряємо вміст деплою з `main`, поки `/health` без sha (борг 1b.5). Перші ~30 с після деплою `/health` віддавав `ok` (стара версія 1b), далі `ok cron=? ok=?`.
+- **Перший тік 19:00:30:** `/health` → `ok cron=0m ok=0m`, `cron_state.last_ok_at` = `last_tick_at`. Тік 19:15:32 у tail: `outcome: ok`, `cpuTime` 9 мс, wall 735 мс, `exceptions: []`, лог `cron tick {sent:0, skipped:0, released:0, errors:0}` (о 21:15 Києва вікон нагадувань немає).
+- **Ліміти (developers.cloudflare.com/workers/platform/limits, Paid):** 250 Cron Triggers на акаунт — у нас 2 (`trener-preview`, `trener-prod`) + ≤ 2 у проєкті ADHD на тому ж акаунті; верхній рівень `wrangler.jsonc` (`trener-local`) не деплоїться. Wall-time запланованого обробника — 15 хв; CPU для крону з інтервалом < 1 год — 30 с. Тік 9 мс / 735 мс — запас на порядки.
+- **tail у файл рветься мовчки:** `Tail connection lost. Reconnecting` у stderr, після чого файл перестав рости (тік 19:00 і запити після нього не записались). Свідок живого tail — власний `curl /health` і ріст файлу; замовк — перезапуск.
+- **Перше нагадування прода** — Сб 2026-11-21 07:30 Києва (`weigh`; ваги за день немає). `train` не піде, доки немає активної програми (анкета → «✅ Прийняти»). Недільний звіт 22.11 — мовчки пропуск (ні тренувань, ні ваги), якщо власник до того не запише вагу.
