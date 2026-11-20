@@ -18,6 +18,14 @@
 | 1.5 | Перший деплой у прод | Opus 5.5 | xhigh | phase-1/05-prod-release | ✅ | ✅ |
 | R-1 | Незалежне рев'ю Фази 1 | Opus 5.5 | high | review/phase-1 | ⬜ | — |
 | F-1 | Виправлення за рев'ю Фази 1 | Opus 5.5 | high | fix/phase-1-review | ⬜ | — |
+| 1b.0 | Специфікація Фази 1b | Opus 5.5 | high | docs/spec-phase-1b | ⬜ | ⬜ |
+| 1b.1 | Схема профілю, генератор плану, відео-посилання | Opus 5.5 | high | phase-1b/01-profile-plan | ⬜ | ⬜ |
+| 1b.2 | Потік опитування в Telegram | Opus 5.5 | high | phase-1b/02-onboarding-flow | ⬜ | ⬜ |
+| 1b.3 | Назви тренувань у всьому боті | Sonnet 5.5 | medium | phase-1b/03-workout-names | ⬜ | — |
+| 1b.4 | Оформлення бота й текстів | Opus 5.5 | high | phase-1b/04-ux-polish | ⬜ | ⬜ |
+| 1b.5 | Деплой Фази 1b у прод | Opus 5.5 | xhigh | phase-1b/05-prod-release | ⬜ | ⬜ |
+| R-1b | Незалежне рев'ю Фази 1b | Opus 5.5 | high | review/phase-1b | ⬜ | — |
+| F-1b | Виправлення за рев'ю Фази 1b | Opus 5.5 | high | fix/phase-1b-review | ⬜ | — |
 | 2.0 | Специфікація Фази 2 | Opus 5.5 | high | docs/spec-phase-2 | ⬜ | ⬜ |
 | 2.1 | Вага тіла | Opus 5.5 | high | phase-2/01-body-weight | ⬜ | ⬜ |
 | 2.2 | Повний /progres | Sonnet 5.5 | medium | phase-2/02-progress-report | ⬜ | — |
@@ -28,7 +36,7 @@
 | F-2 | Виправлення за рев'ю Фази 2 | Opus 5.5 | high | fix/phase-2-review | ⬜ | — |
 | 3.0 | Специфікація Фази 3 | Opus 5.5 | high | docs/spec-phase-3 | ⬜ | ⬜ |
 | 3.1 | Схема харчування й шар даних | Opus 5.5 | high | phase-3/01-food-data | ⬜ | ⬜ |
-| 3.2 | Онбординг і денна норма | Opus 5.5 | high | phase-3/02-targets | ⬜ | — |
+| 3.2 | Денна норма КБЖУ з профілю анкети 1b | Opus 5.5 | high | phase-3/02-targets | ⬜ | — |
 | 3.3 | Розпізнавання їжі за фото | Opus 5.5 | xhigh | phase-3/03-food-photo | ⬜ | ⬜ |
 | 3.4 | Корекція норми за трендом ваги | Sonnet 5.5 | high | phase-3/04-target-trend | ⬜ | — |
 | 3.5 | Деплой Фази 3 у прод | Opus 5.5 | xhigh | phase-3/05-prod-release | ⬜ | ⬜ |
