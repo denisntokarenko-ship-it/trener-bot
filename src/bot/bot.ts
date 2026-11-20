@@ -4,6 +4,7 @@ import type { UserFromGetMe } from "grammy/types";
 import type { Repo } from "../db/repo";
 import { createOnboardingFlow } from "./onboarding";
 import { NOT_UNDERSTOOD, SOMETHING_WRONG } from "./texts";
+import { createWeightFlow } from "./weight-flow";
 import { createWorkoutFlow } from "./workout-flow";
 
 export interface BotOptions {
@@ -34,6 +35,7 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
 
   const flow = createWorkoutFlow(repo, now);
   const onboarding = createOnboardingFlow(repo, now);
+  const weight = createWeightFlow(repo, now);
 
   // Будь-яка команда знімає очікування ваги й виконується далі (phase-1-flow.md, «Введення ваги», п. 5).
   bot.use(async (ctx, next) => {
@@ -46,12 +48,15 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
   bot.command("trening", (ctx) => flow.trening(ctx));
   bot.command("progres", (ctx) => flow.progres(ctx));
   bot.command("prohrama", (ctx) => flow.prohrama(ctx));
+  bot.command("vaga", (ctx) => weight.vaga(ctx));
   bot.on("callback_query:data", (ctx) => (ctx.callbackQuery.data.startsWith("o:") ? onboarding.callback(ctx) : flow.callback(ctx)));
   bot.on("callback_query", (ctx) => ctx.answerCallbackQuery());
   // Текст: вага підходу, що чекає, має пріоритет над анкетою (phase-1b.md, «Потік»); інакше — анкета, інакше «Не зрозумів».
   bot.on("message:text", async (ctx) => {
-    if (!(await flow.awaitsWeight(ctx)) && (await onboarding.text(ctx))) return;
-    await flow.text(ctx);
+    const awaits = await flow.awaitsWeight(ctx);
+    if (!awaits && (await onboarding.text(ctx))) return;
+    // Спека 2.1: кроки 2 (вага вправи), 3 (анкета), 5 (голе число — лише підказка). Кроки 1 і 4 — у 2.3.
+    await flow.text(ctx, awaits ? undefined : weight.hintFor(ctx));
   });
   bot.on("message", (ctx) => ctx.reply(NOT_UNDERSTOOD));
 

@@ -277,3 +277,19 @@ export const startWeights = sqliteTable(
     check("start_weights_reps", sql`${t.reps} BETWEEN 1 AND 30`),
   ],
 );
+
+/** Вага тіла: один запис на локальну дату (`users.tz`); `weight_dg` — десяті кілограма (78,4 кг = 784). */
+export const bodyWeights = sqliteTable(
+  "body_weights",
+  {
+    userId: integer("user_id").notNull().references(() => users.id),
+    localDate: text("local_date").notNull(),
+    weightDg: integer("weight_dg").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.localDate] }),
+    check("body_weights_dg", sql`${t.weightDg} BETWEEN 300 AND 3000`),
+    check("body_weights_date", sql`${t.localDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`),
+  ],
+);

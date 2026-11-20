@@ -1,0 +1,99 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+# --- Обов'язкові з промпту 2.1 ---
+
+[[mutant]]
+id = "M1"
+file = "src/domain/time.ts"
+old = '''timeZone: tz, year'''
+new = '''timeZone: "UTC", year'''
+why = "localDate за UTC замість users.tz — 00:30 за Києвом потрапляє в попередню добу"
+match = "23:30 і 00:30|25\\.10\\.2026|users\\.tz"
+
+[[mutant]]
+id = "M2"
+file = "src/db/repo.ts"
+old = '''
+        .onConflictDoUpdate({ target: [bodyWeights.userId, bodyWeights.localDate], set: { weightDg, updatedAt: now } })'''
+new = ''''''
+why = "прибрати ON CONFLICT — друге зважування за день падає на PK замість заміни"
+match = "два зважування|замінило|повертає попереднє"
+
+[[mutant]]
+id = "M3"
+file = "src/domain/weight.ts"
+old = '''export const MAX_WEIGHT_DG = 3000;'''
+new = '''export const MAX_WEIGHT_DG = 30000;'''
+why = "верхня межа 300,0 → 3000,0 кг — вага 301 приймається"
+match = "P2\\.1\\.3|parseWeightDg|CHECK у БД|/vaga 301"
+
+# --- Додаткові ---
+
+[[mutant]]
+id = "M4"
+file = "src/domain/weight.ts"
+old = '''Math.floor((h + 5) / 10); // половина вгору до десятих'''
+new = '''Math.floor(h / 10); // половина вгору до десятих'''
+why = "округлення відкидає соті замість «половина вгору»: 78,45 → 78,4; 29,96 → 29,9 (відмова)"
+match = "половина вгору|78,45|29,96"
+
+[[mutant]]
+id = "M5"
+file = "src/domain/weight.ts"
+old = '''if (w0.n < 2 || w1.n < 2) return null;'''
+new = '''if (w0.n < 1 || w1.n < 1) return null;'''
+why = "зміна рахується з одного запису у вікні — має бути «—»"
+match = "≥ 2 записи|зміна"
+
+[[mutant]]
+id = "M6"
+file = "src/db/repo.ts"
+old = '''.where(and(eq(bodyWeights.userId, userId), gte(bodyWeights.localDate, from)'''
+new = '''.where(and(gte(bodyWeights.localDate, from)'''
+why = "getWeights без фільтра userId — чужі ваги в середньому (N8)"
+match = "N8|userId"
+
+[[mutant]]
+id = "M7"
+file = "src/domain/weight.ts"
+old = '''const start = addDays(end, -6);'''
+new = '''const start = addDays(end, -7);'''
+why = "вікно 8 дат замість 7 — старий запис потрапляє в середнє"
+match = "пропущені дні|вікно|зміна|середнє"
+
+[[mutant]]
+id = "M8"
+file = "src/domain/weight.ts"
+old = '''return Math.abs(diff) > JUMP_DG ? diff : null;'''
+new = '''return Math.abs(diff) >= JUMP_DG ? diff : null;'''
+why = "рівно 5,0 кг вважається стрибком (спека: > 5 кг)"
+match = "рівно 5,0|стрибок"
+
+[[mutant]]
+id = "M9"
+file = "src/bot/bot.ts"
+old = '''await flow.text(ctx, awaits ? undefined : weight.hintFor(ctx));'''
+new = '''await flow.text(ctx, undefined);'''
+why = "голе число без підказки /vaga (крок 5)"
+match = "голе число"
+
+# --- З рев'ю 2.1 (В1, В2): мутанти, що вижили на коміті 849b322 ---
+
+[[mutant]]
+id = "M10"
+file = "src/bot/weight-flow.ts"
+old = '''before.filter((e) => e.localDate !== today), '''
+new = '''before, '''
+why = "В1: при перезаписі дня старе значення сьогодні лишається в середньому (n = 2)"
+match = "замінило 78,4"
+
+[[mutant]]
+id = "M11"
+file = "src/db/repo.ts"
+old = '''        .where(and(eq(bodyWeights.userId, userId), eq(bodyWeights.localDate, localDate)))
+        .get();'''
+new = '''        .where(eq(bodyWeights.localDate, localDate))
+        .get();'''
+why = "В2 (N8): попереднє значення дня читається без userId — видно чужу вагу"
+match = "повертає попереднє"
