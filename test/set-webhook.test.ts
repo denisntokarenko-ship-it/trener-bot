@@ -47,9 +47,10 @@ describe("P2.1 set-webhook", () => {
     expect(h.calls[1]!.body).toEqual({
       commands: [
         { command: "start", description: "Почати" },
-        { command: "trening", description: "Тренування: почати або продовжити" },
+        { command: "trening", description: "Тренування" },
+        { command: "prohrama", description: "Програма й наступне заняття" },
         { command: "progres", description: "Останні тренування" },
-        { command: "prohrama", description: "Програма й наступне тренування" },
+        { command: "profil", description: "Профіль і план" },
       ],
     });
     expect(h.out).toContain("Середовище: preview");

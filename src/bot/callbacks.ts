@@ -52,12 +52,12 @@ export function encodeCb(a: Action, fields: Partial<Record<Field, number>>): str
   const parts: string[] = [a];
   for (const f of FIELDS[a]) {
     const v = fields[f];
-    if (v === undefined || !Number.isSafeInteger(v) || v < 0) throw new RangeError(`callback ${a}: поле ${f}`);
+    if (v === undefined || !Number.isSafeInteger(v) || v < 0) throw new RangeError(`callback ${a}: bad field ${f}`);
     parts.push(String(v));
   }
   const data = parts.join(":");
   if (new TextEncoder().encode(data).byteLength > CALLBACK_DATA_MAX_BYTES) {
-    throw new RangeError(`callback_data довше за ${CALLBACK_DATA_MAX_BYTES} байтів`);
+    throw new RangeError(`callback_data exceeds ${CALLBACK_DATA_MAX_BYTES} bytes`);
   }
   return data;
 }

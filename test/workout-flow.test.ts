@@ -1,11 +1,12 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Update } from "grammy/types";
 import { seedStatements } from "../scripts/seed-core";
 import { handleRequest, telegramHandler } from "../src/app";
 import { encodeCb, parseCb } from "../src/bot/callbacks";
+import { NOT_UNDERSTOOD, NO_PROGRAM, RATING_TEXT } from "../src/bot/texts";
 import { createDb } from "../src/db/client";
 import { createRepo } from "../src/db/repo";
-import { OWNER, botInfo, env, fakeTelegram, resetDb, textUpdate, webhookRequest } from "./helpers";
+import { OWNER, botInfo, env, fakeTelegram, resetDb, textUpdate, webhookRequest, outgoingProblems } from "./helpers";
 
 const repo = createRepo(createDb(env.DB));
 const T0 = 1_760_000_000_000;
@@ -15,7 +16,7 @@ let updateId = 1;
 
 interface Button {
   text: string;
-  callback_data: string;
+  callback_data: string; // у URL-кнопки [🎥 Відео] насправді відсутнє
 }
 interface View {
   method: string;
@@ -71,7 +72,7 @@ const workoutRow = () => env.DB.prepare("SELECT id, status, effort, finished_at,
 /** Проходить день: натискає [✅] на кожному екрані вправи до екрана оцінки. Повертає кількість натискань. */
 async function playThrough(): Promise<number> {
   let presses = 0;
-  while (!view().text.startsWith("Готово!")) {
+  while (!view().text.startsWith("✅ <b>Готово!</b>")) {
     await press("✅");
     presses++;
     if (presses > 40) throw new Error("не завершується:\n" + view().text);
@@ -86,6 +87,11 @@ beforeEach(async () => {
   updateId = 1;
   await repo.upsertUser(OWNER, "Денис", 0);
   await env.DB.batch(seedStatements(0).map((s) => env.DB.prepare(s)));
+});
+
+// 1b.4: кожен вихідний виклик кожного тесту — HTML, валідна розмітка, ліміти Telegram.
+afterEach(() => {
+  expect(outgoingProblems(tg.calls)).toEqual([]);
 });
 
 /** Записує done-тренування дня зі слотом-підходами (історія для прогресії). */
@@ -132,9 +138,9 @@ describe("P1.3 записати тренування", () => {
     expect(view().method).toBe("sendMessage");
     expect(view().text).toContain("Все тіло A · вправа 1/5");
     expect(view().text).toContain("Присідання зі штангою");
-    expect(view().text).toContain("20 кг × 6 · підхід 1/3");
+    expect(view().text).toContain("Підхід 1/3 · ціль <b>20 кг × 6</b>");
     expect(view().text).toContain("Калібрування: підбери робочу вагу кнопкою ⚖️");
-    expect(view().buttons.map((b) => b.text)).toEqual(["✅ 6", "−1", "+1", "⚖️ Вага", "🔁 Замінити", "⏭ Пропустити", "💡 Техніка"]);
+    expect(view().buttons.map((b) => b.text)).toEqual(["✅ 6", "−1", "+1", "⚖️ Вага", "🔁 Замінити", "⏭ Пропустити", "💡 Техніка", "🎥 Відео"]);
   });
 
   it("P1.3.5 повний прохід дня A: рівно одне натискання на підхід + /trening + оцінка; рядки як очікувано", async () => {
@@ -150,18 +156,18 @@ describe("P1.3 записати тренування", () => {
       [3, 20, 6, 20],
     ]);
     expect(rows.every((r) => r.skipped === 0)).toBe(true);
-    expect(view().text).toBe("Готово! Як тяжко було? 1 — легко, 5 — на межі.");
+    expect(view().text).toBe(RATING_TEXT);
     await press("4");
     const w = await workoutRow();
     expect([w?.status, w?.effort]).toEqual(["done", 4]);
     expect(w?.finished_at).toBe(T0);
     expect(w?.await_input).toBeNull();
     const text = view().text;
-    expect(text).toContain("🏁 Все тіло A · 0 хв");
-    expect(text).toContain("Підходів: 14 з 14");
-    expect(text).toContain("Тяжкість: 4/5");
+    expect(text).toContain("🏋️ <b>Все тіло A</b> · 0 хв");
+    expect(text).toContain("Підходів: <b>14 з 14</b>");
+    expect(text).toContain("Тяжкість: <b>4/5</b>");
     expect(text).not.toContain("Рекорди");
-    expect(text).toContain("Наступного разу: Все тіло B");
+    expect(text).toContain("Наступне: <b>Все тіло B</b>");
     expect(view().buttons).toHaveLength(0);
     // P1.5.6: кожне натискання — рівно один answerCallbackQuery.
     expect(answers()).toHaveLength(presses + 1);
@@ -178,8 +184,8 @@ describe("P1.3 записати тренування", () => {
     expect(view().buttons[0]!.text).toBe("✅ 7");
     await press("✅");
     expect((await sets()).map((r) => r.reps)).toEqual([7]);
-    expect(view().text).toContain("✔ 1: 20 × 7");
-    expect(view().text).toContain("підхід 2/3");
+    expect(view().text).toContain("✅ 1: 20 × 7");
+    expect(view().text).toContain("Підхід 2/3");
   });
 
   it("P1.3.2 вага на екрані — з останнього записаного підходу", async () => {
@@ -187,7 +193,7 @@ describe("P1.3 записати тренування", () => {
     await press("⚖️");
     await say("45");
     await press("✅");
-    expect(view().text).toContain("45 кг × 6 · підхід 2/3");
+    expect(view().text).toContain("Підхід 2/3 · ціль <b>45 кг × 6</b>");
     await press("✅");
     expect((await sets()).map((r) => r.weight_kg)).toEqual([45, 45]);
   });
@@ -199,19 +205,19 @@ describe("P1.4 введення ваги", () => {
     await press("⚖️");
     const w1 = await workoutRow();
     expect(JSON.parse(w1!.await_input!)).toMatchObject({ n: 1, r: 6, m: 7 });
-    expect(view().text).toBe("Надішли вагу для «Присідання зі штангою», кг. Крок 5 кг, від 20 кг. Наприклад: 45");
+    expect(view().text).toBe("⚖️ Яка вага для <b>Присідання зі штангою</b>, кг?\nКрок 5 кг, від 20 кг. Наприклад: <code>45</code>");
     await say("47,5");
-    expect(view().text).toBe("Не схоже на вагу. Крок 5 кг, від 20 кг — наприклад 45.");
+    expect(view().text).toBe("❌ Не схоже на вагу. Крок 5 кг, від 20 кг. Наприклад: <code>45</code>");
     expect((await workoutRow())!.await_input).toBe(w1!.await_input);
     await say("15");
     expect(view().text).toContain("Не схоже на вагу");
     await say("45");
     expect((await workoutRow())!.await_input).toBeNull();
     const edit = tg.calls.filter((c) => c.method === "editMessageText").at(-1)!;
-    expect(edit.payload).toMatchObject({ message_id: 7, text: "⚖️ 45 кг" });
+    expect(edit.payload).toMatchObject({ message_id: 7, text: "⚖️ <b>45 кг</b>" });
     expect(edit.payload.reply_markup).toBeUndefined();
     expect(view().method).toBe("sendMessage");
-    expect(view().text).toContain("45 кг × 6 · підхід 1/3");
+    expect(view().text).toContain("Підхід 1/3 · ціль <b>45 кг × 6</b>");
   });
 
   it("команда при очікуванні знімає його; текст без очікування → підказка", async () => {
@@ -220,7 +226,7 @@ describe("P1.4 введення ваги", () => {
     await say("/start");
     expect((await workoutRow())!.await_input).toBeNull();
     await say("щось");
-    expect(view().text).toBe("Не розумію 🙂 Команди: /trening, /progres, /prohrama.");
+    expect(view().text).toBe(NOT_UNDERSTOOD);
   });
 
   it("[↩️ Скасувати] знімає очікування й повертає екран", async () => {
@@ -238,7 +244,7 @@ describe("P1.4 введення ваги", () => {
     await seedDone("B", T0 - 86_400_000, [{ slot: 0, weight: 40, reps: 8 }]);
     await say("/trening");
     expect(view().text).toContain("Все тіло A · вправа 1/5");
-    expect(view().text).toContain("50 кг × 9 · підхід 1/3");
+    expect(view().text).toContain("Підхід 1/3 · ціль <b>50 кг × 9</b>");
   });
 });
 
@@ -293,7 +299,7 @@ describe("P1.5 повтори, застарілі кнопки й продовж
     await tap(five);
     expect(lastAnswer()).toBe("Оцінку вже записано");
     expect((await workoutRow())!.effort).toBe(3);
-    expect(view().text).toContain("Тяжкість: 3/5");
+    expect(view().text).toContain("Тяжкість: <b>3/5</b>");
   });
 
   it("P1.5.4 продовження після «перезапуску»: нове повідомлення-екран слота 3, нового тренування немає", async () => {
@@ -307,7 +313,7 @@ describe("P1.5 повтори, застарілі кнопки й продовж
     await say("/trening");
     expect(view().method).toBe("sendMessage");
     expect(view().text).toContain("Все тіло A · вправа 3/5");
-    expect(view().text).toContain("підхід 1/3");
+    expect(view().text).toContain("Підхід 1/3");
     expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM workouts").first("n")).toBe(1);
     expect((await workoutRow())!.await_input).toBeNull();
     expect(old.text).toContain("вправа 3/5");
@@ -377,18 +383,18 @@ describe("P2.1 заміна вправи", () => {
     await press("Гоблет-присідання");
     expect(await setCount()).toBe(history + 3); // заміна нічого не пише
     expect(view().text).toContain("Гоблет-присідання");
-    expect(view().text).toContain("14 кг × 8 · підхід 1/3"); // з історії заміни, а не калібрування жиму ногами
+    expect(view().text).toContain("Підхід 1/3 · ціль <b>14 кг × 8</b>"); // з історії заміни, а не калібрування жиму ногами
     await press("✅");
     const rows = await sets();
     const slot2 = (await repo.getProgramDay(OWNER, "B"))!.slots[1]!;
     expect(rows.at(-1)).toMatchObject({ exercise_id: 11, program_exercise_id: slot2.id, set_no: 1, weight_kg: 14, reps: 8 });
     expect(view().text).toContain("Гоблет-присідання");
-    expect(view().text).toContain("підхід 2/3");
+    expect(view().text).toContain("Підхід 2/3");
     expect(view().buttons.some((b) => b.text.startsWith("🔁"))).toBe(false);
     // «Перезапуск»: слот 2 і далі — заміна.
     await say("/trening");
     expect(view().text).toContain("Гоблет-присідання");
-    expect(view().text).toContain("підхід 2/3");
+    expect(view().text).toContain("Підхід 2/3");
     await press("✅");
     await press("✅");
     expect(view().text).toContain("вправа 3/5");
@@ -450,11 +456,11 @@ describe("P2.2 пропуск", () => {
     for (let i = 0; i < 11; i++) await press("✅"); // слоти 1–4: 3+3+3+2
     expect(view().text).toContain("вправа 5/5");
     await press("⏭");
-    expect(view().text.startsWith("Готово!")).toBe(true);
+    expect(view().text.startsWith("✅ <b>Готово!</b>")).toBe(true);
     await press("2");
-    expect(view().text).toContain("Підходів: 11 з 14 (пропущено 3)");
+    expect(view().text).toContain("Підходів: <b>11 з 14</b> (пропущено 3)");
     // Обсяг: Σ вага × повтори; калібрувальні ваги (20, 20, 5, 2) і повтори (6, 6, 8, 8).
-    expect(view().text).toContain(`Обсяг: ${20 * 6 * 3 + 20 * 6 * 3 + 5 * 8 * 3 + 2 * 8 * 2} кг`);
+    expect(view().text).toContain(`Обсяг: <b>${20 * 6 * 3 + 20 * 6 * 3 + 5 * 8 * 3 + 2 * 8 * 2} кг</b>`);
   });
 });
 
@@ -471,11 +477,11 @@ describe("P2.3 рекорди", () => {
     await press("+1");
     await press("✅");
     await press("✅");
-    while (!view().text.startsWith("Готово!")) await press("✅");
+    while (!view().text.startsWith("✅ <b>Готово!</b>")) await press("✅");
     await press("4");
-    expect(view().text).toContain("🏆 Рекорди:");
-    const records = view().text.split("🏆 Рекорди:\n")[1]!.split("\n").filter((l) => l.startsWith("•"));
-    expect(records).toEqual(["• Присідання зі штангою — 60 кг × 11"]);
+    expect(view().text).toContain("🏆 <b>Рекорди</b>");
+    const records = view().text.split("🏆 <b>Рекорди</b>\n")[1]!.split("\n").filter((l) => l.startsWith("•"));
+    expect(records).toEqual(["• Присідання зі штангою — <b>60 кг × 11</b>"]);
     // Жим лежачи — перша сесія: рекорду немає.
     expect(view().text).not.toContain("Жим лежачи —");
   });
@@ -501,14 +507,14 @@ describe("N6/N9", () => {
     // Битий JSON у стані очікування не валить текстовий обробник.
     await env.DB.prepare("UPDATE workouts SET await_input = 'не json'").run();
     await say("45");
-    expect(view().text).toContain("Не розумію");
+    expect(view().text).toContain(NOT_UNDERSTOOD);
     expect((await workoutRow())!.await_input).toBeNull();
   });
 
   it("немає програми → підказка про сид", async () => {
     await env.DB.batch(["workout_sets", "workouts", "program_exercises", "program_days", "programs"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
     await say("/trening");
-    expect(view().text).toBe("Програму не знайдено — запусти сид (docs/RUNBOOK.md).");
+    expect(view().text).toBe(NO_PROGRAM);
   });
 });
 
@@ -537,7 +543,7 @@ describe("F-1 В1: призначення через БД на ≥ 2 сесія�
     await seedDone("B", T0 - DAY, [{ slot: 0, weight: 40, reps: 8 }]);
     await say("/trening");
     expect(view().text).toContain("Все тіло A · вправа 1/5");
-    expect(view().text).toContain("50 кг × 6 · підхід 1/3");
+    expect(view().text).toContain("Підхід 1/3 · ціль <b>50 кг × 6</b>");
   });
 
   it("[успіх e5, пропуск, пропуск, успіх e5] → 45 × 6 (правило 5: не двічі поспіль)", async () => {
@@ -548,7 +554,7 @@ describe("F-1 В1: призначення через БД на ≥ 2 сесія�
     await seedDone("A", T0 - DAY * 2, full, 5);
     await seedDone("B", T0 - DAY, [{ slot: 0, weight: 40, reps: 8 }]);
     await say("/trening");
-    expect(view().text).toContain("45 кг × 6 · підхід 1/3");
+    expect(view().text).toContain("Підхід 1/3 · ціль <b>45 кг × 6</b>");
   });
 });
 
@@ -592,12 +598,12 @@ describe("1b.3: назви тренувань (P3.2, P3.3)", () => {
   it("день без title → «День A» на екрані, у підсумку й у /prohrama", async () => {
     await env.DB.prepare("UPDATE program_days SET title = NULL").run();
     await say("/prohrama");
-    expect(view().text).toContain("День A\n1.");
-    expect(view().text).toContain("➡️ Наступне: День A");
+    expect(view().text).toContain("<b>День A</b>\n1.");
+    expect(view().text).toContain("➡️ <b>Наступне: День A</b>");
     await say("/trening");
     expect(view().text).toContain("День A · вправа 1/5");
     await say("/prohrama");
-    expect(view().text).toContain("Зараз триває: День A");
+    expect(view().text).toContain("Зараз триває: <b>День A</b>");
   });
 
   it("довга назва: екран, /prohrama, підсумок і /progres показують її; callback_data ≤ 64 байти і без назви", async () => {
@@ -606,17 +612,18 @@ describe("1b.3: назви тренувань (P3.2, P3.3)", () => {
     expect(view().text).toContain(`${LONG} · вправа 1/5`);
     expect(view().text.length).toBeLessThanOrEqual(4096);
     for (const b of view().buttons) {
+      if (b.callback_data === undefined) continue; // URL-кнопка [🎥 Відео] без callback_data
       expect(new TextEncoder().encode(b.callback_data).length, b.callback_data).toBeLessThanOrEqual(64);
       expect(b.callback_data).not.toContain(LONG);
     }
     await say("/prohrama");
-    expect(view().text).toContain(`${LONG}\n1.`);
-    expect(view().text).toContain(`Зараз триває: ${LONG}`);
+    expect(view().text).toContain(`<b>${LONG}</b>\n1.`);
+    expect(view().text).toContain(`Зараз триває: <b>${LONG}</b>`);
     // Підсумок і /progres: закриваємо тренування A.
     const w = await workoutRow();
     await repo.finishWorkout(OWNER, w!.id, 3, T0 + 1);
     await say("/progres");
-    expect(view().text).toContain(`· ${LONG} · 3/5`);
+    expect(view().text).toContain(`· ${LONG}</b> · 3/5`);
     expect(view().text.length).toBeLessThanOrEqual(4096);
   });
 });

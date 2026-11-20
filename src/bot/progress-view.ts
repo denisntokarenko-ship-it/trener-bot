@@ -1,8 +1,9 @@
-// Тексти /progres і /prohrama — чисті функції (phase-1-flow.md, P2.5).
-import type { ProgramDay, WorkoutSummaryRow } from "../db/repo";
-import { TELEGRAM_TEXT_MAX, clip, dayName, fmtKg } from "./workout-view";
+// /progres і /prohrama — чисті функції (phase-1-flow.md, P2.5). Тексти — у texts.ts.
+import type { WorkoutSummaryRow } from "../db/repo";
+import { NO_WORKOUTS, TELEGRAM_TEXT_MAX, clip, dayName, fmtKg, progressTitle, workoutBlock as renderBlock } from "./texts";
 
-export const NO_WORKOUTS = "Ще немає тренувань. Почни: /trening";
+export { NO_WORKOUTS, programText } from "./texts";
+export type { NextSlotLine, ProgramTextModel as ProgramModel } from "./texts";
 
 const DEFAULT_TZ = "Europe/Kyiv";
 
@@ -32,42 +33,19 @@ export function fmtSets(sets: WorkoutSummaryRow["exercises"][number]["sets"]): s
   return groups.map((g) => (g.w === null ? g.reps.join(",") : `${g.w}×${g.reps.join(",")}`)).join(", ");
 }
 
-function workoutBlock(w: WorkoutSummaryRow, tz: string): string {
-  const head = `${fmtLocalDate(w.startedAt, tz)} · ${dayName({ code: w.dayCode, title: w.dayTitle })} · ${w.status === "done" && w.effort !== null ? `${w.effort}/5` : "не завершене"}`;
-  const body = w.exercises.map((e) => `${e.nameUk} ${fmtSets(e.sets)}`).join(" · ");
-  return body ? `${head}\n${body}` : head;
-}
+const block = (w: WorkoutSummaryRow, tz: string): string =>
+  renderBlock({
+    date: fmtLocalDate(w.startedAt, tz),
+    dayName: dayName({ code: w.dayCode, title: w.dayTitle }),
+    effort: w.status === "done" && w.effort !== null ? w.effort : null,
+    exercises: w.exercises.map((e) => ({ name: e.nameUk, sets: fmtSets(e.sets) })),
+  });
 
 /** Від нових до старих; не влізло в 4096 — відкидаються найстаріші (P2.5.3). */
 export function progressText(workouts: readonly WorkoutSummaryRow[], tz: string): string {
   if (workouts.length === 0) return NO_WORKOUTS;
-  const blocks = workouts.map((w) => workoutBlock(w, tz));
-  while (blocks.length > 1 && blocks.join("\n\n").length > TELEGRAM_TEXT_MAX) blocks.pop();
-  return clip(blocks.join("\n\n"));
-}
-
-export interface NextSlotLine {
-  nameUk: string;
-  bodyweight: boolean;
-  weightKg: number;
-  targetReps: number;
-}
-
-export interface ProgramModel {
-  days: ProgramDay[];
-  next: { dayName: string; lines: NextSlotLine[] };
-  /** Назва дня активного тренування, якщо воно є. */
-  activeDayName: string | null;
-}
-
-export function programText(m: ProgramModel): string {
-  const parts: string[] = [];
-  for (const d of m.days) {
-    const slots = d.slots.map((s, i) => `${i + 1}. ${s.exercise.nameUk} — ${s.sets} × ${s.repMin}–${s.repMax}`);
-    parts.push([dayName(d), ...slots].join("\n"));
-  }
-  const next = m.next.lines.map((l) => `${l.nameUk} — ${l.bodyweight ? "власна вага" : `${fmtKg(l.weightKg)} кг`} × ${l.targetReps}`);
-  parts.push([`➡️ Наступне: ${m.next.dayName}`, ...next].join("\n"));
-  if (m.activeDayName) parts.push(`Зараз триває: ${m.activeDayName} — /trening, щоб продовжити`);
-  return clip(parts.join("\n\n"));
+  const blocks = workouts.map((w) => block(w, tz));
+  const join = (b: string[]): string => `${progressTitle}\n\n${b.join("\n\n")}`;
+  while (blocks.length > 1 && join(blocks).length > TELEGRAM_TEXT_MAX) blocks.pop();
+  return clip(join(blocks));
 }

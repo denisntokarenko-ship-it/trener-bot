@@ -120,3 +120,52 @@ export async function count(table: Table): Promise<number> {
 export async function resetDb(): Promise<void> {
   await env.DB.batch(TABLES.map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
 }
+
+/**
+ * Перевірка тексту за правилами Telegram parse_mode HTML для тегів, що їх вживає бот (b, i, code):
+ * теги парні й вкладені правильно, голих `<` `>` немає, `&` лише як `&amp;` `&lt;` `&gt;`; довжина ≤ 4096.
+ * Повертає перелік проблем (порожній — текст прийняв би Telegram).
+ */
+export function htmlProblems(text: string): string[] {
+  const problems: string[] = [];
+  if (text.length > 4096) problems.push(`довжина ${text.length} > 4096`);
+  const stack: string[] = [];
+  let rest = text;
+  const tag = /<(\/?)(b|i|code)>/;
+  for (let m = tag.exec(rest); m; m = tag.exec(rest)) {
+    const before = rest.slice(0, m.index);
+    if (/[<>]/.test(before)) problems.push(`голий < або > перед тегом: ${JSON.stringify(before.slice(-30))}`);
+    if (m[1] === "") stack.push(m[2]!);
+    else if (stack.pop() !== m[2]) problems.push(`тег </${m[2]}> не збігся з відкритим`);
+    rest = rest.slice(m.index + m[0].length);
+  }
+  if (/[<>]/.test(rest)) problems.push(`голий < або > у тексті: ${JSON.stringify(rest.slice(0, 40))}`);
+  if (stack.length > 0) problems.push(`незакриті теги: ${stack.join(",")}`);
+  if (/&(?!amp;|lt;|gt;)/.test(text)) problems.push("голий & (не сутність)");
+  return problems;
+}
+
+/**
+ * Перевірка всіх вихідних викликів фейкового Bot API: кожне sendMessage/editMessageText — із parse_mode HTML
+ * і коректною розміткою; тост answerCallbackQuery — без тегів і ≤ 200 символів; кнопки — callback_data ≤ 64 байти.
+ */
+export function outgoingProblems(calls: readonly { method: string; payload: Record<string, unknown> }[]): string[] {
+  const out: string[] = [];
+  for (const c of calls) {
+    if (c.method === "sendMessage" || c.method === "editMessageText") {
+      if (c.payload.parse_mode !== "HTML") out.push(`${c.method} без parse_mode HTML`);
+      for (const p of htmlProblems(String(c.payload.text))) out.push(`${c.method}: ${p}`);
+    }
+    if (c.method === "answerCallbackQuery" && typeof c.payload.text === "string") {
+      if (/[<>]/.test(c.payload.text)) out.push(`тост з тегами: ${c.payload.text}`);
+      if (c.payload.text.length > 200) out.push("тост довший за 200");
+    }
+    const markup = c.payload.reply_markup as { inline_keyboard?: { text: string; callback_data?: string; url?: string }[][] } | undefined;
+    for (const b of markup?.inline_keyboard?.flat() ?? []) {
+      if (b.callback_data !== undefined && new TextEncoder().encode(b.callback_data).length > 64) out.push(`callback_data > 64: ${b.callback_data}`);
+      if (b.callback_data !== undefined && b.url !== undefined) out.push(`кнопка і з callback_data, і з url: ${b.text}`);
+      if ([...b.text].length > 24) out.push(`кнопка довша за 24 символи: ${b.text}`);
+    }
+  }
+  return out;
+}

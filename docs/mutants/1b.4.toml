@@ -1,0 +1,84 @@
+test = "npx vitest run --reporter=dot"
+timeout = 300
+
+# --- Обов'язкові з промпту 1b.4: прибрати екранування → червоний; текст > 4096 → червоний ---
+
+[[mutant]]
+id = "M1"
+file = "src/bot/texts.ts"
+old = '''  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");'''
+new = '''  return s;'''
+why = "esc() нічого не екранує — назва вправи з < ламає розмітку"
+match = "P3.5|esc:"
+
+[[mutant]]
+id = "M2"
+file = "src/bot/texts.ts"
+old = '''  if (text.length <= TELEGRAM_TEXT_MAX) return text;
+  const cut'''
+new = '''  return text;
+  const cut'''
+why = "clip() не обрізає — текст понад 4096 символів"
+match = "clip:|ліміти Telegram"
+
+[[mutant]]
+id = "M3"
+file = "src/bot/texts.ts"
+old = '''lines.push("", `<i>Варіант ${v.variant + 1} з 3. Нічого не зміниться, поки не натиснеш «Прийняти».</i>`);
+  return clip(lines.join("\n"));'''
+new = '''lines.push("", `<i>Варіант ${v.variant + 1} з 3. Нічого не зміниться, поки не натиснеш «Прийняти».</i>`);
+  return lines.join("\n");'''
+why = "екран плану без clip — 5 днів × 7 слотів вилазить за 4096"
+match = "ліміти Telegram"
+
+# --- Відео, parse_mode, мова ---
+
+[[mutant]]
+id = "M4"
+file = "src/bot/workout-view.ts"
+old = '''if (isVideoUrl(m.exercise.videoUrl)) kb.row()'''
+new = '''if (m.exercise.videoUrl) kb.row()'''
+why = "кнопка [🎥 Відео] без перевірки формату — чуже посилання потрапляє в кнопку"
+match = "кнопки немає"
+
+[[mutant]]
+id = "M5"
+file = "src/bot/bot.ts"
+old = '''(method === "sendMessage" || method === "editMessageText") && !("parse_mode" in payload)'''
+new = '''false'''
+why = "reply без parse_mode — Telegram показує теги як текст"
+match = "без parse_mode HTML"
+
+[[mutant]]
+id = "M6"
+file = "src/bot/texts.ts"
+old = '''<b>Привіт, ${esc(firstName)}!</b>'''
+new = '''<b>Привіт, ${firstName}!</b>'''
+why = "імʼя з < у привітанні не екранується"
+match = "P3.5"
+
+[[mutant]]
+id = "M7"
+file = "src/bot/texts.ts"
+old = '''export const recordReps = (name: string, reps: number): string => `${esc(name)} —'''
+new = '''export const recordReps = (name: string, reps: number): string => `${name} —'''
+why = "назва вправи в рекордах не екранується"
+match = "P3.5"
+
+[[mutant]]
+id = "M8"
+file = "scripts/set-bot-profile-core.ts"
+old = '''    if (same) io.log("Меню команд: без змін");'''
+new = '''    if (false as boolean) io.log("Меню команд: без змін");'''
+why = "set-bot-profile не ідемпотентний: меню команд пишеться щоразу"
+match = "другий — без жодного set"
+
+[[mutant]]
+id = "M9"
+file = "src/bot/onboarding-view.ts"
+old = '''  return tidy(kb);
+}'''
+new = '''  return kb;
+}'''
+why = "порожні рядки клавіатури не прибираються"
+match = "порожній рядок клавіатури"
