@@ -1,5 +1,6 @@
 // Крон `*/15 * * * *` (phase-2.md, розділ 4): прибирання Фази 1 і нагадування — два незалежні try/catch, збій одного
 // не зупиняє другого; наприкінці — cron_state (навіть коли нагадування кидали) і один лог із лічильниками без текстів.
+import { MEAL_PENDING_TTL_MS } from "./config";
 import { createDb } from "./db/client";
 import { createRepo, type Repo } from "./db/repo";
 import type { Env } from "./env";
@@ -20,6 +21,13 @@ export async function runCron(env: Env, now: number, deps: { repo?: Repo } & Rem
   } catch (e) {
     cleanupErrors++;
     console.error("cron cleanup failed", { error: errorName(e) });
+  }
+  // Прострочені pending-прийоми → cancelled з чисткою каталогу (phase-3-photo.md, «Прострочення»); окремий try — збій не зупиняє інших кроків.
+  try {
+    await repo.expirePendingMeals(now - MEAL_PENDING_TTL_MS);
+  } catch (e) {
+    cleanupErrors++;
+    console.error("cron meals expiry failed", { error: errorName(e) });
   }
   try {
     counters = await runReminders(repo, env.TELEGRAM_BOT_TOKEN, now, deps);

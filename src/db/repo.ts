@@ -1253,6 +1253,53 @@ export function createRepo(db: Db) {
         SELECT COUNT(*) AS n FROM meals WHERE user_id = ${userId} AND local_date = ${localDate} AND status = 'pending'`);
       return rows[0]?.n ?? 0;
     },
+
+    /** Повідомлення бота з кнопками прийому — його редагують далі. false — чужий або неіснуючий прийом. */
+    async setMealMessageId(userId: number, mealId: number, messageId: number): Promise<boolean> {
+      const res = await db.$client.prepare("UPDATE meals SET message_id = ? WHERE id = ? AND user_id = ?").bind(messageId, mealId, userId).run();
+      return res.meta.changes === 1;
+    },
+
+    /**
+     * [✏️ Грами]: очікування грамів для власного `pending`-прийому; в інших прийомах користувача очікування знімається (діє одне).
+     * false — прийом чужий або не `pending` (тоді й інші не чіпаються).
+     */
+    async setAwaitGrams(userId: number, mealId: number, now: number): Promise<boolean> {
+      const d1 = db.$client;
+      const res = await d1.batch([
+        d1
+          .prepare(`UPDATE meals SET await_grams_at = NULL WHERE user_id = ? AND id != ? AND await_grams_at IS NOT NULL AND ${OWN_PENDING_MEAL}`)
+          .bind(userId, mealId, mealId, userId),
+        d1.prepare("UPDATE meals SET await_grams_at = ? WHERE id = ? AND user_id = ? AND status = 'pending'").bind(now, mealId, userId),
+      ]);
+      return res[1]?.meta.changes === 1;
+    },
+
+    /**
+     * Прибрати щойно створені `ai_estimate`, якщо на них не посилається жодна позиція (прийом не створився).
+     * Спільний каталог (без userId): страж NOT EXISTS не зачепить продукт, що вже є в чужому чи іншому прийомі.
+     */
+    async dropOrphanEstimates(foodIds: number[]): Promise<void> {
+      if (foodIds.length > 0) await orphanEstimates(db.$client, foodIds).run();
+    },
+
+    /** Команда знімає очікування грамів у всіх прийомах користувача. */
+    async clearAwaitGrams(userId: number): Promise<void> {
+      await db.$client.prepare("UPDATE meals SET await_grams_at = NULL WHERE user_id = ? AND await_grams_at IS NOT NULL").bind(userId).run();
+    },
+
+    /**
+     * Назви каталогу для запиту до моделі (спільний каталог, без userId): спершу `seed` за id, далі решта за кількістю
+     * використань у meal_items, потім за id — детермінований порядок.
+     */
+    async knownFoodNames(limit: number): Promise<string[]> {
+      const rows = await db.all<{ name_uk: string }>(sql`
+        SELECT f.name_uk AS name_uk FROM foods f
+        LEFT JOIN (SELECT food_id, COUNT(*) AS n FROM meal_items GROUP BY food_id) u ON u.food_id = f.id
+        ORDER BY f.source != 'seed', CASE WHEN f.source = 'seed' THEN 0 ELSE -COALESCE(u.n, 0) END, f.id
+        LIMIT ${limit}`);
+      return rows.map((r) => r.name_uk);
+    },
   };
   return repo;
 }

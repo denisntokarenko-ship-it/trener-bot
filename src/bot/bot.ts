@@ -2,7 +2,9 @@
 import { Bot, BotError } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import type { Repo } from "../db/repo";
+import { FOOD_TIMEOUT_MS } from "../config";
 import { createFoodFlow, isFoodCb } from "./food-flow";
+import { createMealFlow, isMealCb } from "./meal-flow";
 import { createOnboardingFlow } from "./onboarding";
 import { createSettingsFlow, isSettingsCb } from "./settings-flow";
 import { NOT_UNDERSTOOD, SOMETHING_WRONG } from "./texts";
@@ -13,6 +15,14 @@ export interface BotOptions {
   botInfo?: UserFromGetMe;
   fetch?: typeof fetch;
   now?: () => number;
+  /** Фонова робота після відповіді вебхука (ctx.waitUntil Worker). Немає — проміс просто запускається. */
+  waitUntil?: (p: Promise<unknown>) => void;
+  /** Ключ Claude (фото їжі); немає — «Розпізнавання ще не підключене». */
+  anthropicApiKey?: string;
+  /** fetch для SDK Anthropic (лише тести). */
+  anthropicFetch?: typeof fetch;
+  /** Дедлайн конвеєра фото (тести зменшують). */
+  foodTimeoutMs?: number;
 }
 
 export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot {
@@ -40,10 +50,23 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
   const weight = createWeightFlow(repo, now);
   const food = createFoodFlow(repo, now);
   const settings = createSettingsFlow(repo, (ctx) => onboarding.profil(ctx));
+  const meal = createMealFlow(repo, now, {
+    token,
+    apiKey: opts.anthropicApiKey,
+    fetch: opts.fetch ?? ((input, init) => fetch(input, init)),
+    anthropicFetch: opts.anthropicFetch,
+    waitUntil: opts.waitUntil ?? ((p) => void p),
+    timeoutMs: opts.foodTimeoutMs ?? FOOD_TIMEOUT_MS,
+    clearWorkoutAwait: (ctx) => flow.clearAwait(ctx),
+    ensureNorm: (userId) => food.ensureNorm(userId),
+  });
 
-  // Будь-яка команда знімає очікування ваги й виконується далі (phase-1-flow.md, «Введення ваги», п. 5).
+  // Будь-яка команда знімає очікування ваги (phase-1-flow.md, «Введення ваги», п. 5) і грамів прийому (phase-3-photo.md) й виконується далі.
   bot.use(async (ctx, next) => {
-    if (ctx.message?.entities?.some((e) => e.type === "bot_command" && e.offset === 0)) await flow.clearAwait(ctx);
+    if (ctx.message?.entities?.some((e) => e.type === "bot_command" && e.offset === 0)) {
+      await flow.clearAwait(ctx);
+      await meal.clearGrams(ctx);
+    }
     await next();
   });
 
@@ -57,21 +80,29 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
   bot.command("yizha", (ctx) => food.yizha(ctx));
   bot.on("callback_query:data", (ctx) => {
     const d = ctx.callbackQuery.data;
-    // f:go|sx|ac:… — питання про профіль для норми (food-flow); f:<число>:<число> — оцінка тренування, її бере flow.
-    return d.startsWith("o:") ? onboarding.callback(ctx) : isFoodCb(d) ? food.callback(ctx) : isSettingsCb(d) ? settings.callback(ctx) : flow.callback(ctx);
+    // f:go|sx|ac:… — питання про профіль для норми (food-flow); f:<число>:<число> — оцінка тренування, її бере flow; m:… — прийом їжі.
+    if (d.startsWith("o:")) return onboarding.callback(ctx);
+    if (isFoodCb(d)) return food.callback(ctx);
+    if (isMealCb(d)) return meal.callback(ctx);
+    return isSettingsCb(d) ? settings.callback(ctx) : flow.callback(ctx);
   });
   bot.on("callback_query", (ctx) => ctx.answerCallbackQuery());
   // Текст, число — порядок із phase-2.md, розділ 2 (перший збіг виграє): 1) reply на нагадування про вагу; 1б) reply на питання про профіль для норми (phase-3.md); 2) вага підходу, що
-  // чекає; 3) анкета; 4) голе число при відкритому нагадуванні про вагу; 5) «Не зрозумів» (+ підказка для чисел 30–300).
+  // чекає; 2б) грами прийому, що їх чекають (phase-3-photo.md); 3) анкета; 4) голе число при відкритому нагадуванні про вагу; 5) «Не зрозумів» (+ підказка для чисел 30–300).
   bot.on("message:text", async (ctx) => {
     if (await weight.replyToReminder(ctx)) return;
     if (await food.replyToQuestion(ctx)) return;
     const awaits = await flow.awaitsWeight(ctx);
     if (!awaits) {
+      if (await meal.gramsText(ctx)) return;
       if (await onboarding.text(ctx)) return;
       if (await weight.bareNumber(ctx)) return;
     }
     await flow.text(ctx, awaits ? undefined : weight.hintFor(ctx));
+  });
+  bot.on("message:photo", (ctx) => meal.photo(ctx));
+  bot.on("message:document", async (ctx) => {
+    if (!(await meal.document(ctx))) await ctx.reply(NOT_UNDERSTOOD);
   });
   bot.on("message", (ctx) => ctx.reply(NOT_UNDERSTOOD));
 
