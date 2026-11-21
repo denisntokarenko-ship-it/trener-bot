@@ -6,7 +6,7 @@
 Гілка: `docs/spec-phase-4`
 
 ```
-Завдання 4.0. Ворота: R-3 закрите (docs/reviews/phase-3.md = ЗАКРИТА на origin/main). Інакше зупинись.
+Завдання 4.0. Ворот немає: це документ, його пишуть паралельно з Фазою 3 (рішення власника). Ворота «R-3 закрите» перенесено на 4.1.
 Гілка від origin/main: docs/spec-phase-4.
 
 Прочитай docs/PLAN.md (розділи «Фаза 4», «Архітектура» — частина про ШІ), docs/spec/00-common.md, docs/spec/README.md, розділ «Борг» docs/PROGRESS.md. Спеку цілком не читай.
@@ -66,17 +66,17 @@
 Гілка: `phase-4/01-ai-tools`
 
 ```
-Завдання 4.1. Ворота: 4.0 ✅ і рев'ю 4.0 ✅ у docs/PROGRESS.md на origin/main. Інакше зупинись.
+Завдання 4.1. Ворота: 4.0 ✅ і рев'ю 4.0 ✅ у docs/PROGRESS.md на origin/main І R-3 закрите (docs/reviews/phase-3.md = ЗАКРИТА на origin/main). Інакше зупинись.
 Гілка від origin/main: phase-4/01-ai-tools.
 
-Прочитай docs/spec/phase-4.md і docs/spec/00-common.md. Спеку цілком не читай.
+Прочитай docs/spec/phase-4.md (розділи 0–2 і 6) і docs/spec/00-common.md. Спеку цілком не читай.
 
 Контекстна дисципліна: тести під час ітерації — тихим репортером (`npx vitest run --reporter=dot`); довгий вивід (лог, дамп, дерево файлів, wrangler tail) — у файл, у контекст лише підсумок; прочитане не перечитуй.
 
 Робиш:
-- Міграція ai_proposals, chat_turns — за phase-4.md.
-- src/ai/tools.ts — реєстр інструментів зі спеки; читальні — лише через repo з userId; propose_change — лише insert pending після валідації payload.
-- src/ai/proposals.ts: applyProposal(id, userId) — код застосовує зміну через repo; лише pending → accepted; прострочені й чужі — ні.
+- Міграція 0009 ai_proposals, chat_turns — за phase-4.md.
+- src/ai/tools.ts — реєстр із 6 інструментів зі спеки (userId лише з контексту, не з аргументів моделі); читальні — лише через repo з userId; propose_change — лише insert pending після валідації payload.
+- src/ai/proposals.ts + repo: applyProposal(userId, id, now, today) — один batch із трьох операторів (розділ 6): pending → accepted + зміна + applied_at; прострочені, чужі, застарілі й «busy» — за спекою; rejectProposal, expireProposals, chatInFlight, chat_turns.
 
 Тести: усі інструменти, крім propose_change, не змінюють БД (лічильник рядків до/після по всіх таблицях); propose_change з невалідним payload → помилка, 0 рядків; applyProposal двічі → одна зміна; чужий userId не застосовує; прострочена пропозиція не застосовується.
 Мутації — `python "$HOME/.claude/skills/prompt-roadmap/scripts/mutate.py" docs/mutants/4.1.toml --report docs/mutants/4.1.md`:
@@ -127,16 +127,16 @@ M1 — applyProposal без перевірки status → червоніє те�
 Завдання 4.2. Ворота: 4.1 ✅ і рев'ю 4.1 ✅ у docs/PROGRESS.md на origin/main. Інакше зупинись.
 Гілка від origin/main: phase-4/02-ai-chat.
 
-Прочитай docs/spec/phase-4.md і docs/spec/00-common.md. Спеку цілком не читай.
-Скіл claude-api — перед кодом Tool Runner (не з памʼяті).
+Прочитай docs/spec/phase-4.md (розділи 2–6) і docs/spec/00-common.md. Спеку цілком не читай.
+Скіл claude-api — перед кодом циклу tool-use (ручний цикл messages.create, не Tool Runner — розділ 5 спеки; не з памʼяті).
 
 Контекстна дисципліна: тести під час ітерації — тихим репортером (`npx vitest run --reporter=dot`); довгий вивід (лог, дамп, дерево файлів, wrangler tail) — у файл, у контекст лише підсумок; прочитане не перечитуй.
 
 Робиш:
-- Маршрутизація тексту за phase-4.md; чат → ctx.waitUntil: typing → Tool Runner на CHAT_MODEL = claude-haiku-5-5 (src/config.ts), effort і max_tokens зі спеки, таймаут 25 с.
+- Маршрутизація тексту за розділом 4 спеки; чат → ctx.waitUntil: typing → ручний цикл tool-use на CHAT_MODEL = claude-haiku-5-5 (src/config.ts), effort low, max_tokens, ≤ 5 ітерацій, дедлайн 25 с.
 - src/ai/prompts.ts — системний промпт зі спеки; chat_turns — запис і обрізання.
-- Перевірка денного ліміту до виклику, recordAiUsage після; refusal і max_tokens — тексти зі спеки.
-- propose_change у відповіді → повідомлення з [Так] [Ні] → applyProposal / rejected.
+- reserveAiUsage (purpose chat) до виклику, settleAiUsage сумою токенів усіх ітерацій після, releaseAiUsage за правилами спеки; chatInFlight; refusal, max_tokens, ліміт ітерацій — тексти зі спеки; ціни Haiku звір ще раз зі сторінки pricing.
+- propose_change у відповіді → повідомлення з [Так] [Ні] (callback i:y|n:<id>) → applyProposal / rejected; статичний рядок «Підтверди кнопкою» у відповіді.
 
 Тести (мок клієнта): питання → викликано читальний інструмент → відповідь передана користувачу; ліміт → клієнт не викликано; пропозиція → кнопки → [Так] застосовує, [Ні] — rejected; таймаут → текст і 0 нових пропозицій.
 Мутації — `python "$HOME/.claude/skills/prompt-roadmap/scripts/mutate.py" docs/mutants/4.2.toml --report docs/mutants/4.2.md`:
@@ -188,7 +188,7 @@ M1 — прибери перевірку ліміту → червоніє те�
 Завдання 4.3. Ворота: 4.2 ✅ і рев'ю 4.2 ✅ у docs/PROGRESS.md на origin/main. Інакше зупинись.
 Гілка від origin/main: phase-4/03-weekly-ai.
 
-Прочитай docs/spec/phase-4.md (розділ звіту) і docs/spec/00-common.md. Спеку цілком не читай.
+Прочитай docs/spec/phase-4.md (розділи 6–7) і docs/spec/00-common.md. Спеку цілком не читай.
 
 Контекстна дисципліна: тести під час ітерації — тихим репортером (`npx vitest run --reporter=dot`); довгий вивід (лог, дамп, дерево файлів, wrangler tail) — у файл, у контекст лише підсумок; прочитане не перечитуй.
 

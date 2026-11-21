@@ -42,8 +42,8 @@
 | 3.5 | Деплой Фази 3 у прод | Opus 5.5 | xhigh | phase-3/05-prod-release | ⬜ | ⬜ |
 | R-3 | Незалежне рев'ю Фази 3 | Opus 5.5 | xhigh | review/phase-3 | ⬜ | — |
 | F-3 | Виправлення за рев'ю Фази 3 | Opus 5.5 | xhigh | fix/phase-3-review | ⬜ | — |
-| 4.0 | Специфікація Фази 4 | Opus 5.5 | high | docs/spec-phase-4 | ⬜ | ⬜ |
-| 4.1 | Схема ШІ й інструменти читання | Opus 5.5 | high | phase-4/01-ai-tools | ⬜ | ⬜ |
+| 4.0 | Специфікація Фази 4 | Opus 5.5 | high | docs/spec-phase-4 | 🟡 | ⬜ |
+| 4.1 | Схема ШІ й інструменти читання (ворота: 4.0 + R-3) | Opus 5.5 | high | phase-4/01-ai-tools | ⬜ | ⬜ |
 | 4.2 | ШІ-тренер у чаті | Opus 5.5 | high | phase-4/02-ai-chat | ⬜ | ⬜ |
 | 4.3 | ШІ-коментар у звіті й прострочення пропозицій | Sonnet 5.5 | medium | phase-4/03-weekly-ai | ⬜ | — |
 | 4.4 | Деплой Фази 4 у прод | Opus 5.5 | xhigh | phase-4/04-prod-release | ⬜ | ⬜ |
