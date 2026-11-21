@@ -299,10 +299,8 @@ match = "Д2"
 [[mutant]]
 id = "M31"
 file = "src/ai/food-prompt.ts"
-old = '''${knownNames.map(asData).join("
-")}'''
-new = '''${knownNames.join("
-")}'''
+old = '''${knownNames.map(asData).join('''
+new = '''${knownNames.join('''
 why = "Д3: назва ai_estimate закриває <known_foods> (збережена ін'єкція між фото)"
 match = "Д3"
 
