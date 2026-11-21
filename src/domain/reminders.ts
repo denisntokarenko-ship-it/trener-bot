@@ -1,8 +1,8 @@
 // Коли нагадування «має піти» (docs/spec/phase-2.md, розділ 4). Чисті функції: без I/O, без Date.now — час параметром.
-import { REMINDER_WINDOW_MIN, REPORT_LOCAL_MINUTES } from "../config";
+import { REMINDER_WINDOW_MIN, REPORT_LOCAL_MINUTES, TREND_LOCAL_MINUTES } from "../config";
 import { localParts } from "./time";
 
-export type ReminderKind = "train" | "weigh" | "report";
+export type ReminderKind = "train" | "weigh" | "report" | "trend";
 
 /** Поля `users`, від яких залежить розклад. */
 export interface ReminderUser {
@@ -49,5 +49,7 @@ export function dueReminders(user: ReminderUser, nowUtcMs: number): ReminderKind
   if (train !== null && inWindow(minutes, train) && (parseTrainingDays(user.trainingDays) ?? []).includes(isoWeekday)) out.push("train");
   // Звіт: Нд з 19:00 до кінця локальної доби — пізній звіт кращий за жоден.
   if (isoWeekday === 7 && minutes >= REPORT_LOCAL_MINUTES) out.push("report");
+  // Оцінка тренду норми (Фаза 3): вікно [09:00, 10:00); чи є норма й що казати — перевіряє виконавець.
+  if (inWindow(minutes, TREND_LOCAL_MINUTES)) out.push("trend");
   return out;
 }

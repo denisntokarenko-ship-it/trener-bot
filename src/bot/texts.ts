@@ -646,6 +646,37 @@ export const WEIGH_REMINDER = "⚖️ Доброго ранку! Вага? На�
 /** Відповідь на нагадування про зважування за минулу дату (крок 1 маршрутизації числа). */
 export const WEIGH_REMINDER_STALE = "Це нагадування за вчора. Надішли /vaga 78.4 — запишу на сьогодні";
 
+// --- Корекція норми за трендом ваги (docs/spec/phase-3.md, розділ 4) ---
+
+export const TREND_BTN_ACCEPT = "✅ Прийняти";
+export const TREND_BTN_NO = "Ні";
+export const TREND_ALREADY = "Вже застосовано";
+export const TREND_STALE = "Пропозиція застаріла";
+export const TREND_DECLINED = "Добре, норму не чіпаю";
+
+export interface TrendTextInput {
+  /** Середні `W1` → `W0` (уже відформатовані кг), темп (з мінусом-мінусом, без «%»). */
+  from: string;
+  to: string;
+  pace: string;
+  delta: 100 | -100;
+  oldKcal: number;
+  newKcal: number;
+  carbsDeltaG: number;
+}
+
+/** `📈 За 14 днів: 80,0 → 79,4 кг (−0,75 %/тиж) — нижче, ніж треба для цілі. Пропоную 2480 → 2580 ккал (вуглеводи +25 г).` */
+export function trendText(t: TrendTextInput): string {
+  const where = t.delta > 0 ? "нижче" : "вище";
+  const carbs = `${t.carbsDeltaG > 0 ? "+" : "−"}${Math.abs(t.carbsDeltaG)}`;
+  return `📈 За 14 днів: ${t.from} → ${t.to} кг (${t.pace} %/тиж) — ${where}, ніж треба для цілі. Пропоную ${t.oldKcal} → ${t.newKcal} ккал (вуглеводи ${carbs} г).`;
+}
+
+/** Після [✅ Прийняти]: нова норма з дати. */
+export function trendAppliedText(n: { validFrom: string; kcal: number; proteinG: number; fatG: number; carbsG: number }): string {
+  return `✅ Нова норма від ${n.validFrom.slice(8, 10)}.${n.validFrom.slice(5, 7)}: ${n.kcal} ккал · Б ${n.proteinG} г · Ж ${n.fatG} г · В ${n.carbsG} г`;
+}
+
 export interface TrainReminderLine {
   nameUk: string;
   bodyweight: boolean;

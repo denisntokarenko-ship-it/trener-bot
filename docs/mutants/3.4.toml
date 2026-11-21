@@ -1,0 +1,116 @@
+test = "npx vitest run --reporter=dot test/trend.test.ts"
+timeout = 300
+
+# --- Обов'язкові з промпту 3.4: M1, M2; решта — додаткові ---
+
+[[mutant]]
+id = "M1"
+file = "src/config.ts"
+old = '''TREND_MIN_WEIGHINGS = 10;'''
+new = '''TREND_MIN_WEIGHINGS = 0;'''
+why = "поріг 10 зважувань → 0"
+match = "P3[.]4[.]1"
+
+[[mutant]]
+id = "M2"
+file = "src/domain/nutrition.ts"
+old = '''? TREND_STEP_KCAL : num * 10000 > band.cut * den ? -TREND_STEP_KCAL : 0;'''
+new = '''? -TREND_STEP_KCAL : num * 10000 > band.cut * den ? TREND_STEP_KCAL : 0;'''
+why = "знак дельти навпаки"
+match = "P3[.]4[.]2|запобіжники|P3[.]4 крон|прийняття"
+
+[[mutant]]
+id = "M3"
+file = "src/domain/nutrition.ts"
+old = '''num * 10000 < band.add * den ?'''
+new = '''num * 10000 <= band.add * den ?'''
+why = "нижня межа нестрога (рівно на порозі → +100)"
+match = "P3[.]4[.]2"
+
+[[mutant]]
+id = "M4"
+file = "src/domain/nutrition.ts"
+old = '''|| Math.abs(newKcal - i.formulaKcal) > TREND_MAX_DEVIATION_KCAL'''
+new = '''|| Math.abs(newKcal - i.formulaKcal) > 100000'''
+why = "запобіжник ±300 ккал від formula знято"
+match = "запобіжники|відхилення від formula"
+
+[[mutant]]
+id = "M5"
+file = "src/domain/nutrition.ts"
+old = '''if (delta < 0 && i.carbsG < TREND_STEP_CARBS_G) return null;'''
+new = '''if (false as boolean) return null;'''
+why = "−100 при вуглеводах < 25 г дозволено"
+match = "запобіжники"
+
+[[mutant]]
+id = "M6"
+file = "src/db/repo.ts"
+old = '''AND NOT EXISTS (SELECT 1 FROM reminders_sent r WHERE r.user_id = ?1 AND r.kind = 'trend' AND r.local_date > ?5)'''
+new = '''AND 1 = 1'''
+why = "прийняття не бачить новішої пропозиції trend"
+match = "P3[.]4[.]3"
+
+[[mutant]]
+id = "M7"
+file = "src/db/repo.ts"
+old = '''AND NOT EXISTS (SELECT 1 FROM nutrition_targets t WHERE t.user_id = ?1 AND t.valid_from > ?5)'''
+new = '''AND 1 = 1'''
+why = "прийняття не бачить нового valid_from після дати пропозиції"
+match = "P3[.]4[.]3"
+
+[[mutant]]
+id = "M8"
+file = "src/db/repo.ts"
+old = '''AND EXISTS (SELECT 1 FROM reminders_sent r WHERE r.user_id = ?1 AND r.kind = 'trend' AND r.local_date = ?5)'''
+new = '''AND 1 = 1'''
+why = "прийняття без наявної пропозиції (підроблена дата)"
+match = "P3[.]4[.]3"
+
+[[mutant]]
+id = "M9"
+file = "src/reminders.ts"
+old = '''if (date < addDays(base, TREND_MIN_DAYS)) return null;'''
+new = '''if (date < addDays(base, 0)) return null;'''
+why = "інтервал 14 днів знято"
+match = "P3[.]4 крон"
+
+[[mutant]]
+id = "M10"
+file = "src/reminders.ts"
+old = '''const base = last !== null && last > target.validFrom ? last : target.validFrom;'''
+new = '''const base = target.validFrom;'''
+why = "інтервал рахується лише від valid_from, не від останньої пропозиції"
+match = "P3[.]4 крон"
+
+[[mutant]]
+id = "M11"
+file = "src/domain/reminders.ts"
+old = '''if (inWindow(minutes, TREND_LOCAL_MINUTES)) out.push("trend");'''
+new = '''out.push("trend");'''
+why = "вікно 09:00–10:00 знято"
+match = "кнопки й розклад"
+
+[[mutant]]
+id = "M12"
+file = "src/db/repo.ts"
+old = '''SELECT c.user_id, ?2, c.kcal + ?3'''
+new = '''SELECT c.user_id, ?5, c.kcal + ?3'''
+why = "valid_from нової норми = дата пропозиції, а не день прийняття"
+match = "P3[.]4[.]3"
+
+[[mutant]]
+id = "M13"
+file = "src/db/repo.ts"
+old = '''c.carbs_g + ?4, 'trend''''
+new = '''c.carbs_g, 'trend''''
+why = "вуглеводи не змінюються разом з ккал"
+match = "P3[.]4[.]3"
+
+[[mutant]]
+id = "M14"
+file = "src/domain/nutrition.ts"
+old = '''const w1 = windowStats(i.weights, addDays(i.today, -7));'''
+new = '''const w1 = windowStats(i.weights, addDays(i.today, -6));'''
+why = "вікно W1 зсунуте на день"
+match = "P3[.]4"

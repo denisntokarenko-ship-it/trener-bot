@@ -1227,6 +1227,51 @@ export function createRepo(db: Db) {
       return r ? { validFrom: r.valid_from, kcal: r.kcal, proteinG: r.protein_g, fatG: r.fat_g, carbsG: r.carbs_g, reason: r.reason, sourceDate: r.source_date } : null;
     },
 
+    /** Остання `formula`-норма (від неї міряється відхилення тренду); немає — null. */
+    async getFormulaTarget(userId: number): Promise<NutritionTarget | null> {
+      const rows = await db.all<{ valid_from: string; kcal: number; protein_g: number; fat_g: number; carbs_g: number; reason: TargetReason; source_date: string | null }>(sql`
+        SELECT valid_from, kcal, protein_g, fat_g, carbs_g, reason, source_date FROM nutrition_targets
+        WHERE user_id = ${userId} AND reason = 'formula' ORDER BY valid_from DESC LIMIT 1`);
+      const r = rows[0];
+      return r ? { validFrom: r.valid_from, kcal: r.kcal, proteinG: r.protein_g, fatG: r.fat_g, carbsG: r.carbs_g, reason: r.reason, sourceDate: r.source_date } : null;
+    },
+
+    /** Локальна дата останньої заявки `kind` (найновіша) або null. */
+    async lastReminderDate(userId: number, kind: ReminderKind): Promise<string | null> {
+      const rows = await db.all<{ d: string | null }>(sql`SELECT MAX(local_date) AS d FROM reminders_sent WHERE user_id = ${userId} AND kind = ${kind}`);
+      return rows[0]?.d ?? null;
+    },
+
+    /**
+     * Прийняти пропозицію тренду (`delta` ±100 ккал, `sourceDate` — дата пропозиції): один умовний `INSERT … SELECT … WHERE NOT EXISTS`.
+     * Нова норма = чинна на `today` ± `delta` (вуглеводи ± 25 г за 100 ккал), `valid_from = today`, `reason = trend`. Рядок створюється,
+     * лише якщо пропозиція є й найновіша (`reminders_sent` trend за `sourceDate`, нових trend немає), для `sourceDate` норми ще немає
+     * і після `sourceDate` не було нового `valid_from`. `already` — для цієї дати вже застосовано; `stale` — пропозиція застаріла.
+     */
+    async applyTrendTarget(userId: number, p: { sourceDate: string; delta: number; today: string }, now: number): Promise<"applied" | "already" | "stale"> {
+      if (p.delta !== 100 && p.delta !== -100) return "stale";
+      const carbsDelta = (p.delta / 100) * 25;
+      const res = await db.$client
+        .prepare(
+          `INSERT INTO nutrition_targets (user_id, valid_from, kcal, protein_g, fat_g, carbs_g, reason, source_date, created_at)
+           SELECT c.user_id, ?2, c.kcal + ?3, c.protein_g, c.fat_g, c.carbs_g + ?4, 'trend', ?5, ?6
+           FROM nutrition_targets c
+           WHERE c.user_id = ?1
+             AND c.valid_from = (SELECT MAX(valid_from) FROM nutrition_targets WHERE user_id = ?1 AND valid_from <= ?2)
+             AND c.kcal + ?3 BETWEEN 1200 AND 6000 AND c.carbs_g + ?4 >= 0
+             AND EXISTS (SELECT 1 FROM reminders_sent r WHERE r.user_id = ?1 AND r.kind = 'trend' AND r.local_date = ?5)
+             AND NOT EXISTS (SELECT 1 FROM nutrition_targets t WHERE t.user_id = ?1 AND t.source_date = ?5)
+             AND NOT EXISTS (SELECT 1 FROM reminders_sent r WHERE r.user_id = ?1 AND r.kind = 'trend' AND r.local_date > ?5)
+             AND NOT EXISTS (SELECT 1 FROM nutrition_targets t WHERE t.user_id = ?1 AND t.valid_from > ?5)
+           ON CONFLICT DO NOTHING`,
+        )
+        .bind(userId, p.today, p.delta, carbsDelta, p.sourceDate, now)
+        .run();
+      if (res.meta.changes === 1) return "applied";
+      const done = await db.all<{ n: number }>(sql`SELECT COUNT(*) AS n FROM nutrition_targets WHERE user_id = ${userId} AND source_date = ${p.sourceDate}`);
+      return (done[0]?.n ?? 0) > 0 ? "already" : "stale";
+    },
+
     /** Підтверджені прийоми за локальну дату зі знімками позицій (для /yizha), за часом їди. */
     async dayMeals(userId: number, localDate: string): Promise<DayMeal[]> {
       const rows = await db.all<{ id: number; eaten_at: number; name_uk: string; grams: number; kcal: number }>(sql`
