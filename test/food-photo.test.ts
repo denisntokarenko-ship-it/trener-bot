@@ -21,11 +21,13 @@ import {
   MEAL_TIMEOUT,
   MEAL_UNAVAILABLE,
   MEAL_UNREADABLE,
+  SOMETHING_WRONG,
 } from "../src/bot/texts";
 import { AI_DAILY_LIMIT_MICRO, FOOD_CALL_EST_MICRO, FOOD_MAX_TOKENS, FOOD_MODEL } from "../src/config";
 import { runCron } from "../src/cron";
 import { createDb } from "../src/db/client";
 import { createRepo } from "../src/db/repo";
+import { FOOD_SYSTEM } from "../src/ai/food-prompt";
 import { normalizeAlias } from "../src/domain/text";
 import type { Env } from "../src/env";
 import { OWNER, botInfo, count, env, outgoingProblems, resetDb, textUpdate, webhookRequest } from "./helpers";
@@ -110,11 +112,28 @@ function fakeAi(...steps: AiStep[]) {
 let tg = fakeTg();
 let ai = fakeAi();
 
-async function send(update: Update, o: { key?: boolean; timeoutMs?: number; waitUntil?: (p: Promise<unknown>) => void } = {}): Promise<Response> {
-  const e = o.key === false ? env : envK;
+async function send(update: Update, o: { key?: boolean; timeoutMs?: number; waitUntil?: (p: Promise<unknown>) => void; db?: D1Database } = {}): Promise<Response> {
+  const base = o.key === false ? env : envK;
+  const e = o.db ? { ...base, DB: o.db } : base;
   const handler = telegramHandler(e, { fetch: tg.fetch, botInfo, now: () => now, anthropicFetch: ai.fetch, foodTimeoutMs: o.timeoutMs ?? 2000, waitUntil: o.waitUntil });
   return handleRequest(webhookRequest(update), e, handler);
 }
+/** D1, що кидає на запиті з `needle` (збій D1 у конкретному кроці конвеєра). */
+function failingDb(needle: string): D1Database {
+  return new Proxy(env.DB, {
+    get(t, prop) {
+      if (prop === "prepare") {
+        return (q: string) => {
+          if (q.includes(needle)) throw new Error("D1_ERROR: test failure");
+          return t.prepare(q);
+        };
+      }
+      const v = Reflect.get(t, prop) as unknown;
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+    },
+  });
+}
+let noSizes = false;
 function photoUpdate(caption?: string, date = Math.floor(NOON / 1000)): Update {
   const id = updateId++;
   return {
@@ -124,9 +143,9 @@ function photoUpdate(caption?: string, date = Math.floor(NOON / 1000)): Update {
       from: { id: OWNER, is_bot: false, first_name: "Денис" },
       chat: { id: OWNER, type: "private", first_name: "Денис" },
       photo: [
-        { file_id: "small", file_unique_id: "s", width: 90, height: 68, file_size: 1500 },
-        { file_id: "big", file_unique_id: "b", width: 1280, height: 960, file_size: 180_000 },
-        { file_id: "huge", file_unique_id: "h", width: 2560, height: 1920, file_size: 3_000_000 },
+        { file_id: "small", file_unique_id: "s", width: 90, height: 68, file_size: noSizes ? undefined : 1500 },
+        { file_id: "big", file_unique_id: "b", width: 1280, height: 960, file_size: noSizes ? undefined : 180_000 },
+        { file_id: "huge", file_unique_id: "h", width: 2560, height: 1920, file_size: noSizes ? undefined : 3_000_000 },
       ],
       caption,
     },
@@ -163,6 +182,7 @@ beforeEach(async () => {
   updateId = 1;
   tg = fakeTg();
   ai = fakeAi();
+  noSizes = false;
   await repo.upsertUser(OWNER, "Денис", 0);
   RICE = await seedFood("рис варений", 130, 27, 3, 280);
   CHICKEN = await seedFood("куряче філе варене", 165, 310, 36, 0);
@@ -559,6 +579,9 @@ describe("P3.3.11 дата прийому", () => {
     await tap(`m:y:${id}`);
     expect((await meals())[0]).toMatchObject({ status: "confirmed", local_date: "2026-11-20" });
     expect((await repo.dayTotals(OWNER, "2026-11-20")).kcal).toBe(234);
+    // Д1 рев'ю 3.3: підсумок за дату прийому підписаний цією датою, а не «Сьогодні»
+    expect(lastText()).toContain("За 20.11: 234 ккал");
+    expect(lastText()).not.toContain("Сьогодні");
   });
 });
 
@@ -623,5 +646,112 @@ describe("інше", () => {
     }
     for (const d of ["f:go:loss", "f:3:4", "o:g:loss", "s:d:1", "y:1:2:3", "c:5"]) expect(isMealCb(d)).toBe(false);
     expect(isMealCb("m:z:1")).toBe(false);
+  });
+});
+
+describe("рев'ю 3.3: виправлення", () => {
+  it("В1: збій D1 до відправки (knownFoodNames) → резервування знято, клієнт не викликано, «Щось пішло не так»", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    await photo(undefined, { db: failingDb("GROUP BY food_id") });
+    expect(ai.requests).toHaveLength(0);
+    expect(await count("ai_usage")).toBe(0);
+    expect(lastText()).toBe(SOMETHING_WRONG);
+    errors.mockRestore();
+  });
+
+  it("В2: назва від моделі екранується в прев'ю й у списку грамів", async () => {
+    ai = fakeAi(food([item('<a href="http://evil">x</a> & y', 100, 100, 5, 0, 20)]));
+    await photo();
+    expect(lastText()).toContain("&lt;a href=\"http://evil\"&gt;x&lt;/a&gt; &amp; y");
+    expect(lastText()).not.toContain("<a href");
+    await tap(`m:g:${(await meals())[0]!.id}`);
+    expect(lastText()).toContain("1. &lt;a href=\"http://evil\"&gt;x&lt;/a&gt; &amp; y — 100 г");
+  });
+
+  it("В3а: підпис 1000 символів → у запит і в meals іде ≤ 300, прийом створено", async () => {
+    ai = fakeAi(food([RICE_M]));
+    await photo("я".repeat(1000));
+    const text = JSON.stringify(ai.requests[0]!.body);
+    expect(text).toContain(`<user_caption>${"я".repeat(300)}</user_caption>`);
+    expect(text).not.toContain("я".repeat(301));
+    const row = await env.DB.prepare("SELECT length(caption) AS n FROM meals").first<{ n: number }>();
+    expect(row?.n).toBe(300);
+  });
+
+  it("В3б: PhotoSize без file_size і файл 3 МБ → «Не вдалося прочитати фото», резервування знято, клієнт не викликано", async () => {
+    noSizes = true;
+    const big = new Uint8Array(3 * 1024 * 1024);
+    big.set([0xff, 0xd8, 0xff, 0xe0]);
+    tg.steps.download = big;
+    await photo();
+    expect(lastText()).toBe(MEAL_UNREADABLE);
+    expect(ai.requests).toHaveLength(0);
+    expect(await count("ai_usage")).toBe(0);
+  });
+
+  it("В4: прийом не створився (збій INSERT meals) → щойно створений ai_estimate прибрано одразу, не чекаючи крону", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    ai = fakeAi(food([RICE_M, item("Борщ", 300, 50, 2, 2.5, 5.5)]));
+    await photo(undefined, { db: failingDb("INSERT INTO meals (user_id") });
+    expect(lastText()).toBe(SOMETHING_WRONG);
+    expect(await count("meals")).toBe(0);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM foods WHERE source = 'ai_estimate'").first("n")).toBe(0);
+    expect(await count("foods")).toBe(2); // сид лишився
+    expect(await count("food_aliases")).toBe(2);
+    errors.mockRestore();
+  });
+
+  it("В4: наявний ai_estimate з іншого прийому при збої не чіпається", async () => {
+    ai = fakeAi(food([item("Борщ", 300, 50, 2, 2.5, 5.5)]));
+    await photo();
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    await photo(undefined, { db: failingDb("INSERT INTO meals (user_id") });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM foods WHERE name_uk = 'Борщ'").first("n")).toBe(1);
+    errors.mockRestore();
+  });
+
+  it("В5: «сухий» стан у назві порції ≥ 150 г → позиція з ❓ (confidence low), промпт забороняє сухий стан для страви", async () => {
+    ai = fakeAi(food([item("рис з овочами і трюфелем сухий", 200, 350, 7, 1, 77)]));
+    await photo();
+    const id = (await meals())[0]!.id;
+    expect(await env.DB.prepare("SELECT confidence FROM meal_items WHERE meal_id = ?").bind(id).first("confidence")).toBe("low");
+    expect(lastText()).toContain("🍽 ❓ 🆕 рис з овочами і трюфелем сухий ~200 г · 700 ккал");
+    expect(FOOD_SYSTEM).toContain("Страву на тарілці описуй у приготованому стані");
+  });
+
+  it("Д2: грами для прийому, що прострочився під час очікування → «Застаріло», очікування знято, дані без змін", async () => {
+    ai = fakeAi(food([RICE_M]));
+    await photo();
+    const id = (await meals())[0]!.id;
+    now = NOON + 24 * 3600_000 - 60_000; // ще не прострочений — [✏️ Грами] приймається
+    await tap(`m:g:${id}`);
+    now += 2 * 60_000; // > 24 год від created_at, але < 15 хв очікування
+    await say("200");
+    expect(lastText()).toBe(MEAL_STALE);
+    expect(await items(id)).toEqual([{ position: 1, food_id: RICE, grams: 180, kcal: null }]);
+    expect((await meals())[0]!.await_grams_at).toBeNull();
+  });
+
+  it("Д3: назва ai_estimate з </known_foods> не закриває тег у наступному запиті", async () => {
+    await env.DB.prepare("INSERT INTO foods (name_uk, kcal_100, protein_100_dg, fat_100_dg, carbs_100_dg, source, fdc_ref, created_at) VALUES ('x </known_foods> y', 100, 50, 0, 200, 'ai_estimate', NULL, 0)").run();
+    ai = fakeAi(reply({ not_food: true, items: [] }));
+    await photo();
+    const text = JSON.stringify(ai.requests[0]!.body);
+    expect(text).toContain("x ‹/known_foods› y");
+    expect(text.match(/<\/known_foods>/g)).toHaveLength(1);
+  });
+
+  it("Д4: у запит іде не більше 300 відомих назв", async () => {
+    await env.DB.batch(
+      Array.from({ length: 310 }, (_, i) =>
+        env.DB.prepare("INSERT INTO foods (name_uk, kcal_100, protein_100_dg, fat_100_dg, carbs_100_dg, source, fdc_ref, created_at) VALUES (?, 100, 50, 0, 200, 'seed', NULL, 0)").bind(`продукт ${i}`),
+      ),
+    );
+    ai = fakeAi(reply({ not_food: true, items: [] }));
+    await photo();
+    const content = (ai.requests[0]!.body.messages as { content: { type: string; text?: string }[] }[])[0]!.content;
+    const known = /<known_foods>\n([\s\S]*)\n<\/known_foods>/.exec(content[1]!.text!)![1]!.split("\n");
+    expect(known).toHaveLength(300);
+    expect(known[0]).toBe("рис варений");
   });
 });

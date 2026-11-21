@@ -199,7 +199,119 @@ match = "відомі назви"
 [[mutant]]
 id = "M22"
 file = "src/bot/meal-flow.ts"
-old = '''      const food = (await repo.findFoodByAlias(g.nameUk)) ?? (await repo.insertEstimatedFood({ nameUk: g.nameUk, ...estimateOf(g) }, now()));'''
-new = '''      const food = await repo.insertEstimatedFood({ nameUk: g.nameUk + " " + g.grams, ...estimateOf(g) }, now());'''
+old = '''        let food = await repo.findFoodByAlias(g.nameUk);
+        if (!food) {
+          food = await repo.insertEstimatedFood({ nameUk: g.nameUk, ...estimateOf(g) }, now());'''
+new = '''        let food = null;
+        if (!food) {
+          food = await repo.insertEstimatedFood({ nameUk: g.nameUk + " " + g.grams, ...estimateOf(g) }, now());'''
 why = "зіставлення з каталогом не працює — кожна позиція стає новим ai_estimate"
 match = "два відомі продукти|те саме фото вдруге"
+
+# --- Виправлення за рев'ю 3.3: кожен мутант = старий код (без виправлення або без захисту) ---
+
+[[mutant]]
+id = "M23"
+file = "src/bot/meal-flow.ts"
+old = '''      if (!f) {
+        if (!sent) await release();
+        throw e;'''
+new = '''      if (!f) {
+        throw e;'''
+why = "В1: збій до відправки (не помилка API) лишає резервування «спаленим»"
+match = "В1"
+
+[[mutant]]
+id = "M24"
+file = "src/bot/texts.ts"
+old = '''${esc(l.nameUk)} ~${l.grams} г'''
+new = '''${l.nameUk} ~${l.grams} г'''
+why = "В2: назва від моделі без esc() у прев'ю (HTML-ін'єкція, «can't parse entities»)"
+match = "В2"
+
+[[mutant]]
+id = "M24b"
+file = "src/bot/texts.ts"
+old = '''${i + 1}. ${esc(l.nameUk)} — ${l.grams} г'''
+new = '''${i + 1}. ${l.nameUk} — ${l.grams} г'''
+why = "В2: назва без esc() у списку [✏️ Грами]"
+match = "В2"
+
+[[mutant]]
+id = "M25"
+file = "src/bot/meal-flow.ts"
+old = '''const caption = msg.caption ? [...msg.caption].slice(0, FOOD_CAPTION_MAX).join("") : null;'''
+new = '''const caption = msg.caption ?? null;'''
+why = "В3а: підпис не обрізається до 300 — платний виклик є, прийому немає"
+match = "В3а"
+
+[[mutant]]
+id = "M26"
+file = "src/bot/meal-flow.ts"
+old = '''if (bytes.length < 3 || bytes.length > FOOD_PHOTO_MAX_BYTES || '''
+new = '''if (bytes.length < 3 || '''
+why = "В3б: файл понад 2 МБ (PhotoSize без file_size) іде в Anthropic"
+match = "В3б"
+
+[[mutant]]
+id = "M27"
+file = "src/bot/meal-flow.ts"
+old = '''      if (mealId === null && created.length > 0) await repo.dropOrphanEstimates(created);'''
+new = '''      void created;'''
+why = "В4 (старий код): невдалий прийом лишає новий ai_estimate еталоном до крону"
+match = "В4"
+
+[[mutant]]
+id = "M28"
+file = "src/domain/meal.ts"
+old = '''  const confidence = looksDryPortion(name, grams) ? "low" : (r.confidence as Confidence);'''
+new = '''  const confidence = r.confidence as Confidence;'''
+why = "В5 (старий код): «сухий» стан порції 200 г не позначається ❓"
+match = "В5"
+
+[[mutant]]
+id = "M28b"
+file = "src/ai/food-prompt.ts"
+old = '''- Страву на тарілці описуй у приготованому стані: «рис з овочами», а не «рис сухий». Слова «сухий» і «сирий» у назві — лише для того, що справді їдять сухим чи сирим (пластівці з упаковки, сирі овочі), і тоді grams та значення на 100 г — теж для цього стану.
+'''
+new = ''''''
+why = "В5 (старий промпт): немає правила про приготований стан страви"
+match = "В5"
+
+[[mutant]]
+id = "M29"
+file = "src/bot/meal-flow.ts"
+old = '''date: isToday ? null : meal.localDate }'''
+new = '''date: null }'''
+why = "Д1 (старий код): учорашній прийом підписано «Сьогодні»"
+match = "23:50"
+
+[[mutant]]
+id = "M30"
+file = "src/bot/meal-flow.ts"
+old = '''      if (isExpired(meal)) {
+        await repo.clearAwaitGrams(userId);'''
+new = '''      if (false) {
+        await repo.clearAwaitGrams(userId);'''
+why = "Д2: грами для прострочного прийому приймаються"
+match = "Д2"
+
+[[mutant]]
+id = "M31"
+file = "src/ai/food-prompt.ts"
+old = '''${knownNames.map(asData).join("
+")}'''
+new = '''${knownNames.join("
+")}'''
+why = "Д3: назва ai_estimate закриває <known_foods> (збережена ін'єкція між фото)"
+match = "Д3"
+
+[[mutant]]
+id = "M32"
+file = "src/db/repo.ts"
+old = '''        LIMIT ${limit}`);
+      return rows.map((r) => r.name_uk);'''
+new = '''        LIMIT ${limit + 100000}`);
+      return rows.map((r) => r.name_uk);'''
+why = "Д4: список відомих назв без ліміту 300"
+match = "Д4"

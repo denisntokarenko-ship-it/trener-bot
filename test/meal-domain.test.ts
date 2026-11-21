@@ -1,6 +1,6 @@
 // P3.3.3, P3.3.8, P3.3.14: чисті функції потоку фото — межі валідації, введення грамів, округлення, вартість.
 import { describe, expect, it } from "vitest";
-import { costMicro, estimateOf, itemNutrients, parseFoodResponse, parseGrams, type FoodResponse } from "../src/domain/meal";
+import { costMicro, estimateOf, itemNutrients, looksDryPortion, parseFoodResponse, parseGrams, type FoodResponse } from "../src/domain/meal";
 
 const ok = (items: unknown[], extra: Partial<FoodResponse> = {}): FoodResponse => ({
   stop_reason: "end_turn",
@@ -114,5 +114,24 @@ describe("parseGrams", () => {
   it("усі нулі → all_zero; abc, 2001, 12345, 1.5 → bad", () => {
     expect(parseGrams("0 0", 2)).toEqual({ ok: false, reason: "all_zero" });
     for (const t of ["abc", "2001 100", "12345 1", "1.5 2", "-5 3"]) expect(parseGrams(t, 2)).toEqual({ ok: false, reason: "bad" });
+  });
+});
+
+describe("В5 рев'ю 3.3: «сухий/сирий» стан порції", () => {
+  it("сухий/сирий у назві й порція ≥ 150 г → підозра; «сир» (продукт) і мала порція — ні", () => {
+    expect(looksDryPortion("рис з овочами і трюфелем сухий", 200)).toBe(true);
+    expect(looksDryPortion("Гречка суха", 150)).toBe(true);
+    expect(looksDryPortion("морква сира", 200)).toBe(true);
+    expect(looksDryPortion("гречка суха", 149)).toBe(false);
+    expect(looksDryPortion("вівсяні пластівці сухі", 40)).toBe(false);
+    expect(looksDryPortion("сир кисломолочний", 200)).toBe(false);
+    expect(looksDryPortion("сирники", 200)).toBe(false);
+    expect(looksDryPortion("рис варений", 200)).toBe(false);
+  });
+
+  it("parseFoodResponse знижує confidence до low для такої позиції", () => {
+    const r = parseFoodResponse(ok([{ ...it0, name_uk: "рис сухий", grams: 200, kcal_100: 350, protein_100: 7, fat_100: 1, carbs_100: 77, confidence: "high" }]));
+    expect(r).toMatchObject({ kind: "ok", items: [{ confidence: "low" }] });
+    expect(parseFoodResponse(ok([it0]))).toMatchObject({ items: [{ confidence: "high" }] });
   });
 });

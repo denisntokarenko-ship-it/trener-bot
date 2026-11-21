@@ -211,18 +211,29 @@ export function createMealFlow(repo: Repo, now: () => number, deps: MealDeps) {
     }
 
     // Зіставлення: збіг аліаса — цифри з таблиці; немає — новий ai_estimate (ідемпотентно за аліасом).
-    const items: { foodId: number; grams: number; confidence: (typeof parsed.items)[number]["confidence"] }[] = [];
-    for (const g of parsed.items) {
-      const food = (await repo.findFoodByAlias(g.nameUk)) ?? (await repo.insertEstimatedFood({ nameUk: g.nameUk, ...estimateOf(g) }, now()));
-      if (!food) return say(MEAL_INVALID);
-      items.push({ foodId: food.id, grams: g.grams, confidence: g.confidence });
+    // Нові ai_estimate цього виклику: прийом не створився — прибираємо їх одразу, інакше відкинута оцінка стала б еталоном до крону (В4 рев'ю 3.3).
+    const created: number[] = [];
+    let mealId: number | null = null;
+    try {
+      const items: { foodId: number; grams: number; confidence: (typeof parsed.items)[number]["confidence"] }[] = [];
+      for (const g of parsed.items) {
+        let food = await repo.findFoodByAlias(g.nameUk);
+        if (!food) {
+          food = await repo.insertEstimatedFood({ nameUk: g.nameUk, ...estimateOf(g) }, now());
+          if (food?.source === "ai_estimate") created.push(food.id);
+        }
+        if (!food) return say(MEAL_INVALID);
+        items.push({ foodId: food.id, grams: g.grams, confidence: g.confidence });
+      }
+      const raw = res.content.find((b) => b.type === "text")?.text ?? "";
+      mealId = await repo.createPendingMeal(
+        job.userId,
+        { eatenAt: job.eatenAt, localDate: localDate(job.eatenAt, tz), photoFileId: fileId, caption: job.caption, aiModel: FOOD_MODEL, aiRawJson: [...raw].slice(0, RAW_JSON_MAX).join(""), items },
+        now(),
+      );
+    } finally {
+      if (mealId === null && created.length > 0) await repo.dropOrphanEstimates(created);
     }
-    const raw = res.content.find((b) => b.type === "text")?.text ?? "";
-    const mealId = await repo.createPendingMeal(
-      job.userId,
-      { eatenAt: job.eatenAt, localDate: localDate(job.eatenAt, tz), photoFileId: fileId, caption: job.caption, aiModel: FOOD_MODEL, aiRawJson: [...raw].slice(0, RAW_JSON_MAX).join(""), items },
-      now(),
-    );
     const meal = mealId === null ? null : await repo.getMeal(job.userId, mealId);
     if (!meal) return say(MEAL_INVALID);
     const { lines, total } = view(meal);
@@ -287,9 +298,11 @@ export function createMealFlow(repo: Repo, now: () => number, deps: MealDeps) {
         if (!(await repo.confirmMeal(userId, mealId, now()))) return void (await ctx.answerCallbackQuery({ text: MEAL_ALREADY_CONFIRMED }));
         await ctx.answerCallbackQuery();
         await deps.ensureNorm(userId);
-        const [after, day, norm] = await Promise.all([repo.getMeal(userId, mealId), repo.dayTotals(userId, meal.localDate), repo.getTargetOn(userId, meal.localDate)]);
+        const [after, day, norm, tz] = await Promise.all([repo.getMeal(userId, mealId), repo.dayTotals(userId, meal.localDate), repo.getTargetOn(userId, meal.localDate), repo.getUserTz(userId)]);
         const { lines, total } = view(after ?? meal);
-        await edit(ctx, mealConfirmedText(lines, total, { kcal: day.kcal, normKcal: norm?.kcal ?? null }), undoKb(mealId));
+        // Підсумок — за дату прийому; не сьогоднішній (фото 23:50, тап 00:10) — підписуємо датою, а не «Сьогодні» (Д1 рев'ю 3.3).
+        const isToday = meal.localDate === localDate(now(), tz ?? DEFAULT_TZ);
+        await edit(ctx, mealConfirmedText(lines, total, { kcal: day.kcal, normKcal: norm?.kcal ?? null, date: isToday ? null : meal.localDate }), undoKb(mealId));
         return;
       }
 

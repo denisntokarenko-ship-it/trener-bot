@@ -47,10 +47,6 @@ export function createFoodFlow(repo: Repo, now: () => number) {
     }
   }
 
-  /**
-   * Норма на сьогодні (створюється ліниво, лише якщо її ще немає й профіль повний), підсумок дня, питання про бракуюче.
-   * `afterAnswer` — після відповіді на питання: бракує ще щось → лише наступне питання, без повторного підсумку.
-   */
   /** Норма на сьогодні: немає й профіль повний — створюється ліниво (`formula`). Спільне для /yizha і [✅ Вірно] прийому. */
   async function ensureNorm(userId: number) {
     const { tz, today, profile, kg } = await context(userId);
@@ -68,6 +64,10 @@ export function createFoodFlow(repo: Repo, now: () => number) {
     return { tz, today, norm, missing, profileCheck };
   }
 
+  /**
+   * Норма на сьогодні (створюється ліниво, лише якщо її ще немає й профіль повний), підсумок дня, питання про бракуюче.
+   * `afterAnswer` — після відповіді на питання: бракує ще щось → лише наступне питання, без повторного підсумку.
+   */
   async function run(ctx: Context, userId: number, afterAnswer: boolean): Promise<void> {
     const { tz, today, norm, missing, profileCheck } = await ensureNorm(userId);
     const ask1 = !norm && missing !== null ? missing : null;

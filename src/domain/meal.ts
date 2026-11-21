@@ -43,7 +43,19 @@ function parseItem(raw: unknown): FoodGuess | null {
   // Атуотер: ккал мають сходитися з макросами (4 Б + 4 В + 9 Ж) з допуском max(30, 30 %).
   if (Math.abs(r.kcal_100 - (4 * p + 4 * c + 9 * f)) > Math.max(30, 0.3 * r.kcal_100)) return null;
   if (typeof r.confidence !== "string" || !CONFIDENCE.includes(r.confidence)) return null;
-  return { nameUk: name, grams: Math.round(r.grams), kcal100: r.kcal_100, protein100: p, fat100: f, carbs100: c, confidence: r.confidence as Confidence };
+  const grams = Math.round(r.grams);
+  // Страховка В5 рев'ю 3.3: «сухий/сирий» стан у назві порції ≥ 150 г — ймовірно, ккал сухого продукту на вагу готової страви (завищення ×2–3).
+  const confidence = looksDryPortion(name, grams) ? "low" : (r.confidence as Confidence);
+  return { nameUk: name, grams, kcal100: r.kcal_100, protein100: p, fat100: f, carbs100: c, confidence };
+}
+
+/** Порог порції, з якого «сухий/сирий» у назві вважається підозрілим. */
+export const DRY_PORTION_GRAMS = 150;
+const DRY_WORD = /(?:^| )(?:сух|сир)(?:ий|а|е|і)(?: |$)/u;
+
+/** Назва каже «сухий/сирий» (не «сир» — сир лишається), а порція велика — так виглядає ціна сухої крупи на тарілці каші. */
+export function looksDryPortion(nameUk: string, grams: number): boolean {
+  return grams >= DRY_PORTION_GRAMS && DRY_WORD.test(normalizeAlias(nameUk) ?? "");
 }
 
 /**

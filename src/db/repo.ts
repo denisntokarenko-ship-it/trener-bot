@@ -1275,6 +1275,14 @@ export function createRepo(db: Db) {
       return res[1]?.meta.changes === 1;
     },
 
+    /**
+     * Прибрати щойно створені `ai_estimate`, якщо на них не посилається жодна позиція (прийом не створився).
+     * Спільний каталог (без userId): страж NOT EXISTS не зачепить продукт, що вже є в чужому чи іншому прийомі.
+     */
+    async dropOrphanEstimates(foodIds: number[]): Promise<void> {
+      if (foodIds.length > 0) await orphanEstimates(db.$client, foodIds).run();
+    },
+
     /** Команда знімає очікування грамів у всіх прийомах користувача. */
     async clearAwaitGrams(userId: number): Promise<void> {
       await db.$client.prepare("UPDATE meals SET await_grams_at = NULL WHERE user_id = ? AND await_grams_at IS NOT NULL").bind(userId).run();

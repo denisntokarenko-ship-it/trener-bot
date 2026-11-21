@@ -891,9 +891,10 @@ export function mealPreviewText(lines: readonly MealLine[], total: MealTotal): s
   return clip(["📸 <b>Що бачу на фото</b>", ...lines.map(mealLine), mealTotal(total), ...mealLegend(lines), "", "Перевір і підтверди."].join("\n"));
 }
 
-/** Після [✅ Вірно]: підсумок і день проти норми (або без норми). */
-export function mealConfirmedText(lines: readonly MealLine[], total: MealTotal, day: { kcal: number; normKcal: number | null }): string {
-  const today = day.normKcal === null ? `Сьогодні: ${fmtInt(day.kcal)} ккал` : `Сьогодні: ${fmtInt(day.kcal)} / ${fmtInt(day.normKcal)} ккал`;
+/** Після [✅ Вірно]: підсумок і день прийому проти норми (або без норми); `date` — дата прийому, якщо він не сьогоднішній. */
+export function mealConfirmedText(lines: readonly MealLine[], total: MealTotal, day: { kcal: number; normKcal: number | null; date: string | null }): string {
+  const label = day.date === null ? "Сьогодні" : `За ${day.date.slice(8)}.${day.date.slice(5, 7)}`;
+  const today = day.normKcal === null ? `${label}: ${fmtInt(day.kcal)} ккал` : `${label}: ${fmtInt(day.kcal)} / ${fmtInt(day.normKcal)} ккал`;
   return clip(["✅ <b>Записав</b>", ...lines.map(mealLine), mealTotal(total), "", today].join("\n"));
 }
 
