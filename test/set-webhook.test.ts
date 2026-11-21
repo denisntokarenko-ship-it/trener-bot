@@ -53,6 +53,7 @@ describe("P2.1 set-webhook", () => {
         { command: "vaga", description: "Записати вагу тіла" },
         { command: "profil", description: "Профіль і план" },
         { command: "nalashtuvannia", description: "Дні, час нагадувань, часовий пояс" },
+        { command: "yizha", description: "Їжа за день і норма" },
       ],
     });
     expect(h.out).toContain("Середовище: preview");

@@ -229,6 +229,13 @@ export interface MealView {
   confirmedAt: number | null;
   items: MealItemView[];
 }
+export interface DayMeal {
+  id: number;
+  eatenAt: number;
+  /** Сума знімків позицій. */
+  kcal: number;
+  items: { nameUk: string; grams: number }[];
+}
 export interface AiUsageReservation {
   model: string;
   purpose: string;
@@ -1218,6 +1225,33 @@ export function createRepo(db: Db) {
         WHERE user_id = ${userId} AND valid_from <= ${localDate} ORDER BY valid_from DESC LIMIT 1`);
       const r = rows[0];
       return r ? { validFrom: r.valid_from, kcal: r.kcal, proteinG: r.protein_g, fatG: r.fat_g, carbsG: r.carbs_g, reason: r.reason, sourceDate: r.source_date } : null;
+    },
+
+    /** Підтверджені прийоми за локальну дату зі знімками позицій (для /yizha), за часом їди. */
+    async dayMeals(userId: number, localDate: string): Promise<DayMeal[]> {
+      const rows = await db.all<{ id: number; eaten_at: number; name_uk: string; grams: number; kcal: number }>(sql`
+        SELECT m.id AS id, m.eaten_at AS eaten_at, f.name_uk AS name_uk, mi.grams AS grams, COALESCE(mi.kcal, 0) AS kcal
+        FROM meals m JOIN meal_items mi ON mi.meal_id = m.id JOIN foods f ON f.id = mi.food_id
+        WHERE m.user_id = ${userId} AND m.local_date = ${localDate} AND m.status = 'confirmed'
+        ORDER BY m.eaten_at, m.id, mi.position`);
+      const out: DayMeal[] = [];
+      for (const r of rows) {
+        let meal = out[out.length - 1];
+        if (!meal || meal.id !== r.id) {
+          meal = { id: r.id, eatenAt: r.eaten_at, kcal: 0, items: [] };
+          out.push(meal);
+        }
+        meal.items.push({ nameUk: r.name_uk, grams: r.grams });
+        meal.kcal += r.kcal;
+      }
+      return out;
+    },
+
+    /** Скільки прийомів за локальну дату ще `pending` (не входять у суму дня). */
+    async countPendingMeals(userId: number, localDate: string): Promise<number> {
+      const rows = await db.all<{ n: number }>(sql`
+        SELECT COUNT(*) AS n FROM meals WHERE user_id = ${userId} AND local_date = ${localDate} AND status = 'pending'`);
+      return rows[0]?.n ?? 0;
     },
   };
   return repo;
