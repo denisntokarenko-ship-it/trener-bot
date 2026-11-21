@@ -7,6 +7,7 @@ import { createFoodFlow, isFoodCb } from "./food-flow";
 import { createMealFlow, isMealCb } from "./meal-flow";
 import { createOnboardingFlow } from "./onboarding";
 import { createSettingsFlow, isSettingsCb } from "./settings-flow";
+import { createTrendFlow, isTrendCb } from "./trend-flow";
 import { NOT_UNDERSTOOD, SOMETHING_WRONG } from "./texts";
 import { createWeightFlow } from "./weight-flow";
 import { createWorkoutFlow } from "./workout-flow";
@@ -49,6 +50,7 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
   const onboarding = createOnboardingFlow(repo, now);
   const weight = createWeightFlow(repo, now);
   const food = createFoodFlow(repo, now);
+  const trend = createTrendFlow(repo, now);
   const settings = createSettingsFlow(repo, (ctx) => onboarding.profil(ctx));
   const meal = createMealFlow(repo, now, {
     token,
@@ -84,6 +86,7 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
     if (d.startsWith("o:")) return onboarding.callback(ctx);
     if (isFoodCb(d)) return food.callback(ctx);
     if (isMealCb(d)) return meal.callback(ctx);
+    if (isTrendCb(d)) return trend.callback(ctx); // n:a|d:… — пропозиція корекції норми за трендом
     return isSettingsCb(d) ? settings.callback(ctx) : flow.callback(ctx);
   });
   bot.on("callback_query", (ctx) => ctx.answerCallbackQuery());

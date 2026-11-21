@@ -37,3 +37,34 @@ export const FOOD_KNOWN_NAMES_MAX = 300;
 export const MEAL_PENDING_TTL_MS = 24 * 60 * 60 * 1000;
 /** Очікування введення грамів живе стільки після [✏️ Грами]. */
 export const GRAMS_AWAIT_TTL_MS = 15 * 60 * 1000;
+
+// --- Фаза 3: корекція норми за трендом ваги (docs/spec/phase-3.md, розділ 4). ---
+
+/** Оцінка тренду — вікно тіків `[09:00, 10:00)` за `tz` (60 хв, як у нагадувань Фази 2). */
+export const TREND_LOCAL_MINUTES = 9 * 60;
+/** Не частіше ніж раз на стільки днів від `valid_from` чинної норми й від останньої пропозиції. */
+export const TREND_MIN_DAYS = 14;
+/** Зважувань у `W0 ∪ W1` не менше й у кожному вікні не менше. */
+export const TREND_MIN_WEIGHINGS = 10;
+export const TREND_MIN_PER_WINDOW = 3;
+/** Крок пропозиції, ккал; вуглеводи змінюються на стільки грамів на крок (4 ккал/г). */
+export const TREND_STEP_KCAL = 100;
+export const TREND_STEP_CARBS_G = 25;
+/** Найбільше сумарне відхилення від `formula`-норми, ккал; нова норма не нижча за мінімум. */
+export const TREND_MAX_DEVIATION_KCAL = 300;
+export const TREND_MIN_KCAL = 1200;
+
+export type GoalKey = "lose_fat" | "recomp" | "muscle" | "strength" | "health" | "other";
+
+/**
+ * Пороги темпу `p` у сотих відсотка за тиждень (−120 = −1,20 %/тиж). Смуга цілі + запас 0,20 на шум середніх за 3–7 зважувань:
+ * `p < add` → +100 ккал, `p > cut` → −100 ккал; межі строгі (рівно на порозі — нічого).
+ */
+export const GOAL_BANDS: Record<GoalKey, { add: number; cut: number }> = {
+  lose_fat: { add: -120, cut: -30 },
+  recomp: { add: -45, cut: 20 },
+  muscle: { add: -10, cut: 70 },
+  strength: { add: -45, cut: 45 },
+  health: { add: -45, cut: 45 },
+  other: { add: -45, cut: 45 },
+};

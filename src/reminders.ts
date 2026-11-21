@@ -1,11 +1,13 @@
 // Нагадування за розкладом (docs/spec/phase-2.md, розділ 4). Порядок «заявити → надіслати → при визначеній недоставці зняти»:
 // збій між кроками дає пропущене нагадування, а не подвійне. Тексти — лише з bot/texts.ts, дані — лише через repo.
 import { prescribeSlot } from "./bot/prescribe";
-import { WEIGH_REMINDER, dayLabel, recordReps, recordWeight, trainReminderText, weeklyReportText, type TrainReminderLine } from "./bot/texts";
-import { TELEGRAM_SEND_TIMEOUT_MS } from "./config";
+import { trendKeyboard } from "./bot/trend-flow";
+import { WEIGH_REMINDER, dayLabel, recordReps, recordWeight, trainReminderText, trendText, weeklyReportText, type TrainReminderLine } from "./bot/texts";
+import { TELEGRAM_SEND_TIMEOUT_MS, TREND_MIN_DAYS } from "./config";
 import type { ActiveProgram, ProgramDay, Repo } from "./db/repo";
 import type { ReminderKind } from "./db/schema";
 import { nextDayCode } from "./domain/progression";
+import { formatPace, trendProposal, type Goal, type TrendProposal } from "./domain/nutrition";
 import { dueReminders, parseTrainingDays } from "./domain/reminders";
 import { addDays, localDate, localDayStartUtc } from "./domain/time";
 import { buildWeeklyReport } from "./domain/week-report";
@@ -32,14 +34,14 @@ type SendResult = { ok: true; messageId: number | null } | { ok: false; definite
  * точно не пішло. Таймаут, обрив мережі, нерозбірне тіло — «невизначена»: Telegram міг прийняти запит.
  * У лог не потрапляють ні токен (він в URL), ні текст.
  */
-async function sendMessage(token: string, chatId: number, text: string, fetchFn: typeof fetch, timeoutMs: number): Promise<SendResult> {
+async function sendMessage(token: string, chatId: number, text: string, fetchFn: typeof fetch, timeoutMs: number, markup?: unknown): Promise<SendResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetchFn(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", ...(markup ? { reply_markup: markup } : {}) }),
       signal: controller.signal,
     });
     if (res.status >= 400) return { ok: false, definite: true, status: res.status };
@@ -131,15 +133,43 @@ async function wanted(repo: Repo, user: UserRow, kind: ReminderKind, date: strin
   return repo.hasHistory(user.id); // report: без тренувань і ваги за весь час — мовчки
 }
 
+/**
+ * Пропозиція корекції норми (спека Фази 3, розділ 4): є чинна норма й `formula`-норма, ціль у профілі, від її `valid_from` і від
+ * останньої пропозиції минуло ≥ 14 днів, а вагові дані дають ±100 ккал. Інакше null — тихо, заявки не буде.
+ */
+async function trendFor(repo: Repo, user: UserRow, date: string): Promise<{ proposal: TrendProposal; oldKcal: number } | null> {
+  const target = await repo.getTargetOn(user.id, date);
+  if (!target) return null;
+  const last = await repo.lastReminderDate(user.id, "trend");
+  const base = last !== null && last > target.validFrom ? last : target.validFrom;
+  if (date < addDays(base, TREND_MIN_DAYS)) return null;
+  const [profile, formula, weights] = await Promise.all([repo.getProfile(user.id), repo.getFormulaTarget(user.id), repo.getWeights(user.id, addDays(date, -13), date)]);
+  if (!profile?.goal || !formula) return null;
+  const proposal = trendProposal({ weights, goal: profile.goal as Goal, today: date, kcal: target.kcal, carbsG: target.carbsG, formulaKcal: formula.kcal });
+  return proposal ? { proposal, oldKcal: target.kcal } : null;
+}
+
 async function processPair(c: PairCtx, user: UserRow, kind: ReminderKind, date: string): Promise<Outcome> {
   if (await c.repo.hasReminder(user.id, kind, date)) return "skipped";
-  const program = kind === "weigh" ? null : await c.repo.getActiveProgram(user.id);
-  if (!(await wanted(c.repo, user, kind, date, program))) return "skipped";
+  let trend: Awaited<ReturnType<typeof trendFor>> = null;
+  if (kind === "trend") {
+    trend = await trendFor(c.repo, user, date);
+    if (!trend) return "skipped";
+  }
+  const program = kind === "weigh" || kind === "trend" ? null : await c.repo.getActiveProgram(user.id);
+  if (kind !== "trend" && !(await wanted(c.repo, user, kind, date, program))) return "skipped";
   // 1. Заявка: 0 рядків — інший тік уже взяв.
   if (!(await c.repo.claimReminder(user.id, kind, date, c.now))) return "skipped";
   let text: string | null;
   try {
-    text = kind === "weigh" ? WEIGH_REMINDER : kind === "train" ? await buildTrain(c.repo, user.id, program) : await buildReport(c.repo, user, date, program);
+    text =
+      kind === "weigh"
+        ? WEIGH_REMINDER
+        : kind === "train"
+          ? await buildTrain(c.repo, user.id, program)
+          : kind === "trend"
+            ? trendText({ from: formatKg(trend!.proposal.avg1Dg), to: formatKg(trend!.proposal.avg0Dg), pace: formatPace(trend!.proposal.paceCenti), delta: trend!.proposal.delta, oldKcal: trend!.oldKcal, newKcal: trend!.proposal.newKcal, carbsDeltaG: trend!.proposal.carbsDeltaG })
+            : await buildReport(c.repo, user, date, program);
   } catch (e) {
     await c.repo.releaseReminder(user.id, kind, date); // до відправки — недоставка визначена
     throw e;
@@ -149,7 +179,7 @@ async function processPair(c: PairCtx, user: UserRow, kind: ReminderKind, date: 
     return "skipped";
   }
   // 2. Відправка (chat_id приватного чату = Telegram ID користувача).
-  const res = await sendMessage(c.token, user.id, text, c.fetchFn, c.timeoutMs);
+  const res = await sendMessage(c.token, user.id, text, c.fetchFn, c.timeoutMs, trend ? trendKeyboard(trend.proposal.delta, date) : undefined);
   if (res.ok) {
     if (res.messageId !== null) await c.repo.setReminderMessageId(user.id, kind, date, res.messageId);
     return "sent";

@@ -40,7 +40,7 @@ export interface WindowStats {
 }
 
 /** 7 локальних дат, що закінчуються `end` включно: W0 → end = сьогодні, W1 → сьогодні−7. */
-function windowStats(entries: readonly WeightEntry[], end: string): WindowStats {
+export function windowStats(entries: readonly WeightEntry[], end: string): WindowStats {
   const start = addDays(end, -6);
   let sum = 0;
   let n = 0;

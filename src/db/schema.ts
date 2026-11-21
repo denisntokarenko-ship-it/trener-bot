@@ -300,7 +300,7 @@ export const bodyWeights = sqliteTable(
   ],
 );
 
-export const REMINDER_KINDS = ["train", "weigh", "report"] as const;
+export const REMINDER_KINDS = ["train", "weigh", "report", "trend"] as const;
 export type ReminderKind = (typeof REMINDER_KINDS)[number];
 
 /** Заявка на нагадування: ключ ідемпотентності (user, kind, local_date). Не чиститься (≈ 3 рядки на день). */
@@ -316,7 +316,7 @@ export const remindersSent = sqliteTable(
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.kind, t.localDate] }),
-    check("reminders_sent_kind", sql`${t.kind} IN ('train', 'weigh', 'report')`),
+    check("reminders_sent_kind", sql`${t.kind} IN ('train', 'weigh', 'report', 'trend')`),
     check("reminders_sent_date", sql`${t.localDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'`),
   ],
 );
