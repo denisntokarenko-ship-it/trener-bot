@@ -116,8 +116,8 @@ match = "2001|bad"
 id = "M12"
 file = "src/domain/meal.ts"
 old = '''  const r = (x: number) => Math.floor((grams * x + 50) / 100);'''
-new = '''  const r = (x: number) => Math.round((grams * x) / 100);'''
-why = "прев'ю округлює інакше, ніж знімок у confirmMeal"
+new = '''  const r = (x: number) => Math.floor((grams * x) / 100);'''
+why = "прев'ю відкидає дріб замість «половина вгору», як знімок у confirmMeal (Math.round(g·x/100) — еквівалентний мутант: для x ≥ 0 це та сама формула)"
 match = "одна формула|половина вгору"
 
 # --- Кнопки, маршрутизація, крон ---
