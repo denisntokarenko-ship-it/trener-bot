@@ -51,7 +51,8 @@ export function createFoodFlow(repo: Repo, now: () => number) {
    * Норма на сьогодні (створюється ліниво, лише якщо її ще немає й профіль повний), підсумок дня, питання про бракуюче.
    * `afterAnswer` — після відповіді на питання: бракує ще щось → лише наступне питання, без повторного підсумку.
    */
-  async function run(ctx: Context, userId: number, afterAnswer: boolean): Promise<void> {
+  /** Норма на сьогодні: немає й профіль повний — створюється ліниво (`formula`). Спільне для /yizha і [✅ Вірно] прийому. */
+  async function ensureNorm(userId: number) {
     const { tz, today, profile, kg } = await context(userId);
     let norm = await repo.getTargetOn(userId, today);
     const missing = firstMissing(profile, kg);
@@ -64,6 +65,11 @@ export function createFoodFlow(repo: Repo, now: () => number) {
         norm = await repo.getTargetOn(userId, today);
       }
     }
+    return { tz, today, norm, missing, profileCheck };
+  }
+
+  async function run(ctx: Context, userId: number, afterAnswer: boolean): Promise<void> {
+    const { tz, today, norm, missing, profileCheck } = await ensureNorm(userId);
     const ask1 = !norm && missing !== null ? missing : null;
     if (afterAnswer && ask1) {
       await ask(ctx, ask1);
@@ -83,6 +89,11 @@ export function createFoodFlow(repo: Repo, now: () => number) {
   }
 
   return {
+    /** Лише створити норму на сьогодні, якщо її немає (без повідомлень). */
+    async ensureNorm(userId: number): Promise<void> {
+      await ensureNorm(userId);
+    },
+
     async yizha(ctx: Context): Promise<void> {
       await run(ctx, ctx.from!.id, false);
     },

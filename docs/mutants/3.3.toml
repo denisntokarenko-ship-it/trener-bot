@@ -1,0 +1,205 @@
+test = "npx vitest run --reporter=dot test/food-photo.test.ts test/meal-domain.test.ts"
+timeout = 400
+
+# --- Обов'язкові з промпту 3.3 ---
+
+[[mutant]]
+id = "M1"
+file = "src/db/repo.ts"
+old = '''FROM ai_usage WHERE user_id = u.id AND local_date = ?) + ? <= ?`,'''
+new = '''FROM ai_usage WHERE user_id = u.id AND local_date = ?) + ? <= ? + 1000000000000`,'''
+why = "резервування без перевірки суми — ліміт не тримає"
+match = "ліміт вичерпано|альбом з 10 фото"
+
+[[mutant]]
+id = "M1b"
+file = "src/bot/meal-flow.ts"
+old = '''estMicro: FOOD_CALL_EST_MICRO, limitMicro: AI_DAILY_LIMIT_MICRO },'''
+new = '''estMicro: FOOD_CALL_EST_MICRO, limitMicro: (await repo.aiSpendToday(job.userId, localDate(now(), tz))) + FOOD_CALL_EST_MICRO <= AI_DAILY_LIMIT_MICRO ? Number.MAX_SAFE_INTEGER : -1 },'''
+why = "перевірка суми винесена з INSERT (окремий SELECT → INSERT): гонка паралельних фото"
+match = "альбом з 10 фото"
+
+[[mutant]]
+id = "M2"
+file = "src/bot/meal-flow.ts"
+old = '''res = await client.messages.create(foodRequest(image.base64, job.caption, names), { signal: ac.signal });'''
+new = '''res = await client.messages.create({ ...foodRequest(image.base64, job.caption, names), messages: [{ role: "user", content: [{ type: "image", source: { type: "url", url: `https://api.telegram.org/file/bot${deps.token}/photos/x.jpg` } }] }] }, { signal: ac.signal });'''
+why = "у Anthropic іде URL файлу Telegram (з токеном) замість base64"
+match = "немає api.telegram.org і токена"
+
+[[mutant]]
+id = "M3"
+file = "src/bot/meal-flow.ts"
+old = '''    await repo.setMealMessageId(job.userId, meal.id, msg.message_id);
+  }'''
+new = '''    await repo.setMealMessageId(job.userId, meal.id, msg.message_id);
+    await repo.confirmMeal(job.userId, meal.id, now());
+  }'''
+why = "автопідтвердження одразу після розпізнавання (ШІ записує без кнопки людини)"
+match = "pending"
+
+# --- Дедлайн і облік ---
+
+[[mutant]]
+id = "M4"
+file = "src/bot/meal-flow.ts"
+old = '''const timer = setTimeout(() => ac.abort(), deps.timeoutMs);'''
+new = '''const timer = setTimeout(() => undefined, deps.timeoutMs);'''
+why = "AbortController не спрацьовує — конвеєр висить без дедлайну"
+match = "мовчить після відправки|дедлайн на getFile|Test timed out"
+
+[[mutant]]
+id = "M5"
+file = "src/bot/meal-flow.ts"
+old = '''      if (ac.signal.aborted) {
+        if (!sent) await release();'''
+new = '''      if (ac.signal.aborted) {
+        await release();'''
+why = "таймаут після відправки знімає резервування (оплачений запит зникає з обліку)"
+match = "мовчить після відправки"
+
+[[mutant]]
+id = "M6"
+file = "src/bot/meal-flow.ts"
+old = '''      if (f.refund) await release();'''
+new = '''      if (f.refund) void 0;'''
+why = "HTTP-помилка API (не оплачується) не повертає резервування"
+match = "HTTP 429|HTTP 401|HTTP 500"
+
+[[mutant]]
+id = "M7"
+file = "src/bot/meal-flow.ts"
+old = '''new Anthropic({ apiKey: deps.apiKey, maxRetries: 0, fetch: deps.anthropicFetch })'''
+new = '''new Anthropic({ apiKey: deps.apiKey, fetch: deps.anthropicFetch })'''
+why = "повтори SDK за замовчуванням (2) множать час і кошти"
+match = "HTTP 429|HTTP 500|форма запиту"
+
+[[mutant]]
+id = "M8"
+file = "src/ai/food-prompt.ts"
+old = '''    thinking: { type: "between_tools" },
+'''
+new = ''''''
+why = "thinking не задано — Sonnet 5.5 мислить адаптивно (токени мислення їдять max_tokens)"
+match = "форма запиту"
+
+# --- Валідація відповіді ---
+
+[[mutant]]
+id = "M9"
+file = "src/domain/meal.ts"
+old = '''> Math.max(30, 0.3 * r.kcal_100)) return null;'''
+new = '''> Infinity) return null;'''
+why = "перевірку Атуотера знято"
+match = "Атуотер"
+
+[[mutant]]
+id = "M10"
+file = "src/domain/meal.ts"
+old = '''if (res.stop_reason !== "end_turn") return { kind: "invalid" };'''
+new = '''if (res.stop_reason === "refusal") return { kind: "invalid" };'''
+why = "обрізана відповідь (max_tokens) приймається"
+match = "max_tokens|stop_reason"
+
+[[mutant]]
+id = "M11"
+file = "src/domain/meal.ts"
+old = '''    if (!m) return { ok: false, reason: "bad" };
+    const v = Number(m[1]);
+    if (v > 2000) return { ok: false, reason: "bad" };'''
+new = '''    if (!m) return { ok: false, reason: "bad" };
+    const v = Number(m[1]);'''
+why = "грами понад 2000 приймаються"
+match = "2001|bad"
+
+[[mutant]]
+id = "M12"
+file = "src/domain/meal.ts"
+old = '''  const r = (x: number) => Math.floor((grams * x + 50) / 100);'''
+new = '''  const r = (x: number) => Math.round((grams * x) / 100);'''
+why = "прев'ю округлює інакше, ніж знімок у confirmMeal"
+match = "одна формула|половина вгору"
+
+# --- Кнопки, маршрутизація, крон ---
+
+[[mutant]]
+id = "M13"
+file = "src/bot/meal-flow.ts"
+old = '''  const isExpired = (meal: MealView): boolean => meal.status === "pending" && now() - meal.createdAt > MEAL_PENDING_TTL_MS;'''
+new = '''  const isExpired = (meal: MealView): boolean => meal.status === "pending" && false;'''
+why = "застарілий pending (> 24 год) підтверджується кнопкою"
+match = "старший за 24 год"
+
+[[mutant]]
+id = "M14"
+file = "src/cron.ts"
+old = '''    await repo.expirePendingMeals(now - MEAL_PENDING_TTL_MS);'''
+new = '''    void 0;'''
+why = "крон не прибирає прострочені pending і осиротілі ai_estimate"
+match = "старший за 24 год"
+
+[[mutant]]
+id = "M15"
+file = "src/bot/meal-flow.ts"
+old = '''        await deps.clearWorkoutAwait(ctx);'''
+new = ''''''
+why = "[✏️ Грами] не знімає очікування ваги підходу — грами пишуться вагою вправи"
+match = "очікування ваги підходу"
+
+[[mutant]]
+id = "M16"
+file = "src/db/repo.ts"
+old = '''UPDATE meals SET await_grams_at = NULL WHERE user_id = ? AND id != ? AND await_grams_at IS NOT NULL'''
+new = '''UPDATE meals SET await_grams_at = await_grams_at WHERE user_id = ? AND id != ? AND await_grams_at IS NOT NULL'''
+why = "[✏️ Грами] на другому прийомі не знімає очікування першого"
+match = "Д7"
+
+[[mutant]]
+id = "M17"
+file = "src/bot/bot.ts"
+old = '''      await meal.clearGrams(ctx);
+'''
+new = ''''''
+why = "команда не знімає очікування грамів"
+match = "команда знімає"
+
+[[mutant]]
+id = "M18"
+file = "src/bot/meal-flow.ts"
+old = '''bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[2] !== 0xff) return null;'''
+new = '''false) return null;'''
+why = "не-JPEG байти йдуть у Anthropic (платний виклик на сміття)"
+match = "не JPEG"
+
+[[mutant]]
+id = "M19"
+file = "src/bot/meal-flow.ts"
+old = '''    if ((p.file_size ?? 0) > FOOD_PHOTO_MAX_BYTES) continue;
+'''
+new = ''''''
+why = "береться найбільший PhotoSize навіть понад 2 МБ"
+match = "два відомі продукти"
+
+[[mutant]]
+id = "M20"
+file = "src/ai/food-prompt.ts"
+old = '''const asData = (s: string): string => s.replace(/</g, "‹").replace(/>/g, "›");'''
+new = '''const asData = (s: string): string => s;'''
+why = "підпис може закрити тег <user_caption> (ін'єкція в запит)"
+match = "відомі назви"
+
+[[mutant]]
+id = "M21"
+file = "src/db/repo.ts"
+old = '''ORDER BY f.source != 'seed', CASE'''
+new = '''ORDER BY f.source = 'seed', CASE'''
+why = "список відомих назв: ai_estimate перед seed"
+match = "відомі назви"
+
+[[mutant]]
+id = "M22"
+file = "src/bot/meal-flow.ts"
+old = '''      const food = (await repo.findFoodByAlias(g.nameUk)) ?? (await repo.insertEstimatedFood({ nameUk: g.nameUk, ...estimateOf(g) }, now()));'''
+new = '''      const food = await repo.insertEstimatedFood({ nameUk: g.nameUk + " " + g.grams, ...estimateOf(g) }, now());'''
+why = "зіставлення з каталогом не працює — кожна позиція стає новим ai_estimate"
+match = "два відомі продукти|те саме фото вдруге"

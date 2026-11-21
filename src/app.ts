@@ -87,14 +87,27 @@ let cachedBotInfo: UserFromGetMe | undefined;
 
 export function telegramHandler(
   env: Env,
-  opts: { fetch?: typeof fetch; botInfo?: UserFromGetMe; now?: () => number } = {},
+  opts: {
+    fetch?: typeof fetch;
+    botInfo?: UserFromGetMe;
+    now?: () => number;
+    /** ctx.waitUntil Worker (N2): робота ШІ після відповіді 200. Немає (тести) — обробник чекає її до кінця. */
+    waitUntil?: (p: Promise<unknown>) => void;
+    anthropicFetch?: typeof fetch;
+    foodTimeoutMs?: number;
+  } = {},
 ): UpdateHandler {
   return async (_update, body) => {
     if (!env.TELEGRAM_BOT_TOKEN) throw new Error("TELEGRAM_BOT_TOKEN is not set");
+    const background: Promise<unknown>[] = [];
     const bot = createBot(env.TELEGRAM_BOT_TOKEN, createRepo(createDb(env.DB)), {
       botInfo: opts.botInfo ?? cachedBotInfo,
       fetch: opts.fetch,
       now: opts.now,
+      waitUntil: opts.waitUntil ?? ((p) => void background.push(p)),
+      anthropicApiKey: env.ANTHROPIC_API_KEY || undefined,
+      anthropicFetch: opts.anthropicFetch,
+      foodTimeoutMs: opts.foodTimeoutMs,
     });
     const callback = webhookCallback(bot, "cloudflare-mod");
     try {
@@ -110,5 +123,6 @@ export function telegramHandler(
       throw err; // лог — у handleRequest (крок 6)
     }
     if (!opts.botInfo && bot.isInited()) cachedBotInfo = bot.botInfo;
+    await Promise.all(background); // лише без waitUntil; фонові задачі самі ловлять свої помилки
   };
 }

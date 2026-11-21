@@ -841,3 +841,82 @@ export function yizhaText(v: YizhaView): string {
   if (v.pending > 0) lines.push("", `⏳ Не підтверджено: ${v.pending}`);
   return clip(lines.join("\n"));
 }
+
+// --- Фаза 3: фото їжі (docs/spec/phase-3-photo.md §1) ---
+
+export const MEAL_NO_KEY = "Розпізнавання ще не підключене.";
+export const MEAL_PHOTO_AS_FILE = "Надішли фото не файлом — так я його розпізнаю.";
+export const MEAL_LIMIT = "Денний ліміт розпізнавання вичерпано. Спробуй завтра.";
+export const MEAL_TIMEOUT = "⏳ Не встиг розпізнати. Надішли фото ще раз.";
+export const MEAL_UNREADABLE = "Не вдалося прочитати фото.";
+export const MEAL_INVALID = "Не вдалося розібрати відповідь. Спробуй ще раз.";
+export const MEAL_NOT_FOOD = "🤔 Не бачу на фото їжі. Надішли фото тарілки.";
+export const MEAL_BUSY = "Сервіс розпізнавання зайнятий, спробуй за хвилину.";
+export const MEAL_UNAVAILABLE = "Розпізнавання тимчасово недоступне.";
+export const MEAL_ALREADY_CONFIRMED = "Вже підтверджено";
+export const MEAL_ALREADY_CANCELLED = "Прийом уже скасовано";
+export const MEAL_STALE = "Застаріло — надішли фото ще раз";
+export const MEAL_GONE = "Цього прийому вже немає";
+export const MEAL_CANCELLED = "❌ Прийом скасовано.";
+export const MEAL_ALL_ZERO = "Усі позиції прибрати не можна — щоб скасувати прийом, натисни ❌ Скасувати.";
+export const MEAL_BTN_CONFIRM = "✅ Вірно";
+export const MEAL_BTN_GRAMS = "✏️ Грами";
+export const MEAL_BTN_CANCEL = "❌ Скасувати";
+export const MEAL_BTN_UNDO = "🗑 Скасувати прийом";
+
+/** Позиція прийому для показу: значення вже пораховані за правилом знімка. */
+export interface MealLine {
+  nameUk: string;
+  grams: number;
+  kcal: number;
+  low: boolean;
+  estimate: boolean;
+}
+export interface MealTotal {
+  kcal: number;
+  proteinDg: number;
+  fatDg: number;
+  carbsDg: number;
+}
+
+const mealLine = (l: MealLine): string => `🍽 ${l.low ? "❓ " : ""}${l.estimate ? "🆕 " : ""}${esc(l.nameUk)} ~${l.grams} г · ${fmtInt(l.kcal)} ккал`;
+const mealTotal = (t: MealTotal): string => `<b>Разом: ${fmtInt(t.kcal)} ккал</b> · Б ${gram(t.proteinDg)} · Ж ${gram(t.fatDg)} · В ${gram(t.carbsDg)}`;
+function mealLegend(lines: readonly MealLine[]): string[] {
+  const marks = [lines.some((l) => l.low) ? "❓ — не впевнений" : null, lines.some((l) => l.estimate) ? "🆕 — оцінка ШІ, не з таблиці" : null].filter((x) => x !== null);
+  return marks.length ? [`<i>${marks.join(" · ")}</i>`] : [];
+}
+
+/** Пропозиція після розпізнавання (pending): позиції, «Разом» — сума цілих значень позицій. */
+export function mealPreviewText(lines: readonly MealLine[], total: MealTotal): string {
+  return clip(["📸 <b>Що бачу на фото</b>", ...lines.map(mealLine), mealTotal(total), ...mealLegend(lines), "", "Перевір і підтверди."].join("\n"));
+}
+
+/** Після [✅ Вірно]: підсумок і день проти норми (або без норми). */
+export function mealConfirmedText(lines: readonly MealLine[], total: MealTotal, day: { kcal: number; normKcal: number | null }): string {
+  const today = day.normKcal === null ? `Сьогодні: ${fmtInt(day.kcal)} ккал` : `Сьогодні: ${fmtInt(day.kcal)} / ${fmtInt(day.normKcal)} ккал`;
+  return clip(["✅ <b>Записав</b>", ...lines.map(mealLine), mealTotal(total), "", today].join("\n"));
+}
+
+/** Після [✏️ Грами]: нумерований список за порядком показу. */
+export function mealGramsPrompt(lines: readonly MealLine[]): string {
+  const example = lines.map((l) => l.grams).join(" ");
+  return clip(
+    [
+      `✏️ Надішли грами через пробіл: <code>${example}</code>`,
+      ...lines.map((l, i) => `${i + 1}. ${esc(l.nameUk)} — ${l.grams} г`),
+      "<i>0 — прибрати позицію.</i>",
+    ].join("\n"),
+  );
+}
+
+const chysla = (n: number): string => {
+  const d = n % 10;
+  const dd = n % 100;
+  return d === 1 && dd !== 11 ? "число" : d >= 2 && d <= 4 && (dd < 12 || dd > 14) ? "числа" : "чисел";
+};
+
+/** Помилка введення грамів: очікування лишається. */
+export function mealGramsHint(n: number, got: number | null): string {
+  const head = got === null ? `Грами — цілі числа від 0 до 2000 через пробіл. Очікую ${n} ${chysla(n)}.` : `Очікую ${n} ${chysla(n)}, отримав ${got}.`;
+  return `${head} Наприклад: <code>${Array.from({ length: n }, (_, i) => (i === 0 ? 200 : 150)).join(" ")}</code>`;
+}
