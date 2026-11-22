@@ -1,9 +1,10 @@
 // Нагадування за розкладом (docs/spec/phase-2.md, розділ 4). Порядок «заявити → надіслати → при визначеній недоставці зняти»:
 // збій між кроками дає пропущене нагадування, а не подвійне. Тексти — лише з bot/texts.ts, дані — лише через repo.
+import { generateWeeklyComment } from "./ai/weekly-comment";
 import { prescribeSlot } from "./bot/prescribe";
 import { trendKeyboard } from "./bot/trend-flow";
-import { WEIGH_REMINDER, dayLabel, recordReps, recordWeight, trainReminderText, trendText, weeklyReportText, type TrainReminderLine } from "./bot/texts";
-import { TELEGRAM_SEND_TIMEOUT_MS, TREND_MIN_DAYS } from "./config";
+import { WEIGH_REMINDER, dayLabel, recordReps, recordWeight, trainReminderText, trendText, weeklyReportText, type TrainReminderLine, type WeeklyReportTextModel } from "./bot/texts";
+import { TELEGRAM_SEND_TIMEOUT_MS, TREND_MIN_DAYS, WEEKLY_COMMENT_TIMEOUT_MS } from "./config";
 import type { ActiveProgram, ProgramDay, Repo } from "./db/repo";
 import type { ReminderKind } from "./db/schema";
 import { nextDayCode } from "./domain/progression";
@@ -23,6 +24,12 @@ export interface Counters {
 export interface ReminderOptions {
   fetch?: typeof fetch;
   timeoutMs?: number;
+  /** Ключ Claude для недільного коментаря; немає — звіт без коментаря. */
+  anthropicApiKey?: string;
+  /** fetch для SDK Anthropic (лише тести). */
+  anthropicFetch?: typeof fetch;
+  /** Дедлайн виклику коментаря (тести зменшують). */
+  commentTimeoutMs?: number;
 }
 
 type Outcome = "sent" | "skipped" | "released" | "unknown";
@@ -64,6 +71,9 @@ interface PairCtx {
   now: number;
   fetchFn: typeof fetch;
   timeoutMs: number;
+  apiKey: string | undefined;
+  anthropicFetch: typeof fetch | undefined;
+  commentTimeoutMs: number;
 }
 
 interface UserRow {
@@ -91,7 +101,8 @@ async function buildTrain(repo: Repo, userId: number, program: ActiveProgram | n
   return trainReminderText({ dayLabel: dayLabel(day), lines });
 }
 
-async function buildReport(repo: Repo, user: UserRow, date: string, program: ActiveProgram | null): Promise<string> {
+/** Дані звіту (цифри — з коду): модель тексту без коментаря. */
+async function reportModel(repo: Repo, user: UserRow, date: string, program: ActiveProgram | null): Promise<WeeklyReportTextModel> {
   const fromUtc = localDayStartUtc(addDays(date, -6), user.tz);
   const toUtc = localDayStartUtc(addDays(date, 1), user.tz);
   const [stats, rows, weights, nextDay] = await Promise.all([
@@ -110,7 +121,7 @@ async function buildReport(repo: Repo, user: UserRow, date: string, program: Act
     weights,
     next: nextDay ? dayLabel(nextDay) : null,
   });
-  return weeklyReportText({
+  return {
     weekStart: r.weekStart,
     weekEnd: r.weekEnd,
     workouts: r.workouts,
@@ -120,7 +131,7 @@ async function buildReport(repo: Repo, user: UserRow, date: string, program: Act
     records: r.records.map((x) => (x.bodyweight ? recordReps(x.nameUk, x.reps) : recordWeight(x.nameUk, x.weightKg, x.reps))),
     weight: r.weight ? { avg: formatKg(r.weight.avgDg), n: r.weight.n, change: r.weight.changeDg === null ? null : formatChange(r.weight.changeDg) } : null,
     next: r.next,
-  });
+  };
 }
 
 /** Умови даних для kind (розклад уже перевірено): false — нагадування не потрібне й заявки не буде. `program` — активна програма, прочитана один раз на пару. */
@@ -158,6 +169,14 @@ async function processPair(c: PairCtx, user: UserRow, kind: ReminderKind, date: 
   }
   const program = kind === "weigh" || kind === "trend" ? null : await c.repo.getActiveProgram(user.id);
   if (kind !== "trend" && !(await wanted(c.repo, user, kind, date, program))) return "skipped";
+  // Недільний звіт: дані й коментар ШІ — ДО заявки, після `wanted` (спека 4.3): виклик не подовжує вікно «заявлено, ще не надіслано».
+  // Коментар ніколи не кидає й не блокує звіт: будь-яка відмова → звіт без коментаря. Коли заявку перехопив інший тік, виклик марний (≈ $0,003) — прийнято.
+  let report: WeeklyReportTextModel | null = null;
+  if (kind === "report") {
+    report = await reportModel(c.repo, user, date, program);
+    const comment = await generateWeeklyComment({ repo: c.repo, apiKey: c.apiKey, anthropicFetch: c.anthropicFetch, timeoutMs: c.commentTimeoutMs, now: c.now }, user.id, date, report, weeklyReportText(report));
+    report = { ...report, comment };
+  }
   // 1. Заявка: 0 рядків — інший тік уже взяв.
   if (!(await c.repo.claimReminder(user.id, kind, date, c.now))) return "skipped";
   let text: string | null;
@@ -169,7 +188,7 @@ async function processPair(c: PairCtx, user: UserRow, kind: ReminderKind, date: 
           ? await buildTrain(c.repo, user.id, program)
           : kind === "trend"
             ? trendText({ from: formatKg(trend!.proposal.avg1Dg), to: formatKg(trend!.proposal.avg0Dg), pace: formatPace(trend!.proposal.paceCenti), delta: trend!.proposal.delta, oldKcal: trend!.oldKcal, newKcal: trend!.proposal.newKcal, carbsDeltaG: trend!.proposal.carbsDeltaG })
-            : await buildReport(c.repo, user, date, program);
+            : weeklyReportText(report!);
   } catch (e) {
     await c.repo.releaseReminder(user.id, kind, date); // до відправки — недоставка визначена
     throw e;
@@ -203,6 +222,9 @@ export async function runReminders(repo: Repo, token: string | undefined, now: n
     now,
     fetchFn: opts.fetch ?? ((input, init) => fetch(input, init)),
     timeoutMs: opts.timeoutMs ?? TELEGRAM_SEND_TIMEOUT_MS,
+    apiKey: opts.anthropicApiKey,
+    anthropicFetch: opts.anthropicFetch,
+    commentTimeoutMs: opts.commentTimeoutMs ?? WEEKLY_COMMENT_TIMEOUT_MS,
   };
   const counters: Counters = { sent: 0, skipped: 0, released: 0, errors: 0 };
   const tasks: Promise<Outcome>[] = [];

@@ -726,6 +726,8 @@ export interface WeeklyReportTextModel {
   /** Середня вага, її кількість записів і зміна до минулого тижня — вже відформатовані; null — рядка немає. */
   weight: { avg: string; n: number; change: string | null } | null;
   next: string | null;
+  /** Коментар ШІ (перевірений кодом, звичайний текст); немає — рядка немає. */
+  comment?: string | null;
 }
 
 export function weeklyReportText(m: WeeklyReportTextModel): string {
@@ -741,6 +743,7 @@ export function weeklyReportText(m: WeeklyReportTextModel): string {
     const note = m.weight.n < 3 ? ` (${m.weight.n} зваж.)` : "";
     lines.push(`⚖️ Середня вага <b>${m.weight.avg} кг</b>${note}${m.weight.change ? ` (${m.weight.change} до минулого тижня)` : ""}`);
   }
+  if (m.comment) lines.push(`💬 ${esc(m.comment)}`);
   if (m.workouts > 0 && next) lines.push(`Далі: ${next}`);
   return clip(lines.join("\n"));
 }

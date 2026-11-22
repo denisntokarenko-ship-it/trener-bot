@@ -113,3 +113,14 @@ export const CHAT_INPUT_MAX_CHARS = 1000;
 export const CHAT_REPLY_MAX_CHARS = 3500;
 /** Ліміт довжини повідомлення Telegram. */
 export const TELEGRAM_TEXT_MAX = 4096;
+
+// --- Фаза 4: недільний коментар у звіті (docs/spec/phase-4-chat.md, розділ 4). Модель і ціни — CHAT_*. ---
+
+/** Окремий дедлайн виклику коментаря (не подовжує вікно «заявлено, ще не надіслано»). */
+export const WEEKLY_COMMENT_TIMEOUT_MS = 10_000;
+/** Оцінка-резервування коментаря, мікро-USD ($0,003). */
+export const WEEKLY_COMMENT_EST_MICRO = 3_000;
+/** `max_tokens` коментаря (2–3 речення). */
+export const WEEKLY_COMMENT_MAX_TOKENS = 600;
+/** Коментар довший за це відкидається. */
+export const WEEKLY_COMMENT_MAX_CHARS = 500;
