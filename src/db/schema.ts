@@ -1,5 +1,6 @@
 // Таблиці з'являються міграцією у фазі, яка ними користується. Час — UTC мс.
 import { sql } from "drizzle-orm";
+import { FIRST_NAME_MAX } from "../constants";
 import { check, index, integer, primaryKey, real, sqliteTable, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable(
@@ -16,7 +17,7 @@ export const users = sqliteTable(
     remindTime: text("remind_time").default("08:00"),
     weighTime: text("weigh_time").default("07:30"),
   },
-  (t) => [check("users_first_name_len", sql`length(${t.firstName}) <= 64`)],
+  (t) => [check("users_first_name_len", sql`length(${t.firstName}) <= ${sql.raw(String(FIRST_NAME_MAX))}`)],
 );
 
 export const processedUpdates = sqliteTable(

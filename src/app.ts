@@ -1,16 +1,17 @@
 // Порядок обробки запиту — phase-0.md, «Порядок обробки запиту». Кроки 1–4 не пишуть у БД і не кличуть Telegram.
-import { BotError, webhookCallback } from "grammy";
+import { BotError } from "grammy";
 import type { Update, UserFromGetMe } from "grammy/types";
 import { isAllowed, parseAllowedIds, privateSenderId, secretMatches } from "./access";
 import { createBot, replyFailure } from "./bot/bot";
+import { WEBHOOK_PATH } from "./constants";
 import { createDb } from "./db/client";
 import { createRepo } from "./db/repo";
 import type { Env } from "./env";
 
-export const WEBHOOK_PATH = "/tg/webhook";
+export { WEBHOOK_PATH };
 const SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
 
-/** Крок 6. Отримує розібраний апдейт і сире тіло (для webhookCallback grammY). */
+/** Крок 6. Отримує розібраний апдейт і сире тіло. */
 export type UpdateHandler = (update: Update, body: string) => Promise<void>;
 
 const ok = () => new Response(null, { status: 200 });
@@ -98,7 +99,7 @@ export function telegramHandler(
     chatTimeoutMs?: number;
   } = {},
 ): UpdateHandler {
-  return async (_update, body) => {
+  return async (update) => {
     if (!env.TELEGRAM_BOT_TOKEN) throw new Error("TELEGRAM_BOT_TOKEN is not set");
     const background: Promise<unknown>[] = [];
     const bot = createBot(env.TELEGRAM_BOT_TOKEN, createRepo(createDb(env.DB)), {
@@ -111,15 +112,12 @@ export function telegramHandler(
       foodTimeoutMs: opts.foodTimeoutMs,
       chatTimeoutMs: opts.chatTimeoutMs,
     });
-    const callback = webhookCallback(bot, "cloudflare-mod");
     try {
-      await callback(
-        new Request("https://bot.internal" + WEBHOOK_PATH, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body,
-        }),
-      );
+      // Без webhookCallback: апдейт уже розібрано й перевірено в handleRequest (шлях, секрет, білий список, дедуп),
+      // тож другий Request і розбір тіла зайві. webhookCallback додавав ще таймаут 10 с, що кидав помилку (і «Щось пішло
+      // не так» людині), поки обробник ще працював, — тепер обробник виконується до кінця (ШІ — у waitUntil).
+      if (!bot.isInited()) await bot.init();
+      await bot.handleUpdate(update);
     } catch (err) {
       await replyFailure(err);
       throw err; // лог — у handleRequest (крок 6)

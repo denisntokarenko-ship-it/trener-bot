@@ -5,13 +5,14 @@ import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import { CHAT_HISTORY_MAX_AGE_MS, CHAT_HISTORY_TURNS, CHAT_INFLIGHT_MS, CHAT_TURN_MAX_CHARS, FOOD_MAX_ITEMS, PROPOSAL_TTL_MS, PROPOSALS_PENDING_MAX } from "../config";
 import type { Db } from "./client";
 import type { Limit, Plan, PlanCatalogItem } from "../domain/plan";
+import { FIRST_NAME_MAX } from "../constants";
 import type { ProgressSetRow } from "../domain/records";
 import { parseReminderTime, parseTrainingDays } from "../domain/reminders";
 import { parseTimezone } from "../domain/settings";
 import { normalizeAlias } from "../domain/text";
 import { bodyWeights, cronState, exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, remindersSent, startWeights, userProfiles, users, workoutSets, workouts, type FoodSource, type MealConfidence, type MealStatus, type ProposalKind, type ProposalStatus, type ReminderKind, type TargetReason } from "./schema";
 
-export const FIRST_NAME_MAX = 64;
+export { FIRST_NAME_MAX };
 /** active старше за цей вік закривається як abandoned (phase-1-flow.md). */
 export const STALE_AFTER_MS = 4 * 60 * 60 * 1000;
 
