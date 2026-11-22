@@ -17,7 +17,7 @@ import {
 } from "../config";
 import type { ChatTurn } from "../db/repo";
 import { costMicro } from "../domain/meal";
-import { CHAT_SYSTEM } from "./prompts";
+import { CHAT_SYSTEM, chatHistoryUserText } from "./prompts";
 import { TOOL_DEFS, runTool, type ToolContext } from "./tools";
 
 /** Вартість одного запиту, мікро-USD: поріг довгого промпту — за промптом саме цього запиту (кеш не використовуємо, але його токени входять у довжину промпту). */
@@ -61,7 +61,7 @@ export interface LoopInput {
 const errorName = (e: unknown): string => (e instanceof Error ? e.name : typeof e);
 
 export async function runChatLoop(i: LoopInput): Promise<LoopResult> {
-  const messages: Anthropic.MessageParam[] = i.history.map((t) => ({ role: t.role, content: t.text }));
+  const messages: Anthropic.MessageParam[] = i.history.map((t) => ({ role: t.role, content: t.role === "user" ? chatHistoryUserText(t.text) : t.text }));
   while (messages[0]?.role === "assistant") messages.shift(); // перше повідомлення має бути від користувача
   messages.push({ role: "user", content: i.userMessage });
 
