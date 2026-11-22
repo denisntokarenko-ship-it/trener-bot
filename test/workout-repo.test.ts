@@ -219,6 +219,38 @@ describe("abandonStale", () => {
   });
 });
 
+describe("[R-1b.2] Д6: getExerciseIdsWithHistory — один запит замість getExerciseHistory по одній вправі", () => {
+  it("збігається з getExerciseHistory(…, 1): done і abandoned з непропущеним підходом — так; лише пропущені, active, чужий — ні", async () => {
+    const dayAIds = dayA.slots.map((s) => s.exercise.id);
+    const dayBIds = dayB.slots.map((s) => s.exercise.id);
+    // done: слот 0 дня A виконано, слот 1 — лише пропущений підхід
+    const w1 = await start(A, dayA, T0);
+    await repo.upsertSet(A, set(w1, dayA, 0, 1));
+    await repo.upsertSet(A, set(w1, dayA, 1, 1, { skipped: true, weightKg: null, reps: null }));
+    await repo.finishWorkout(A, w1, 3, T0 + 1);
+    // abandoned: слот 0 дня B виконано
+    const w2 = await start(A, dayB, T0 + 10);
+    await repo.upsertSet(A, set(w2, dayB, 0, 1));
+    await repo.abandonStale(A, T0 + 10 + STALE_AFTER_MS + 1);
+    // active: слот 2 дня A — ще не зараховується
+    const w3 = await start(A, dayA, T0 + 5 * STALE_AFTER_MS);
+    await repo.upsertSet(A, set(w3, dayA, 2, 1));
+    // чужий користувач: слот 3 дня A виконано в B
+    const dayAofB = (await repo.getProgramDay(B, "A"))!;
+    const wb = await start(B, dayAofB, T0);
+    await repo.upsertSet(B, set(wb, dayAofB, 3, 1));
+    await repo.finishWorkout(B, wb, 3, T0 + 1);
+
+    const ids = [...new Set([...dayAIds, ...dayBIds])];
+    const expected = new Set<number>();
+    for (const id of ids) if ((await repo.getExerciseHistory(A, id, 1)).length > 0) expected.add(id);
+    expect(expected).toEqual(new Set([dayAIds[0]!, dayBIds[0]!])); // самі очікування, а не лише «збігається з собою»
+    expect(await repo.getExerciseIdsWithHistory(A, ids)).toEqual(expected);
+    expect(await repo.getExerciseIdsWithHistory(A, [])).toEqual(new Set());
+    expect(await repo.getExerciseIdsWithHistory(A, [dayAIds[0]!])).toEqual(new Set([dayAIds[0]!]));
+  });
+});
+
 describe("getExerciseHistory / getLastDoneWorkout", () => {
   it("сесії done і abandoned від старшої до новішої, останні n, без active", async () => {
     const squat = dayA.slots[0]!;

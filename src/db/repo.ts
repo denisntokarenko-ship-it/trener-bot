@@ -741,6 +741,20 @@ export function createRepo(db: Db) {
       return sessions;
     },
 
+    /**
+     * Які з exerciseIds мають хоч одну зараховану сесію (done/abandoned з ≥ 1 непропущеним підходом) — той самий критерій,
+     * що й `getExerciseHistory(…, 1).length > 0`, але одним запитом на весь набір (екран «lifts» анкети питав по одному).
+     */
+    async getExerciseIdsWithHistory(userId: number, exerciseIds: readonly number[]): Promise<Set<number>> {
+      if (exerciseIds.length === 0) return new Set();
+      const rows = await db.all<{ exercise_id: number }>(sql`
+        SELECT DISTINCT s.exercise_id AS exercise_id
+        FROM workout_sets s JOIN workouts w ON w.id = s.workout_id
+        WHERE w.user_id = ${userId} AND w.status IN ('done', 'abandoned') AND s.skipped = 0
+          AND s.exercise_id IN (${sql.join(exerciseIds.map((id) => sql`${id}`), sql`, `)})`);
+      return new Set(rows.map((r) => r.exercise_id));
+    },
+
     /** Останнє done-тренування користувача (за started_at) — для наступного дня; немає — null. */
     async getLastDoneWorkout(userId: number): Promise<Workout | null> {
       const row = await db

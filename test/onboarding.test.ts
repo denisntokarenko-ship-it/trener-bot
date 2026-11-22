@@ -317,6 +317,35 @@ describe("P1.7 робочі ваги → start_weights", () => {
     expect((await state())?.step).toBe("lifts");
   }
 
+  it("[R-1b.2] Д6: перехід на крок lifts читає історію якорів одним запитом до workout_sets (було до 4)", async () => {
+    await say("/start");
+    await press("▶️");
+    await press("💪 Набрати");
+    await press("➡️ Далі");
+    await press("Новачок");
+    await press("3 дні");
+    await press("60 хв");
+    await press("Зал");
+    await press("✅ Готово");
+    const next = button("➡️ Далі").callback_data;
+    const sql: string[] = [];
+    const counted = {
+      ...env,
+      DB: new Proxy(env.DB, {
+        get(t, k) {
+          const v = Reflect.get(t, k) as unknown;
+          if (k === "prepare") return (q: string) => { sql.push(q); return t.prepare(q); };
+          return typeof v === "function" ? v.bind(t) : v;
+        },
+      }),
+    };
+    await handleRequest(webhookRequest(cbUpdate(next)), counted, telegramHandler(counted, { fetch: tg.fetch, botInfo, now: () => nowMs }));
+    expect((await state())?.step).toBe("lifts");
+    const historyReads = sql.filter((q) => /FROM[^a-z]+workout_sets/i.test(q));
+    expect(historyReads.length).toBeGreaterThan(0); // якорі справді читаються
+    expect(historyReads.length).toBeLessThanOrEqual(2); // по одному на виклик anchors(), а не по одному на якір
+  });
+
   it("«60x8» для присідання → 60 кг × 8; крок 5: 62,5x8 → 60; «Не знаю» → запису немає", async () => {
     await toLifts();
     expect(view().text).toContain("Присідання зі штангою");
