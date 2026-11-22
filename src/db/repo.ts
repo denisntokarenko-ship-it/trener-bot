@@ -9,6 +9,7 @@ import { FIRST_NAME_MAX } from "../constants";
 import type { ProgressSetRow } from "../domain/records";
 import { parseReminderTime, parseTrainingDays } from "../domain/reminders";
 import { parseTimezone } from "../domain/settings";
+import { usableTz } from "../domain/time";
 import { normalizeAlias } from "../domain/text";
 import { bodyWeights, cronState, exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, remindersSent, startWeights, userProfiles, users, workoutSets, workouts, type FoodSource, type MealConfidence, type MealStatus, type ProposalKind, type ProposalStatus, type ReminderKind, type TargetReason } from "./schema";
 
@@ -555,10 +556,13 @@ export function createRepo(db: Db) {
       return this.getUserSettings(userId);
     },
 
-    /** Часовий пояс користувача (IANA); профілю немає — null. */
+    /**
+     * Часовий пояс користувача (IANA); профілю немає — null. Збережене значення, якого Intl не приймає (запис у БД поза
+     * ботом), теж null: виклики підставляють дефолт замість `RangeError` на кожній команді (рев'ю 2.1, дрібниця 3).
+     */
     async getUserTz(userId: number): Promise<string | null> {
       const row = await db.select({ tz: users.tz }).from(users).where(eq(users.id, userId)).get();
-      return row?.tz ?? null;
+      return usableTz(row?.tz);
     },
 
     /** Останні n тренувань done і abandoned користувача, від нових до старих, з підходами за слотами. */
@@ -894,19 +898,37 @@ export function createRepo(db: Db) {
       throw lastErr;
     },
 
+    /**
+     * Вага тіла за локальну дату: перезаписує день. Читання вікна `[from, localDate]` і запис — один батч D1 (одна
+     * транзакція): «попереднє значення дня» належить саме цьому запису, паралельний дубль-апдейт їх не змішує (рев'ю 2.1, дрібниця 1).
+     * Повертає записи вікна ДО запису (за зростанням дати; серед них — старе значення дня) і попереднє значення дня (десяті кг) або null.
+     */
+    async saveBodyWeight(
+      userId: number,
+      localDate: string,
+      weightDg: number,
+      now: number,
+      from: string,
+    ): Promise<{ before: { localDate: string; weightDg: number }[]; replaced: number | null }> {
+      const d1 = db.$client;
+      const [read] = await d1.batch<{ local_date: string; weight_dg: number }>([
+        d1
+          .prepare("SELECT local_date, weight_dg FROM body_weights WHERE user_id = ? AND local_date >= ? AND local_date <= ? ORDER BY local_date")
+          .bind(userId, from, localDate),
+        d1
+          .prepare(
+            `INSERT INTO body_weights (user_id, local_date, weight_dg, updated_at) VALUES (?, ?, ?, ?)
+             ON CONFLICT (user_id, local_date) DO UPDATE SET weight_dg = excluded.weight_dg, updated_at = excluded.updated_at`,
+          )
+          .bind(userId, localDate, weightDg, now),
+      ]);
+      const before = (read?.results ?? []).map((r) => ({ localDate: r.local_date, weightDg: r.weight_dg }));
+      return { before, replaced: before.find((e) => e.localDate === localDate)?.weightDg ?? null };
+    },
+
     /** Вага тіла за локальну дату: перезаписує день. Повертає попереднє значення дня (десяті кг) або null. */
     async upsertBodyWeight(userId: number, localDate: string, weightDg: number, now: number): Promise<number | null> {
-      const prev = await db
-        .select({ weightDg: bodyWeights.weightDg })
-        .from(bodyWeights)
-        .where(and(eq(bodyWeights.userId, userId), eq(bodyWeights.localDate, localDate)))
-        .get();
-      await db
-        .insert(bodyWeights)
-        .values({ userId, localDate, weightDg, updatedAt: now })
-        .onConflictDoUpdate({ target: [bodyWeights.userId, bodyWeights.localDate], set: { weightDg, updatedAt: now } })
-        .run();
-      return prev?.weightDg ?? null;
+      return (await this.saveBodyWeight(userId, localDate, weightDg, now, localDate)).replaced;
     },
 
     /** Записи ваги за локальні дати [from, to] включно, за зростанням дати. */

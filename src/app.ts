@@ -22,18 +22,47 @@ function errorName(err: unknown): string {
   return cause instanceof Error ? cause.name : typeof cause;
 }
 
+/** Скільки секунд тік крону живе в кеші ізоляту: `/health` публічний, а мінутна точність `cron=Nm` від 30 с не страждає (Д8 рев'ю 2.3). */
+export const HEALTH_CACHE_MS = 30_000;
+let healthCache: { db: D1Database; at: number; tick: { tickAt: number; okAt: number | null } | null } | undefined;
+/** Скидає кеш `/health` (тести: БД між тестами та «годинник» змінюються). */
+export function resetHealthCache(): void {
+  healthCache = undefined;
+}
+
 /**
  * Для `/health`: `cron=7m ok=7m` — вік останнього тіку й останнього тіку без помилок (тік, що впав, «живим» не виглядає).
  * Тіку ще не було чи D1 недоступна — `cron=?`; безпомилкового ще не було — `ok=?`. Health лишається 200.
+ * Тік читається з D1 не частіше за раз на `HEALTH_CACHE_MS` на ізолят (кешується сирий момент, вік рахується від поточного `nowMs`);
+ * помилку читання не кешуємо — відновлення D1 видно одразу.
  */
 async function cronAge(env: Env, nowMs: number): Promise<string> {
   const age = (at: number | null | undefined): string => (at == null ? "?" : `${Math.max(0, Math.floor((nowMs - at) / 60_000))}m`);
   try {
-    const t = await createRepo(createDb(env.DB)).getCronTick();
-    return `cron=${age(t?.tickAt)} ok=${age(t?.okAt)}`;
+    const c = healthCache;
+    let tick: { tickAt: number; okAt: number | null } | null;
+    if (c && c.db === env.DB && nowMs >= c.at && nowMs - c.at < HEALTH_CACHE_MS) tick = c.tick;
+    else {
+      tick = await createRepo(createDb(env.DB)).getCronTick();
+      healthCache = { db: env.DB, at: nowMs, tick };
+    }
+    return `cron=${age(tick?.tickAt)} ok=${age(tick?.okAt)}`;
   } catch {
     return "cron=? ok=?";
   }
+}
+
+/**
+ * Версія деплою для `/health` (рев'ю 2.5, В1): `v=<8 символів id версії Worker>` з binding `CF_VERSION_METADATA` — id версії, яку Cloudflare
+ * справді виконує (збігається з `wrangler versions list`), а не довільне `--message`. Якщо деплой зроблено з `--tag` (напр. git sha) — додається й `tag=`.
+ * Binding немає (локально/тести без нього) — порожній рядок: старий формат відповіді не змінюється.
+ */
+export function versionSuffix(env: Env): string {
+  const m = env.CF_VERSION_METADATA;
+  if (!m || typeof m.id !== "string" || m.id === "") return "";
+  const id = m.id.replace(/[^0-9a-zA-Z-]/g, "").slice(0, 8);
+  const tag = typeof m.tag === "string" && /^[\w.-]{1,40}$/.test(m.tag) ? ` tag=${m.tag}` : "";
+  return id === "" ? "" : ` v=${id}${tag}`;
 }
 
 export async function handleRequest(request: Request, env: Env, handler: UpdateHandler, now: () => number = Date.now): Promise<Response> {
@@ -41,7 +70,7 @@ export async function handleRequest(request: Request, env: Env, handler: UpdateH
 
   // 1. Метод і шлях.
   if (pathname === "/health") {
-    return request.method === "GET" ? new Response(`ok ${await cronAge(env, now())}`) : new Response("Not Found", { status: 404 });
+    return request.method === "GET" ? new Response(`ok ${await cronAge(env, now())}${versionSuffix(env)}`) : new Response("Not Found", { status: 404 });
   }
   if (pathname !== WEBHOOK_PATH) return new Response("Not Found", { status: 404 });
   if (request.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });

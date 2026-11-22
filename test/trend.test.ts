@@ -271,14 +271,23 @@ describe("P3.4 крон: пропозиція", () => {
     expect(await trendRows()).toEqual([]);
   });
 
-  it("визначена недоставка (403) знімає заявку; наступний тік у вікні повторить", async () => {
+  it("визначена недоставка (429) знімає заявку; наступний тік у вікні повторить", async () => {
     await seedWeights();
-    tg = scriptedTelegram([403]);
+    tg = scriptedTelegram([429]);
     expect(await tick()).toMatchObject({ released: 1, sent: 0 });
     expect(await trendRows()).toEqual([]);
     await tick(TICK + 15 * 60_000);
     expect(tg.calls).toHaveLength(2);
     expect(await trendRows()).toHaveLength(1);
+  });
+
+  it("403 (бот заблокований) лишає заявку: повтору в цю добу немає (Д1 рев'ю 2.3)", async () => {
+    await seedWeights();
+    tg = scriptedTelegram([403]);
+    expect(await tick()).toMatchObject({ released: 0, sent: 0, errors: 0 });
+    expect(await trendRows()).toHaveLength(1);
+    await tick(TICK + 15 * 60_000);
+    expect(tg.calls).toHaveLength(1);
   });
 
   it("відхилення від formula-норми вже 300 ккал → пропозиції немає", async () => {

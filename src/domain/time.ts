@@ -68,3 +68,26 @@ export function localDayStartUtc(date: string, tz: string): number {
   for (let i = 0; i < 24 * 60 && localDate(t, tz) < date; i++) t += 60_000;
   return t;
 }
+
+/**
+ * UTC мс локального часу `minutes` (хвилини від опівночі) дати `date` у `tz`. Зсув уточнюється двома ітераціями, як у
+ * `localDayStartUtc`, тож доба переходу (Нд у ЄС) дає правильний момент. Лише для часу поза «дірою» переходу (02:00–04:00).
+ */
+export function localTimeUtc(date: string, minutes: number, tz: string): number {
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  const wall = Date.UTC(y, m - 1, d) + minutes * 60_000;
+  let t = wall - tzOffsetMs(wall, tz);
+  t = wall - tzOffsetMs(t, tz);
+  return t;
+}
+
+/** `tz`, якщо його приймає Intl рантайму, інакше `null` (для читання збереженого значення: рядок у БД міг зіпсувати хто завгодно). */
+export function usableTz(tz: string | null | undefined): string | null {
+  if (!tz) return null;
+  try {
+    formatter("date", tz);
+    return tz;
+  } catch {
+    return null;
+  }
+}

@@ -20,3 +20,13 @@ describe("wrangler.jsonc", () => {
     }
   });
 });
+
+// Рев'ю 2.5, В1: `/health` показує id версії з binding `CF_VERSION_METADATA`; env-блоки bindings не успадковують — потрібен у кожному.
+describe("wrangler.jsonc: version_metadata", () => {
+  const withMeta = JSON.parse(raw.replace(/^\s*\/\/.*$/gm, "")) as { version_metadata?: { binding?: string }; env?: Record<string, { version_metadata?: { binding?: string } }> };
+  it("binding CF_VERSION_METADATA — на верхньому рівні й у кожному env", () => {
+    expect(withMeta.version_metadata?.binding).toBe("CF_VERSION_METADATA");
+    expect(Object.keys(withMeta.env ?? {}).sort()).toEqual(["preview", "production"]);
+    for (const [name, block] of Object.entries(withMeta.env ?? {})) expect(block.version_metadata?.binding, `env.${name}`).toBe("CF_VERSION_METADATA");
+  });
+});

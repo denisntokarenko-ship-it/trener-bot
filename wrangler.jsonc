@@ -9,6 +9,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "triggers": { "crons": ["*/15 * * * *"] },
+  // Версія деплою для /health (v=…); binding не успадковується env-блоками — повторено нижче.
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "d1_databases": [
     {
       "binding": "DB",
@@ -23,6 +25,7 @@
       "name": "trener-preview",
       "observability": { "enabled": true },
       "triggers": { "crons": ["*/15 * * * *"] },
+      "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "d1_databases": [
         {
           "binding": "DB",
@@ -36,6 +39,7 @@
       "name": "trener-prod",
       "observability": { "enabled": true },
       "triggers": { "crons": ["*/15 * * * *"] },
+      "version_metadata": { "binding": "CF_VERSION_METADATA" },
       "d1_databases": [
         {
           "binding": "DB",

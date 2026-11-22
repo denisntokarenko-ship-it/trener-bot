@@ -4,13 +4,13 @@ import { generateWeeklyComment } from "./ai/weekly-comment";
 import { prescribeSlot } from "./bot/prescribe";
 import { trendKeyboard } from "./bot/trend-flow";
 import { WEIGH_REMINDER, dayLabel, recordReps, recordWeight, trainReminderText, trendText, weeklyReportText, type TrainReminderLine, type WeeklyReportTextModel } from "./bot/texts";
-import { TELEGRAM_SEND_TIMEOUT_MS, TREND_MIN_DAYS, WEEKLY_COMMENT_TIMEOUT_MS } from "./config";
+import { REPORT_LOCAL_MINUTES, TELEGRAM_SEND_TIMEOUT_MS, TREND_MIN_DAYS, WEEKLY_COMMENT_TIMEOUT_MS } from "./config";
 import type { ActiveProgram, ProgramDay, Repo } from "./db/repo";
 import type { ReminderKind } from "./db/schema";
 import { nextDayCode } from "./domain/progression";
 import { formatPace, trendProposal, type Goal, type TrendProposal } from "./domain/nutrition";
 import { dueReminders, parseTrainingDays } from "./domain/reminders";
-import { addDays, localDate, localDayStartUtc } from "./domain/time";
+import { addDays, localDate, localDayStartUtc, localTimeUtc } from "./domain/time";
 import { buildWeeklyReport } from "./domain/week-report";
 import { formatChange, formatKg } from "./domain/weight";
 
@@ -30,15 +30,19 @@ export interface ReminderOptions {
   anthropicFetch?: typeof fetch;
   /** Дедлайн виклику коментаря (тести зменшують). */
   commentTimeoutMs?: number;
+  /** Білий список Telegram ID (`ALLOWED_TELEGRAM_IDS`): крон лише по них. Не задано — без фільтра (прямі виклики в тестах); `runCron` передає завжди. */
+  allowedIds?: ReadonlySet<string>;
 }
 
-type Outcome = "sent" | "skipped" | "released" | "unknown";
+// blocked — 403 (бот заблокований): заявку лишено, повтору в цей день немає; у лічильниках — «skipped», це не збій системи.
+type Outcome = "sent" | "skipped" | "released" | "unknown" | "blocked";
 
 type SendResult = { ok: true; messageId: number | null } | { ok: false; definite: boolean; status: number | null };
 
 /**
- * sendMessage з AbortController. «Визначена» недоставка — Telegram відповів статусом ≥ 400 (у т.ч. 403/429): повідомлення
- * точно не пішло. Таймаут, обрив мережі, нерозбірне тіло — «невизначена»: Telegram міг прийняти запит.
+ * sendMessage з AbortController. «Визначена» недоставка — Telegram відповів статусом 4xx (429 теж): запит відхилено, повідомлення
+ * точно не пішло. 5xx (502/504 від проксі при вже прийнятому запиті), таймаут, обрив мережі, нерозбірне тіло — «невизначена»:
+ * Telegram міг прийняти запит, тож повтор дав би дубль (Д2 рев'ю 2.3).
  * У лог не потрапляють ні токен (він в URL), ні текст.
  */
 async function sendMessage(token: string, chatId: number, text: string, fetchFn: typeof fetch, timeoutMs: number, markup?: unknown): Promise<SendResult> {
@@ -51,6 +55,7 @@ async function sendMessage(token: string, chatId: number, text: string, fetchFn:
       body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", ...(markup ? { reply_markup: markup } : {}) }),
       signal: controller.signal,
     });
+    if (res.status >= 500) return { ok: false, definite: false, status: res.status };
     if (res.status >= 400) return { ok: false, definite: true, status: res.status };
     const body = (await res.json()) as { ok?: boolean; result?: { message_id?: unknown } };
     if (body.ok === false) return { ok: false, definite: true, status: res.status };
@@ -103,8 +108,10 @@ async function buildTrain(repo: Repo, userId: number, program: ActiveProgram | n
 
 /** Дані звіту (цифри — з коду): модель тексту без коментаря. */
 async function reportModel(repo: Repo, user: UserRow, date: string, program: ActiveProgram | null): Promise<WeeklyReportTextModel> {
-  const fromUtc = localDayStartUtc(addDays(date, -6), user.tz);
-  const toUtc = localDayStartUtc(addDays(date, 1), user.tz);
+  // Межа тижня — момент звіту (Нд 19:00 локально), а не опівніч: звіт іде з першим тіком ≥ 19:00, тож тренування Нд після 19:00
+  // не потрапляло б ні в цей звіт, ні в наступний (Д4 рев'ю 2.3). Тепер воно — перше в наступному: вікна змикаються без дір і дублів.
+  const fromUtc = localTimeUtc(addDays(date, -7), REPORT_LOCAL_MINUTES, user.tz);
+  const toUtc = localTimeUtc(date, REPORT_LOCAL_MINUTES, user.tz);
   const [stats, rows, weights, nextDay] = await Promise.all([
     repo.getWeekStats(user.id, fromUtc, toUtc),
     repo.getProgressSets(user.id),
@@ -203,7 +210,13 @@ async function processPair(c: PairCtx, user: UserRow, kind: ReminderKind, date: 
     if (res.messageId !== null) await c.repo.setReminderMessageId(user.id, kind, date, res.messageId);
     return "sent";
   }
-  // 3. Визначена недоставка — зняти заявку (наступний тік у вікні повторить); невизначена — лишити, повтору не буде.
+  // 3. 403 — бот заблокований: детермінована відмова, повтор у вікні (до 4 тіків, для звіту — до кінця доби) безглуздий. Заявку лишаємо:
+  // день пропущено, рядок у reminders_sent — позначка. Наступної доби спроба буде знову (людина могла розблокувати бота).
+  if (res.status === 403) {
+    console.warn("reminder not delivered, bot blocked, claim kept", { kind, status: res.status });
+    return "blocked";
+  }
+  // Інша визначена недоставка (4xx) — зняти заявку (наступний тік у вікні повторить); невизначена — лишити, повтору не буде.
   if (res.definite) {
     await c.repo.releaseReminder(user.id, kind, date);
     console.warn("reminder not delivered", { kind, status: res.status });
@@ -229,6 +242,8 @@ export async function runReminders(repo: Repo, token: string | undefined, now: n
   const counters: Counters = { sent: 0, skipped: 0, released: 0, errors: 0 };
   const tasks: Promise<Outcome>[] = [];
   for (const user of await repo.getReminderUsers()) {
+    // Д7 рев'ю 2.3: прибрали з allow-list — вебхук мовчить, тож і крон не пише (інакше нагадування йшли б «привиду»).
+    if (opts.allowedIds && !opts.allowedIds.has(String(user.id))) continue;
     let kinds: ReminderKind[];
     let date: string;
     try {
@@ -246,6 +261,7 @@ export async function runReminders(repo: Repo, token: string | undefined, now: n
       counters.errors++;
       console.error("reminder failed", { error: errorName(r.reason) });
     } else if (r.value === "unknown") counters.errors++;
+    else if (r.value === "blocked") counters.skipped++;
     else counters[r.value]++;
   }
   return counters;
