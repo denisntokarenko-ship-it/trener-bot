@@ -952,3 +952,50 @@ export function mealGramsHint(n: number, got: number | null): string {
   const head = got === null ? `Грами — цілі числа від 0 до 2000 через пробіл. Очікую ${n} ${chysla(n)}.` : `Очікую ${n} ${chysla(n)}, отримав ${got}.`;
   return `${head} Наприклад: <code>${Array.from({ length: n }, (_, i) => (i === 0 ? 200 : 150)).join(" ")}</code>`;
 }
+
+// --- Фаза 4: чат ШІ-тренера (docs/spec/phase-4-chat.md, розділи 2–3; phase-4.md, розділ 3) ---
+
+export const CHAT_NO_KEY = "Чат ще не підключений.";
+export const CHAT_TOO_LONG = "Напиши коротше (до 1000 символів).";
+export const CHAT_BUSY_PREVIOUS = "Ще відповідаю на попереднє.";
+export const CHAT_LIMIT = "Денний ліміт ШІ вичерпано. Спробуй завтра.";
+export const CHAT_TIMEOUT = "Не встиг відповісти. Спробуй ще раз.";
+export const CHAT_BUSY = "Сервіс ШІ зайнятий, спробуй за хвилину.";
+export const CHAT_UNAVAILABLE = "ШІ тимчасово недоступний.";
+export const CHAT_INVALID = "Не вдалося отримати відповідь. Спробуй ще раз.";
+export const CHAT_REFUSAL = "На це я відповісти не можу.";
+export const CHAT_CUT = "(відповідь обірвано)";
+export const CHAT_EMPTY = "Не вдалося сформулювати відповідь.";
+export const CHAT_ITERATIONS = "Не вдалося зібрати відповідь. Спитай конкретніше.";
+/** Статичний рядок після пропозиції: модель могла сказати «готово». */
+export const CHAT_CONFIRM_LINE = "👇 Підтверди кнопкою — без цього нічого не зміниться";
+
+export const PROPOSAL_BTN_YES = "✅ Так";
+export const PROPOSAL_BTN_NO = "Ні";
+export const PROPOSAL_NEW_EXERCISE = "Нова вправа: калібрування на першому занятті";
+export const PROPOSAL_APPLIED = "Застосовано";
+export const PROPOSAL_REJECTED = "Відхилено";
+export const PROPOSAL_GONE = "Не знайшов цю пропозицію.";
+export const PROPOSAL_ALREADY_APPLIED = "Вже застосовано";
+export const PROPOSAL_ALREADY_REJECTED = "Ти вже відхилив";
+export const PROPOSAL_EXPIRED = "Застаріло";
+export const PROPOSAL_BUSY = "Заверши тренування й натисни ще раз";
+export const PROPOSAL_TARGET_TODAY = "Сьогодні норму вже змінено — натисни завтра";
+export const PROPOSAL_DUPLICATE = "Така вправа вже є в цьому дні";
+export const PROPOSAL_STALE = "Програма вже змінилась — попроси ще раз";
+
+/** Картка пропозиції: підсумок збирає код з payload; пояснення моделі — лише показ (esc). `extra` — рядок про наслідок для ваг, порахований кодом. */
+export function proposalCardText(summary: string, reason: string, extra: string | null): string {
+  return [`💡 ${esc(summary)} · Чому (від ШІ): ${esc(reason)}`, ...(extra ? [esc(extra)] : [])].join("\n");
+}
+
+/** Після рішення кнопки знімаються: підсумок лишається з позначкою результату. */
+export const proposalDecidedText = (mark: string, summary: string): string => `${mark}: ${esc(summary)}`;
+
+/** «60 × 8» · «власна вага × 12» · «калібрування» — призначення в картці пропозиції. */
+export function prescriptionText(p: { weightKg: number; targetReps: number; reason: string }, bodyweight: boolean): string {
+  if (p.reason === "calibration") return "калібрування";
+  return bodyweight ? `власна вага × ${p.targetReps}` : `${fmtKg(p.weightKg)} × ${p.targetReps}`;
+}
+/** Рядок про наслідок зміни діапазону для ваг: прогресія міряє минулу сесію проти поточного слота. */
+export const proposalWeightsLine = (was: string, will: string): string => `Наступне призначення: було ${was} → стане ${will}`;

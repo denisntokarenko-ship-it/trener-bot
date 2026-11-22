@@ -6,7 +6,7 @@ import { handleRequest, telegramHandler } from "../src/app";
 import { createDb } from "../src/db/client";
 import { createRepo } from "../src/db/repo";
 import { MSG, parseOb, planScreen } from "../src/bot/onboarding-view";
-import { BTN, NOT_UNDERSTOOD } from "../src/bot/texts";
+import { BTN, CHAT_NO_KEY } from "../src/bot/texts";
 import { GOAL_LABELS } from "../src/domain/plan";
 import { OWNER, botInfo, count, env, fakeTelegram, resetDb, textUpdate, webhookRequest, outgoingProblems } from "./helpers";
 
@@ -452,16 +452,16 @@ describe("P1.11 текст за станом", () => {
     expect((await profile())?.heightCm).toBe(178);
   });
 
-  it("текст не на текстовому кроці — «Не розумію»; без анкети — теж", async () => {
+  it("текст не на текстовому кроці — не анкета, а чат; без анкети — теж", async () => {
     await say("/start");
     await press("▶️");
     await press("💪 Набрати");
     await press("➡️ Далі");
-    await say("привіт"); // крок level — кнопки
-    expect(lastText()).toContain(NOT_UNDERSTOOD);
+    await say("привіт"); // крок level — кнопки: анкета текст не бере, далі чат (тут ключа немає)
+    expect(lastText()).toContain(CHAT_NO_KEY);
     await resetDb();
     await say("привіт");
-    expect(lastText()).toContain(NOT_UNDERSTOOD);
+    expect(lastText()).toContain(CHAT_NO_KEY); // з 4.2 звичайний текст поза анкетою — чат (тут ключа немає)
   });
 });
 

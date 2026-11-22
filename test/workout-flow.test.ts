@@ -3,7 +3,7 @@ import type { Update } from "grammy/types";
 import { seedStatements } from "../scripts/seed-core";
 import { handleRequest, telegramHandler } from "../src/app";
 import { encodeCb, parseCb } from "../src/bot/callbacks";
-import { NOT_UNDERSTOOD, NO_PROGRAM, RATING_TEXT } from "../src/bot/texts";
+import { CHAT_NO_KEY, NOT_UNDERSTOOD, NO_PROGRAM, RATING_TEXT } from "../src/bot/texts";
 import { createDb } from "../src/db/client";
 import { createRepo } from "../src/db/repo";
 import { OWNER, botInfo, env, fakeTelegram, resetDb, textUpdate, webhookRequest, outgoingProblems } from "./helpers";
@@ -220,13 +220,13 @@ describe("P1.4 введення ваги", () => {
     expect(view().text).toContain("Підхід 1/3 · ціль <b>45 кг × 6</b>");
   });
 
-  it("команда при очікуванні знімає його; текст без очікування → підказка", async () => {
+  it("команда при очікуванні знімає його; текст без очікування — не вага, іде в чат (тут ключа немає)", async () => {
     await say("/trening");
     await press("⚖️");
     await say("/start");
     expect((await workoutRow())!.await_input).toBeNull();
     await say("щось");
-    expect(view().text).toBe(NOT_UNDERSTOOD);
+    expect(view().text).toBe(CHAT_NO_KEY);
   });
 
   it("[↩️ Скасувати] знімає очікування й повертає екран", async () => {

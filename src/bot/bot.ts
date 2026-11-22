@@ -2,7 +2,8 @@
 import { Bot, BotError } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import type { Repo } from "../db/repo";
-import { FOOD_TIMEOUT_MS } from "../config";
+import { CHAT_TIMEOUT_MS, FOOD_TIMEOUT_MS } from "../config";
+import { createChatFlow, isProposalCb } from "./chat-flow";
 import { createFoodFlow, isFoodCb } from "./food-flow";
 import { createMealFlow, isMealCb } from "./meal-flow";
 import { createOnboardingFlow } from "./onboarding";
@@ -24,6 +25,8 @@ export interface BotOptions {
   anthropicFetch?: typeof fetch;
   /** Дедлайн конвеєра фото (тести зменшують). */
   foodTimeoutMs?: number;
+  /** Дедлайн циклу чату (тести зменшують). */
+  chatTimeoutMs?: number;
 }
 
 export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot {
@@ -63,6 +66,13 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
     ensureNorm: (userId) => food.ensureNorm(userId),
   });
 
+  const chat = createChatFlow(repo, now, {
+    apiKey: opts.anthropicApiKey,
+    anthropicFetch: opts.anthropicFetch,
+    waitUntil: opts.waitUntil ?? ((p) => void p),
+    timeoutMs: opts.chatTimeoutMs ?? CHAT_TIMEOUT_MS,
+  });
+
   // Будь-яка команда знімає очікування ваги (phase-1-flow.md, «Введення ваги», п. 5) і грамів прийому (phase-3-photo.md) й виконується далі.
   bot.use(async (ctx, next) => {
     if (ctx.message?.entities?.some((e) => e.type === "bot_command" && e.offset === 0)) {
@@ -87,11 +97,13 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
     if (isFoodCb(d)) return food.callback(ctx);
     if (isMealCb(d)) return meal.callback(ctx);
     if (isTrendCb(d)) return trend.callback(ctx); // n:a|d:… — пропозиція корекції норми за трендом
+    if (isProposalCb(d)) return chat.callback(ctx); // i:y|n:<id> — пропозиція ШІ-тренера
     return isSettingsCb(d) ? settings.callback(ctx) : flow.callback(ctx);
   });
   bot.on("callback_query", (ctx) => ctx.answerCallbackQuery());
   // Текст, число — порядок із phase-2.md, розділ 2 (перший збіг виграє): 1) reply на нагадування про вагу; 1б) reply на питання про профіль для норми (phase-3.md); 2) вага підходу, що
-  // чекає; 2б) грами прийому, що їх чекають (phase-3-photo.md); 3) анкета; 4) голе число при відкритому нагадуванні про вагу; 5) «Не зрозумів» (+ підказка для чисел 30–300).
+  // чекає; 2б) грами прийому, що їх чекають (phase-3-photo.md); 3) анкета; 4) голе число при відкритому нагадуванні про вагу; 5) чат ШІ-тренера (phase-4-chat.md, розділ 2:
+  // голе число й невідома команда в чат не йдуть); 6) «Не зрозумів» (+ підказка для чисел 30–300).
   bot.on("message:text", async (ctx) => {
     if (await weight.replyToReminder(ctx)) return;
     if (await food.replyToQuestion(ctx)) return;
@@ -100,6 +112,7 @@ export function createBot(token: string, repo: Repo, opts: BotOptions = {}): Bot
       if (await meal.gramsText(ctx)) return;
       if (await onboarding.text(ctx)) return;
       if (await weight.bareNumber(ctx)) return;
+      if (await chat.text(ctx)) return;
     }
     await flow.text(ctx, awaits ? undefined : weight.hintFor(ctx));
   });

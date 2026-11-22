@@ -1,0 +1,148 @@
+# Мутанти завдання 4.2 (чат ШІ-тренера). M1–M2 — обов'язкові з промпту; решта — додаткові (облік, збої, форма запиту).
+test = "npx vitest run --reporter=dot test/ai-chat.test.ts"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/bot/chat-flow.ts"
+old = '''limitMicro: AI_DAILY_LIMIT_MICRO, exclusiveWithinMs: CHAT_INFLIGHT_MS }'''
+new = '''limitMicro: 1_000_000_000_000, exclusiveWithinMs: CHAT_INFLIGHT_MS }'''
+why = "прибрано перевірку денного ліміту: чат ходить за вичерпаного бюджету"
+match = "P4[.]2[.]3|денні витрати на межі"
+
+[[mutant]]
+id = "M2"
+file = "src/bot/chat-flow.ts"
+old = '''    const kb = new InlineKeyboard().text(PROPOSAL_BTN_YES'''
+new = '''    await repo.applyProposal(job.userId, id, now(), localDate(now(), DEFAULT_TZ));
+    const kb = new InlineKeyboard().text(PROPOSAL_BTN_YES'''
+why = "пропозиція застосовується без кнопки (одразу при відправці картки)"
+match = "P4[.]2[.]4|без натискання"
+
+[[mutant]]
+id = "M3"
+file = "src/bot/chat-flow.ts"
+old = '''limitMicro: AI_DAILY_LIMIT_MICRO, exclusiveWithinMs: CHAT_INFLIGHT_MS }'''
+new = '''limitMicro: AI_DAILY_LIMIT_MICRO, exclusiveWithinMs: 0 }'''
+why = "прибрано NOT EXISTS резервування: два паралельні повідомлення — два виклики моделі"
+match = "два паралельні"
+
+[[mutant]]
+id = "M4"
+file = "src/db/repo.ts"
+old = '''AND x.input_tokens = 0 AND x.output_tokens = 0 AND x.created_at > ?)'''
+new = '''AND x.input_tokens = 0 AND x.output_tokens = 0 AND x.created_at < ?)'''
+why = "межа свіжості резервування чату перевернута (блокує старе, пропускає свіже)"
+match = "свіже резервування"
+
+[[mutant]]
+id = "M5"
+file = "src/bot/chat-flow.ts"
+old = '''    if (result.kind === "failed") {
+      const e = result.error;
+      const deadline = ac.signal.aborted;
+      const f = deadline ? null : classifyAiError(e);
+      if (u.responses > 0) await settle();'''
+new = '''    if (result.kind === "failed") {
+      const e = result.error;
+      const deadline = ac.signal.aborted;
+      const f = deadline ? null : classifyAiError(e);
+      if (u.responses > 0) await repo.releaseAiUsage(job.userId, usageId);'''
+why = "оплачена ітерація знімається release замість settle, коли наступний запит упав"
+match = "429 на другій ітерації|модель мовчить"
+
+[[mutant]]
+id = "M6"
+file = "src/ai/chat-loop.ts"
+old = '''      usage.inputTokens += res.usage.input_tokens;'''
+new = '''      usage.inputTokens = res.usage.input_tokens;'''
+why = "облік лише останнього запиту, а не сумою всіх ітерацій"
+match = "сума обох запитів"
+
+[[mutant]]
+id = "M7"
+file = "src/bot/chat-flow.ts"
+old = '''const dropCreated = () => repo.expireOwnProposals(job.userId, createdIds, now());'''
+new = '''const dropCreated = async () => 0;'''
+why = "пропозиції ходу, що не вдався, не гасяться: блокують предмет на 48 год"
+match = "модель мовчить|429 на другій ітерації"
+
+[[mutant]]
+id = "M8"
+file = "src/bot/chat-flow.ts"
+old = '''raw === "" || BARE_NUMBER.test(raw) || raw.startsWith("/")'''
+new = '''raw === "" || raw.startsWith("/")'''
+why = "голе число йде в чат (коштує виклик і плутається з вагою)"
+match = "голе число, невідома команда"
+
+[[mutant]]
+id = "M9"
+file = "src/ai/chat-loop.ts"
+old = '''if (++toolCalls > CHAT_MAX_TOOL_CALLS) {'''
+new = '''if (++toolCalls > 1000) {'''
+why = "ліміт 6 викликів інструментів за хід знято"
+match = "7 tool_use"
+
+[[mutant]]
+id = "M10"
+file = "src/bot/chat-flow.ts"
+old = '''    if (text.length <= TELEGRAM_TEXT_MAX || body === "") return text;'''
+new = '''    return text;'''
+why = "після esc текст не вкладається в 4096: обрізання сирого тексту прибрано"
+match = "chatReplyText|після esc"
+
+[[mutant]]
+id = "M11"
+file = "src/ai/chat-loop.ts"
+old = '''      if (i.signal.aborted) throw new DOMException("aborted", "AbortError");'''
+new = '''      // (перевірку дедлайну перед запитом прибрано)'''
+why = "дедлайн до першого запиту рахується як відправлений: резервування не знімається"
+match = "дедлайн до першого запиту"
+
+[[mutant]]
+id = "M12"
+file = "src/bot/chat-flow.ts"
+old = '''await say(chatReplyText(text, cut, result.proposals.length > 0));'''
+new = '''await say(chatReplyText(text, cut, false));'''
+why = "статичний рядок «Підтверди кнопкою» не додається — модель могла сказати «готово»"
+match = "P4[.]2[.]4|propose_change →"
+
+[[mutant]]
+id = "M13"
+file = "src/ai/chat-loop.ts"
+old = '''content: res.content as Anthropic.ContentBlockParam[] });'''
+new = '''content: (res.content as Anthropic.ContentBlockParam[]).filter((b) => b.type !== "thinking") });'''
+why = "блоки мислення не повертаються в наступний запит"
+match = "мок просить"
+
+[[mutant]]
+id = "M14"
+file = "src/ai/chat-loop.ts"
+old = '''output_config: { effort: "low" }, system: CHAT_SYSTEM'''
+new = '''system: CHAT_SYSTEM'''
+why = "effort low не задано"
+match = "форма запиту"
+
+[[mutant]]
+id = "M15"
+file = "src/bot/chat-flow.ts"
+old = '''result.proposals.filter((p) => p.created || p.messageId === null)'''
+new = '''result.proposals.filter((p) => p.created)'''
+why = "already_pending без картки (збій минулого ходу) не отримує картки"
+match = "already_pending без картки"
+
+[[mutant]]
+id = "M16"
+file = "src/bot/chat-flow.ts"
+old = '''    const will = await prescribeSlot(repo, userId, slot.exercise, { ...slot, sets, repMin, repMax });'''
+new = '''    const will = await prescribeSlot(repo, userId, slot.exercise, slot);'''
+why = "«стане» рахується за старим слотом: картка не показує наслідок зміни діапазону для ваг"
+match = "Наступне призначення"
+
+[[mutant]]
+id = "M17"
+file = "src/bot/chat-flow.ts"
+old = '''userMessage: chatUserMessage(job.text, today, isoWeekday(today)),'''
+new = '''userMessage: job.text,'''
+why = "дата й день тижня не додаються до повідомлення користувача"
+match = "форма запиту"

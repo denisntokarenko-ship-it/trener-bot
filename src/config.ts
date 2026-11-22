@@ -85,3 +85,31 @@ export const CHAT_INFLIGHT_MS = 30_000;
 export const CHAT_TURN_MAX_CHARS = 3500;
 /** Вихід інструмента ШІ ≤ стільки символів; переповнення — відкидаємо хвіст списку й ставимо `truncated`. */
 export const TOOL_RESULT_MAX_CHARS = 4000;
+
+// --- Фаза 4: чат ШІ-тренера (docs/spec/phase-4-chat.md, розділ 3). Ціни Haiku 5.5 звірено живцем 2026-11-22 (platform.claude.com/docs/en/about-claude/pricing). ---
+
+/** Модель чату. Без server-side fallback при `refusal` (спека: [П]). */
+export const CHAT_MODEL = "claude-haiku-5-5";
+/** Ціни CHAT_MODEL для промпту ≤ `CHAT_LONG_PROMPT_TOKENS`, мікро-USD за 1 млн токенів ($0,10 / $0,50 за MTok). */
+export const CHAT_PRICE_IN_MICRO = 100_000;
+export const CHAT_PRICE_OUT_MICRO = 500_000;
+/** Запит з промптом довшим за це коштує дорожче ($0,50 / $2,50); поріг — за промптом одного запиту, тож вартість рахується по кожному запиту окремо. */
+export const CHAT_LONG_PROMPT_TOKENS = 100_000;
+export const CHAT_LONG_PRICE_IN_MICRO = 500_000;
+export const CHAT_LONG_PRICE_OUT_MICRO = 2_500_000;
+/** `max_tokens` одного запиту (мислення входить). */
+export const CHAT_MAX_TOKENS = 2000;
+/** Найбільше запитів до моделі за хід. */
+export const CHAT_MAX_ITERATIONS = 5;
+/** Найбільше виконаних викликів інструментів за хід; решта отримує `is_error` (кожен `tool_use` мусить отримати `tool_result`). */
+export const CHAT_MAX_TOOL_CALLS = 6;
+/** Один дедлайн на весь цикл. */
+export const CHAT_TIMEOUT_MS = 25_000;
+/** Оцінка-резервування ходу, мікро-USD ($0,008; типовий хід ≈ $0,003). */
+export const CHAT_CALL_EST_MICRO = 8_000;
+/** Довші повідомлення в чат не йдуть. */
+export const CHAT_INPUT_MAX_CHARS = 1000;
+/** Відповідь моделі обрізається до цього (сирий текст) перед `esc` і записом у `chat_turns`. */
+export const CHAT_REPLY_MAX_CHARS = 3500;
+/** Ліміт довжини повідомлення Telegram. */
+export const TELEGRAM_TEXT_MAX = 4096;
