@@ -195,7 +195,9 @@ Worker `https://trener-prod.adhd-bot.workers.dev` (до переносу 2026-11
 - **Деплой — збірка впала** (`Could not resolve "@anthropic-ai/sdk"`): `node_modules` worktree ставились під lock Фази 2. Збірка падає до завантаження — прод лишився на `4d96fc62` (сумісний зі схемою). Лікування — `npm ci` після `git switch` на свіжий `main`, потім `deploy:prod`. ⚠️ `npm ci` перевстановлює `node_modules` під запущеним `wrangler tail` — tail вижив, але ріст файлу перевірено `curl /health`.
 - **12:35 деплой:** `npm run deploy:prod -- --message "main ff026a3 (3.5)"` → версія `9c67e31b`; `/health` → `ok cron=5m ok=5m`, у tail `scriptVersion` = `9c67e31b`.
 - **Тік 12:45:31 (код Фази 3):** `outcome: ok`, `cpuTime` 12 мс, wall 101 мс, `exceptions: []`, `cron tick {sent:0, skipped:0, released:0, errors:0}`; `/health` → `ok cron=0m ok=0m`.
-- **Живий пакет** (фото → ✅ → `/yizha`) — людина, у PR #40; свідки — `meals`/`meal_items`/`nutrition_targets`/`ai_usage` (`SELECT`) і tail.
+- **Живий пакет 2026-11-22 11:32–11:33 UTC** (людина, PR #40): анкета норми → `nutrition_targets` `formula`, `valid_from` 2026-11-22, 2940 ккал; фото → `ai_usage` `food_photo` `claude-sonnet-5-5`, 6669 + 83 токенів, `cost_micro` 14 168 (= 6669 × 2 + 83 × 10, не резерв 15 000), `aiSpendToday` 14 168 ≤ 300 000; ✅ → `meals` id 1 `confirmed`, 1 позиція (яблуко 180 г, `seed`) зі знімком 94 ккал / 0,5 / 0,4 / 24,8 г, `NULL` у знімку 0; `foods` `ai_estimate` 0, сиріт 0. `processed_updates` 35 → 42.
+- **Логи пакета:** `wrangler tail` (12:46–15:46 UTC 21.11) завершився до пакета, тож доказ — Workers Observability (дашборд, лише читання): за 24 год 212 подій, **0 Errors**; 7 × `POST /tg/webhook`, усі `ok`, версія `9c67e31b`; вебхук фото — статус 200, `cpuTime` 112 мс, wall 3,4 с.
+- **Розбіжність (не перевірено):** банер Observability пише «You're on Workers Free», а цей RUNBOOK — «платний тариф». `cpuTime` 112 мс пройшов `ok`; тариф звірити в Billing перед Фазою 4.
 
 ## Генеральна репетиція міграцій на дампі прода
 
