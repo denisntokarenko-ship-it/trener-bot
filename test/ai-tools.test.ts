@@ -195,6 +195,50 @@ describe("читальні інструменти (P4.1.1)", () => {
   });
 });
 
+describe("борг [4.1] Д4: переповнення відкидає найстаріше, а не найсвіжіше", () => {
+  const long = (n: number) => Array.from({ length: n }, (_, i) => ({ i, text: "x".repeat(40) }));
+
+  it("fitJson oldest-first: відкидає голову, лишає найсвіжіший (останній) елемент", () => {
+    const parsed = JSON.parse(fitJson({ list: long(200) }, "list", 4000, "oldest-first")) as { list: { i: number }[]; truncated: boolean };
+    expect(parsed.truncated).toBe(true);
+    expect(parsed.list.at(-1)!.i).toBe(199);
+    expect(parsed.list[0]!.i).toBeGreaterThan(0);
+    expect(parsed.list.map((x) => x.i)).toEqual(parsed.list.map((_, k) => parsed.list[0]!.i + k)); // суцільний хвіст
+  });
+
+  it("fitJson newest-first (типово): відкидає хвіст, лишає найсвіжіший (перший)", () => {
+    const parsed = JSON.parse(fitJson({ list: long(200) }, "list", 4000)) as { list: { i: number }[] };
+    expect(parsed.list[0]!.i).toBe(0);
+    expect(parsed.list.at(-1)!.i).toBeLessThan(199);
+  });
+
+  it("get_today_food (прийоми хронологічні): при переповненні лишається останній прийом дня", async () => {
+    const meals = Array.from({ length: 80 }, (_, i) => ({ eatenAt: Date.UTC(2023, 10, 14, 6, 0) + i * 60_000, items: [{ nameUk: "страва номер " + i, grams: 100, kcal: 100 }] }));
+    const fake = {
+      getTargetOn: async () => null,
+      dayTotals: async () => ({ kcal: 8000, proteinDg: 0, fatDg: 0, carbsDg: 0 }),
+      dayMeals: async () => meals,
+      countPendingMeals: async () => 0,
+    } as unknown as Repo;
+    const r = await runTool({ repo: fake, userId: A, tz: TZ, now: NOW }, "get_today_food", {});
+    const parsed = JSON.parse(r.content) as { meals: { items: { name: string }[] }[]; truncated?: boolean };
+    expect(r.content.length).toBeLessThanOrEqual(4000);
+    expect(parsed.truncated).toBe(true);
+    expect(parsed.meals.at(-1)!.items[0]!.name).toBe("страва номер 79");
+    expect(parsed.meals.some((m) => m.items[0]!.name === "страва номер 0")).toBe(false);
+  });
+
+  it("get_recent_workouts (новіші першими): при переповненні лишається найновіше тренування, а не найстаріше", async () => {
+    const row = (i: number) => ({ id: i, dayCode: "A", dayTitle: `День ${i}`, status: "done" as const, startedAt: NOW - i * 86_400_000, effort: 3, exercises: Array.from({ length: 8 }, (_, e) => ({ nameUk: `Вправа ${e}`, sets: Array.from({ length: 10 }, () => ({ setNo: 1, weightKg: 100, reps: 10, skipped: false })) })) });
+    const fake = { getRecentWorkouts: async () => Array.from({ length: 8 }, (_, i) => row(i)) } as unknown as Repo; // 0 — найновіше
+    const r = await runTool({ repo: fake, userId: A, tz: TZ, now: NOW }, "get_recent_workouts", { n: 8 });
+    const parsed = JSON.parse(r.content) as { workouts: { day: string }[]; truncated?: boolean };
+    expect(parsed.truncated).toBe(true);
+    expect(parsed.workouts[0]!.day).toBe("День 0");
+    expect(parsed.workouts.some((w) => w.day === "День 7")).toBe(false);
+  });
+});
+
 describe("propose_change: валідація (P4.1.4)", () => {
   beforeEach(async () => {
     await repo.insertTarget(A, target("2023-11-01"), NOW); // норма за формулою 2480

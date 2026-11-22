@@ -2,7 +2,7 @@
 // ШІ лише пропонує: запис у знімок робить confirmMeal після [✅ Вірно]. Робота з ШІ — у waitUntil (вебхук уже відповів 200).
 import Anthropic from "@anthropic-ai/sdk";
 import type { Api, Context } from "grammy";
-import { InlineKeyboard } from "grammy";
+import { GrammyError, InlineKeyboard } from "grammy";
 import type { PhotoSize } from "grammy/types";
 import { classifyAiError, foodRequest, toBase64, type AiFailure } from "../ai/food-prompt";
 import {
@@ -62,6 +62,9 @@ const FAIL_TEXT: Record<AiFailure, string> = { busy: MEAL_BUSY, unavailable: MEA
 type GrammySignal = NonNullable<Parameters<Api["getFile"]>[1]>;
 
 const errorName = (e: unknown): string => (e instanceof Error ? e.name : typeof e);
+
+/** Telegram 400 «message is not modified»: текст і клавіатура ті самі — повідомлення вже в потрібному стані (успіх, не збій). */
+const isNotModified = (e: unknown): boolean => e instanceof GrammyError && /message is not modified/i.test(e.description);
 
 export interface MealDeps {
   /** Токен бота — лише для адреси завантаження файлу всередині Worker; ця адреса нікуди не передається й не логується. */
@@ -348,7 +351,9 @@ export function createMealFlow(repo: Repo, now: () => number, deps: MealDeps) {
       try {
         if (after.messageId === null) throw new Error("no message");
         await ctx.api.editMessageText(chatId, after.messageId, text, { reply_markup: pendingKb(after.id) });
-      } catch {
+      } catch (e) {
+        // «Не змінено» — повідомлення вже показує ці грами: нове не шлемо (борг [3.3]).
+        if (isNotModified(e)) return true;
         const msg = await ctx.api.sendMessage(chatId, text, { reply_markup: pendingKb(after.id) });
         await repo.setMealMessageId(userId, after.id, msg.message_id);
       }
