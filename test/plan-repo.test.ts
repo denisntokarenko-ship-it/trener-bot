@@ -273,4 +273,18 @@ describe("профіль, анкета, стартові ваги", () => {
     await expect(env.DB.prepare("UPDATE exercises SET kind = 'x' WHERE id = 1").run()).rejects.toThrow(/CHECK/);
     await expect(env.DB.prepare("UPDATE exercises SET min_level = 4 WHERE id = 1").run()).rejects.toThrow(/CHECK/);
   });
+
+  // [1b.1] CHECK-и нових стовпців живуть лише в SQL міграції 0002 (ALTER ADD COLUMN), а не в schema.ts: цей тест —
+  // єдина гарантія, що вони справді є в БД після міграцій (drizzle-kit їх не бачить).
+  it("CHECK-и з міграції 0002 є в БД: place, межі min_level, довжина program_days.title (ALTER ADD COLUMN)", async () => {
+    await seed();
+    await expect(env.DB.prepare("UPDATE exercises SET place = 'park' WHERE id = 1").run()).rejects.toThrow(/CHECK/);
+    await expect(env.DB.prepare("UPDATE exercises SET min_level = 0 WHERE id = 1").run()).rejects.toThrow(/CHECK/);
+    for (const ok of [1, 3]) await env.DB.prepare("UPDATE exercises SET min_level = ? WHERE id = 1").bind(ok).run();
+    await env.DB.prepare("UPDATE exercises SET pattern = NULL, kind = NULL, place = NULL, min_level = NULL WHERE id = 1").run(); // NULL дозволено
+    const day = (await env.DB.prepare("SELECT id FROM program_days LIMIT 1").first<{ id: number }>())!.id;
+    await expect(env.DB.prepare("UPDATE program_days SET title = ? WHERE id = ?").bind("Ш".repeat(41), day).run()).rejects.toThrow(/CHECK/);
+    await env.DB.prepare("UPDATE program_days SET title = ? WHERE id = ?").bind("Ш".repeat(40), day).run();
+    await env.DB.prepare("UPDATE program_days SET title = NULL WHERE id = ?").bind(day).run();
+  });
 });

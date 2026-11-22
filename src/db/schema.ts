@@ -46,6 +46,9 @@ export const exercises = sqliteTable(
     videoUrl: text("video_url"),
     // Фаза 1b (міграція 0002): стовпці для генератора плану. Nullable, заповнює сид; CHECK — у SQL міграції
     // (ALTER TABLE ADD COLUMN … CHECK), тут лише типи: таблицю exercises не перебудовуємо (на неї вказують FK).
+    // УВАГА: CHECK цих п'яти стовпців (і program_days.title) є лише в migrations/0002 — `drizzle-kit generate` їх не бачить
+    // і при розбіжності схеми міг би перебудувати таблицю без них. Що вони в БД є, доводить тест
+    // «CHECK-и з міграції 0002» (test/plan-repo.test.ts); нову міграцію по цих таблицях пиши вручну.
     pattern: text("pattern", { enum: ["squat", "hinge", "hpush", "vpush", "hpull", "vpull", "core", "delt", "legacc"] }),
     kind: text("kind", { enum: ["compound", "accessory"] }),
     place: text("place", { enum: ["gym", "both"] }),
