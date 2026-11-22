@@ -81,14 +81,14 @@ CHECK рядка: `(skipped = 1 AND weight_kg IS NULL AND reps IS NULL) OR (skip
 | 8 | `seated-cable-row` | Тяга горизонтального блока | cable | 5 | 5 | back | 16 |
 | 9 | `machine-chest-press` | Жим від грудей у тренажері | machine | 5 | 5 | chest | 17, 12, 2 |
 | 10 | `hanging-leg-raise` | Підйом ніг у висі | bodyweight | 0 | 0 | core | 18, 5 |
-| 11 | `goblet-squat` | Гоблет-присідання | dumbbell | 2 | 2 | legs | — |
-| 12 | `dumbbell-bench-press` | Жим гантелей лежачи | dumbbell | 2 | 2 | chest | — |
-| 13 | `pull-up` | Підтягування | bodyweight | 0 | 0 | back | — |
-| 14 | `barbell-overhead-press` | Жим штанги стоячи | barbell | 5 | 20 | shoulders | — |
-| 15 | `dumbbell-romanian-deadlift` | Румунська тяга з гантелями | dumbbell | 2 | 2 | legs | — |
-| 16 | `dumbbell-row` | Тяга гантелі в нахилі | dumbbell | 2 | 2 | back | — |
-| 17 | `dips` | Віджимання на брусах | bodyweight | 0 | 0 | chest | — |
-| 18 | `hanging-knee-raise` | Підйом колін у висі | bodyweight | 0 | 0 | core | — |
+| 11 | `goblet-squat` | Гоблет-присідання | dumbbell | 2 | 2 | legs | 7, 20, 21 |
+| 12 | `dumbbell-bench-press` | Жим гантелей лежачи | dumbbell | 2 | 2 | chest | 19, 24, 9 |
+| 13 | `pull-up` | Підтягування | bodyweight | 0 | 0 | back | 3, 16 |
+| 14 | `barbell-overhead-press` | Жим штанги стоячи | barbell | 5 | 20 | shoulders | 4, 22 |
+| 15 | `dumbbell-romanian-deadlift` | Румунська тяга з гантелями | dumbbell | 2 | 2 | legs | 6, 21 |
+| 16 | `dumbbell-row` | Тяга гантелі в нахилі | dumbbell | 2 | 2 | back | 8, 28, 30 |
+| 17 | `dips` | Віджимання на брусах | bodyweight | 0 | 0 | chest | 19, 12, 9 |
+| 18 | `hanging-knee-raise` | Підйом колін у висі | bodyweight | 0 | 0 | core | 29, 5 |
 
 Кроки й мінімуми тренажерів і блоків — припущення (`open-questions.md`). Підказки `cues_uk` пише сид 1.1: 3 рядки ≤ 60 символів, наказовий спосіб, спершу безпека (спина, коліна).
 

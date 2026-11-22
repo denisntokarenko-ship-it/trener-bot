@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { CATALOG, PROGRAM_DAYS, seedSql, seedStatements } from "../scripts/seed-core";
 import { createDb } from "../src/db/client";
+import migration0010 from "../migrations/0010_gym_substitutes.sql?raw";
 import { createRepo } from "../src/db/repo";
 import { TABLES, count, env, resetDb } from "./helpers";
 
@@ -32,8 +33,8 @@ describe("сид (P1.1.1–2)", () => {
     // Таблиця каталогу phase-1.md, стовпчик «Заміни» — номерами.
     const subs = await env.DB.prepare("SELECT exercise_id AS e, substitute_id AS s FROM exercise_substitutes ORDER BY e, s").all();
     const expected = [[1, 7], [1, 11], [2, 9], [2, 12], [3, 13], [3, 16], [4, 14], [5, 10], [5, 18], [6, 15], [7, 1], [7, 11], [8, 16], [9, 2], [9, 12], [9, 17], [10, 5], [10, 18]];
-    // Старі 18 пар лишились як були (спека 1.1); нові — за каталогом 1b.1.
-    expect(subs.results.map((r) => [r.e, r.s]).filter(([e]) => Number(e) <= 18)).toEqual(expected);
+    // Пари вправ 1–10 лишились як були (спека 1.1); для 11–30 — за каталогом (1b.1 і борг [4.2], див. нижче).
+    expect(subs.results.map((r) => [r.e, r.s]).filter(([e]) => Number(e) <= 10)).toEqual(expected);
     expect(subs.results.length).toBeGreaterThan(expected.length);
 
     const program = await repo.getActiveProgram(111);
@@ -55,7 +56,7 @@ describe("сид (P1.1.1–2)", () => {
     const first = await counts();
     await seed(2_000);
     expect(await counts()).toEqual(first);
-    expect(first).toMatchObject({ exercises: 30, exercise_substitutes: 40, programs: 1, program_days: 2, program_exercises: 10 });
+    expect(first).toMatchObject({ exercises: 30, exercise_substitutes: 60, programs: 1, program_days: 2, program_exercises: 10 });
   });
 
   it("повторний сид оновлює крок вправи (хибне припущення → правка сида), програму не чіпає", async () => {
@@ -183,5 +184,68 @@ describe("обмеження БД (P1.1.3–4)", () => {
         "INSERT INTO exercises (slug, name_uk, equipment, weight_step_kg, min_weight_kg, muscle_group, cues_uk) VALUES ('y', 'У', 'cable', 5, 5, 'core', 'a\nb')",
       ).run(),
     ).rejects.toThrow(/CHECK/);
+  });
+});
+
+// Борг [4.2]: у 8 вправ каталог мав «—» у «Заміни», тож у слоті гоблета (день «Все тіло B») не було чим замінити.
+// Пари напрямлені: «чим замінити ключ». Очікування — зі спеки (phase-1.md, колонка «Заміни»), не з коду.
+const GYM_WEEK_SUBS: Record<string, string[]> = {
+  "goblet-squat": ["leg-press", "dumbbell-lunge", "glute-bridge"],
+  "dumbbell-bench-press": ["push-up", "incline-dumbbell-press", "machine-chest-press"],
+  "pull-up": ["lat-pulldown", "dumbbell-row"],
+  "barbell-overhead-press": ["seated-dumbbell-press", "dumbbell-overhead-press"],
+  "dumbbell-romanian-deadlift": ["barbell-romanian-deadlift", "glute-bridge"],
+  "dumbbell-row": ["seated-cable-row", "barbell-row", "dumbbell-reverse-fly"],
+  dips: ["push-up", "dumbbell-bench-press", "machine-chest-press"],
+  "hanging-knee-raise": ["dead-bug", "cable-crunch"],
+};
+
+async function subsOf(slug: string): Promise<string[]> {
+  const r = await env.DB.prepare(
+    "SELECT s.slug AS slug FROM exercise_substitutes x JOIN exercises e ON e.id = x.exercise_id JOIN exercises s ON s.id = x.substitute_id WHERE e.slug = ? ORDER BY s.slug",
+  )
+    .bind(slug)
+    .all<{ slug: string }>();
+  return r.results.map((x) => x.slug);
+}
+
+describe("заміни 8 вправ (борг [4.2])", () => {
+  it("сид: кожна з 8 має 1–3 заміни, кожна заміна — вправа каталогу, не сама вона, є варіант без тренажера (place both)", async () => {
+    const bySlug = new Map(CATALOG.map((e) => [e.slug, e]));
+    for (const [slug, expected] of Object.entries(GYM_WEEK_SUBS)) {
+      const entry = bySlug.get(slug);
+      expect(entry, slug).toBeDefined();
+      expect([...(entry?.substitutes ?? [])].sort(), slug).toEqual([...expected].sort());
+      expect(entry!.substitutes.length, slug).toBeGreaterThanOrEqual(1);
+      for (const sub of entry!.substitutes) {
+        expect(bySlug.has(sub), `${slug} → ${sub}`).toBe(true);
+        expect(sub).not.toBe(slug);
+      }
+      // «Дім»: хоч одна заміна не з тренажера й не з блока (place both, обладнання не machine/cable).
+      expect(
+        entry!.substitutes.some((s) => bySlug.get(s)!.place === "both" && !["machine", "cable"].includes(bySlug.get(s)!.equipment)),
+        slug + ": немає домашньої заміни",
+      ).toBe(true);
+    }
+  });
+
+  it("міграція 0010 на БД, де вправи вже засіяні, а замін 8 вправ ще нема (стан прода), дає рівно очікувані пари і ідемпотентна", async () => {
+    await seed();
+    const ids = Object.keys(GYM_WEEK_SUBS).map((s) => CATALOG.find((e) => e.slug === s)!.id);
+    await env.DB.prepare(`DELETE FROM exercise_substitutes WHERE exercise_id IN (${ids.join(",")})`).run();
+    for (const slug of Object.keys(GYM_WEEK_SUBS)) expect(await subsOf(slug), slug).toEqual([]);
+
+    const run = () => env.DB.batch(migration0010.split("--> statement-breakpoint").map((s) => env.DB.prepare(s)));
+    await run();
+    for (const [slug, expected] of Object.entries(GYM_WEEK_SUBS)) expect(await subsOf(slug), slug).toEqual([...expected].sort());
+    expect(await count("exercise_substitutes")).toBe(60);
+
+    await run(); // повтор — без дублів і без помилки PK
+    expect(await count("exercise_substitutes")).toBe(60);
+  });
+
+  it("міграція 0010 на порожньому каталозі (свіжа БД до сиду) нічого не вставляє і не падає", async () => {
+    await env.DB.batch(migration0010.split("--> statement-breakpoint").map((s) => env.DB.prepare(s)));
+    expect(await count("exercise_substitutes")).toBe(0);
   });
 });

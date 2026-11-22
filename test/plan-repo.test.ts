@@ -112,6 +112,29 @@ describe("activatePlan (P2.7, P2.11)", () => {
     expect(await count("program_days")).toBe(0);
   });
 
+  it("два паралельні виклики одного користувача (подвійне [✅]): жодного винятку, одна нова програма, без напівзаписаних днів", async () => {
+    await ownerWithHistory();
+    const plan = await planFor();
+    const [a, b] = await Promise.all([repo.activatePlan(OWNER, plan, 9_000), repo.activatePlan(OWNER, plan, 9_001)]);
+    expect([a, b].filter((r) => r.ok)).toHaveLength(1);
+    expect([a, b].find((r) => !r.ok)).toEqual({ ok: false, error: "CONCURRENT" });
+    expect(await activePrograms(OWNER)).toHaveLength(1);
+    expect(await count("programs")).toBe(2);
+    expect(await count("program_days")).toBe(2 + plan.days.length);
+  });
+
+  it("паралельні виклики двох користувачів беруть той самий MAX+1: обидва успішні з різними id (повтор із новим id)", async () => {
+    await ownerWithHistory();
+    await repo.upsertUser(OTHER, "Інший", 0);
+    const plan = await planFor();
+    const [a, b] = await Promise.all([repo.activatePlan(OWNER, plan, 9_000), repo.activatePlan(OTHER, plan, 9_001)]);
+    expect(a.ok && b.ok).toBe(true);
+    if (a.ok && b.ok) expect(a.programId).not.toBe(b.programId);
+    expect(await activePrograms(OWNER)).toHaveLength(1);
+    expect(await activePrograms(OTHER)).toHaveLength(1);
+    expect(await count("program_days")).toBe(2 + 2 * plan.days.length);
+  });
+
   it("помилка в слоті (вправи 999 немає) відкочує весь батч: стара програма лишається активною", async () => {
     await ownerWithHistory();
     const plan = await planFor();

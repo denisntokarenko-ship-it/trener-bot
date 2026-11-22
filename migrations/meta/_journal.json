@@ -71,6 +71,13 @@
       "when": 1795768235469,
       "tag": "0009_ai_proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1795854635469,
+      "tag": "0010_gym_substitutes",
+      "breakpoints": true
     }
   ]
 }

@@ -565,6 +565,29 @@ describe("P2.8–P2.10 підтвердження плану", () => {
     expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM programs WHERE active = 1").first<{ n: number }>())!.n).toBe(1);
   });
 
+  it("Д4: два паралельні [✅] (повільний інтернет) — одна нова програма, жодного «Щось пішло не так», анкета done", async () => {
+    await ownerWithProgram();
+    await repo.upsertOnboarding(OWNER, { status: "active", step: "activity" }, 1);
+    await repo.upsertProfile(OWNER, { goal: "muscle" }, 1);
+    await say("/start");
+    await press("▶️ Продовжити");
+    await press("⏭");
+    const accept = button("✅ Прийняти").callback_data;
+    const before = await programsCount();
+    const answersBefore = tg.calls.filter((c) => c.method === "answerCallbackQuery").length;
+    await Promise.all([tap(accept), tap(accept)]);
+    expect(await programsCount()).toBe(before + 1);
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM programs WHERE active = 1").first<{ n: number }>())!.n).toBe(1);
+    expect((await state())?.status).toBe("done");
+    expect(tg.calls.filter((c) => String(c.payload.text ?? "").includes("Щось пішло не так"))).toEqual([]);
+    expect(tg.calls.filter((c) => c.method === "answerCallbackQuery")).toHaveLength(answersBefore + 2); // обидва натискання отримали відповідь
+    // Друге натискання — тиха відповідь, без тексту помилки (MSG.failed) і без «застаріла».
+    const texts = tg.calls.filter((c) => c.method === "answerCallbackQuery").slice(answersBefore).map((c) => c.payload.text);
+    expect(texts).not.toContain(MSG.failed);
+    expect(texts.filter((x) => x === undefined)).toHaveLength(2);
+    expect(lastText()).toContain("Готово");
+  });
+
   it("активне тренування → [✅] відмовляє, programs без змін, екран плану лишається", async () => {
     await ownerWithProgram();
     await repo.upsertOnboarding(OWNER, { status: "active", step: "activity" }, 1);

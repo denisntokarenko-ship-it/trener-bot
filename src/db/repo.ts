@@ -163,7 +163,7 @@ export interface StartWeight {
   weightKg: number;
   reps: number;
 }
-export type ActivatePlanResult = { ok: true; programId: number } | { ok: false; error: "ACTIVE_WORKOUT" | "NO_USER" | "BAD_PLAN" };
+export type ActivatePlanResult = { ok: true; programId: number } | { ok: false; error: "ACTIVE_WORKOUT" | "NO_USER" | "BAD_PLAN" | "CONCURRENT" };
 
 // --- Фаза 3: харчування (phase-3.md §1). Макроси — десяті грама, ккал — цілі. ---
 
@@ -827,12 +827,10 @@ export function createRepo(db: Db) {
     async activatePlan(userId: number, plan: Plan, now: number): Promise<ActivatePlanResult> {
       if (plan.days.length === 0 || plan.days.some((d) => d.slots.length === 0)) return { ok: false, error: "BAD_PLAN" };
       if (await this.getActiveWorkout(userId)) return { ok: false, error: "ACTIVE_WORKOUT" };
-      const idRow = await db.get<{ next: number }>(sql`SELECT COALESCE(MAX(id), 0) + 1 AS next FROM programs`);
-      const pid = idRow?.next ?? 1;
       const d1 = db.$client;
       const noActive = "NOT EXISTS (SELECT 1 FROM workouts w WHERE w.user_id = ? AND w.status = 'active')";
       const exists = "EXISTS (SELECT 1 FROM programs np WHERE np.id = ? AND np.user_id = ?)";
-      const stmts = [
+      const build = (pid: number) => [
         d1
           .prepare(`UPDATE programs SET active = 0 WHERE user_id = ? AND active = 1 AND ${noActive} AND EXISTS (SELECT 1 FROM users u WHERE u.id = ?)`)
           .bind(userId, userId, userId),
@@ -853,9 +851,27 @@ export function createRepo(db: Db) {
           ),
         ]),
       ];
-      const res = await d1.batch(stmts);
-      if (res[1]?.meta.changes === 1) return { ok: true, programId: pid };
-      return (await this.getActiveWorkout(userId)) ? { ok: false, error: "ACTIVE_WORKOUT" } : { ok: false, error: "NO_USER" };
+      // id = MAX+1 береться до батчу (D1 batch не повертає id між кроками), тож два паралельні виклики можуть
+      // взяти той самий id: другий батч відкочується на PK. Тоді дивимось, хто зайняв id: наш користувач —
+      // паралельне подвійне [✅], програму вже створено (CONCURRENT, не помилка); чужий — беремо свіжий MAX.
+      let lastErr: unknown;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const idRow = await db.get<{ next: number }>(sql`SELECT COALESCE(MAX(id), 0) + 1 AS next FROM programs`);
+        const pid = idRow?.next ?? 1;
+        let res: Awaited<ReturnType<typeof d1.batch>>;
+        try {
+          res = await d1.batch(build(pid));
+        } catch (err) {
+          const taken = await db.get<{ userId: number }>(sql`SELECT user_id AS userId FROM programs WHERE id = ${pid}`);
+          if (!taken) throw err; // не колізія PK (напр. вправи немає) — відкат уже був, помилка справжня
+          if (taken.userId === userId) return { ok: false, error: "CONCURRENT" };
+          lastErr = err;
+          continue;
+        }
+        if (res[1]?.meta.changes === 1) return { ok: true, programId: pid };
+        return (await this.getActiveWorkout(userId)) ? { ok: false, error: "ACTIVE_WORKOUT" } : { ok: false, error: "NO_USER" };
+      }
+      throw lastErr;
     },
 
     /** Вага тіла за локальну дату: перезаписує день. Повертає попереднє значення дня (десяті кг) або null. */
