@@ -1201,16 +1201,20 @@ export function createRepo(db: Db) {
      * вилучені всі позиції. Осиротілі `ai_estimate`-продукти вилучених позицій прибираються.
      */
     async updateMealGrams(userId: number, mealId: number, changes: { position: number; grams: number }[]): Promise<boolean> {
-      const meal = await repo.getMeal(userId, mealId);
-      if (!meal || meal.status !== "pending") return false;
-      const byPos = new Map(meal.items.map((it) => [it.position, it]));
+      // Один запит замість getMeal (два): потрібні лише позиції й їхні продукти. Не свій / не pending / немає позицій — порожньо.
+      const rows = await db.all<{ position: number; food_id: number }>(sql`
+        SELECT mi.position AS position, mi.food_id AS food_id
+        FROM meal_items mi JOIN meals m ON m.id = mi.meal_id
+        WHERE m.id = ${mealId} AND m.user_id = ${userId} AND m.status = 'pending'`);
+      if (rows.length === 0) return false;
+      const byPos = new Map(rows.map((r) => [r.position, r.food_id]));
       const seen = new Set<number>();
       for (const c of changes) {
         if (!byPos.has(c.position) || seen.has(c.position) || !Number.isInteger(c.grams) || c.grams < 0 || c.grams > 2000) return false;
         seen.add(c.position);
       }
-      const removed = changes.filter((c) => c.grams === 0).map((c) => byPos.get(c.position)!.foodId);
-      if (removed.length >= meal.items.length) return false;
+      const removed = changes.filter((c) => c.grams === 0).map((c) => byPos.get(c.position)!);
+      if (removed.length >= rows.length) return false;
       const d1 = db.$client;
       // Лічильник вище міг застаріти (паралельна правка того ж прийому): «щонайменше одна позиція лишається» знову перевіряє сам DELETE.
       const stmts = changes.map((c) =>
@@ -1234,10 +1238,15 @@ export function createRepo(db: Db) {
      * повторне скасування, чужий прийом — false без помилки.
      */
     async cancelMeal(userId: number, mealId: number): Promise<boolean> {
-      const meal = await repo.getMeal(userId, mealId);
-      if (!meal || meal.status === "cancelled") return false;
+      // Один запит замість getMeal (два): потрібні лише продукти позицій `pending`-прийому (для чистки осиротілих оцінок).
+      // Чужий, неіснуючий, скасований, confirmed — порожньо; результат визначає UPDATE із SQL-стражем нижче.
+      const foodIds = (
+        await db.all<{ food_id: number }>(sql`
+          SELECT DISTINCT mi.food_id AS food_id
+          FROM meal_items mi JOIN meals m ON m.id = mi.meal_id
+          WHERE m.id = ${mealId} AND m.user_id = ${userId} AND m.status = 'pending'`)
+      ).map((r) => r.food_id);
       const d1 = db.$client;
-      const foodIds = meal.status === "pending" ? [...new Set(meal.items.map((it) => it.foodId))] : [];
       const stmts = [
         d1.prepare(`DELETE FROM meal_items WHERE meal_id = ? AND ${OWN_PENDING_MEAL}`).bind(mealId, mealId, userId),
         d1.prepare("UPDATE meals SET status = 'cancelled', await_grams_at = NULL WHERE id = ? AND user_id = ? AND status IN ('pending', 'confirmed')").bind(mealId, userId),

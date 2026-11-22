@@ -92,18 +92,25 @@ export const TOOL_DEFS: readonly ToolDef[] = [
 
 export const TOOL_NAMES: readonly string[] = TOOL_DEFS.map((t) => t.name);
 
-const ok = (value: Record<string, unknown>, listKey: string | null = null): ToolResult => ({ content: fitJson(value, listKey), isError: false });
+/** Порядок елементів списку в виході інструмента: від старіших до новіших чи навпаки — від цього залежить, що відкидати при переповненні. */
+export type ListOrder = "oldest-first" | "newest-first";
+
+const ok = (value: Record<string, unknown>, listKey: string | null = null, order: ListOrder = "newest-first"): ToolResult => ({ content: fitJson(value, listKey, TOOL_RESULT_MAX_CHARS, order), isError: false });
 const err = (message: string): ToolResult => ({ content: JSON.stringify({ error: message }), isError: true });
 
-/** JSON ≤ `TOOL_RESULT_MAX_CHARS`: переповнення — відкидаємо хвостові елементи списку `listKey` і ставимо `truncated` (посередині не ріжемо). */
-export function fitJson(value: Record<string, unknown>, listKey: string | null, max = TOOL_RESULT_MAX_CHARS): string {
+/**
+ * JSON ≤ `TOOL_RESULT_MAX_CHARS`: переповнення — відкидаємо **найстаріші** елементи списку `listKey` і ставимо `truncated` (посередині не ріжемо).
+ * `order` каже, де найстаріші: `oldest-first` (хронологічний список) — на початку, `newest-first` — наприкінці ([4.1] Д4).
+ */
+export function fitJson(value: Record<string, unknown>, listKey: string | null, max = TOOL_RESULT_MAX_CHARS, order: ListOrder = "newest-first"): string {
   const whole = JSON.stringify(value);
   if (whole.length <= max) return whole;
   const list = listKey ? value[listKey] : null;
   if (listKey && Array.isArray(list)) {
     const rest = [...list];
     while (rest.length > 0) {
-      rest.pop();
+      if (order === "oldest-first") rest.shift();
+      else rest.pop();
       const s = JSON.stringify({ ...value, [listKey]: rest, truncated: true });
       if (s.length <= max) return s;
     }
@@ -208,6 +215,7 @@ async function weightTrend(c: ToolContext, input: unknown): Promise<ToolResult> 
       n: inPeriod.length,
     },
     "entries",
+    "oldest-first",
   );
 }
 
@@ -256,6 +264,7 @@ async function todayFood(c: ToolContext): Promise<ToolResult> {
       pending,
     },
     "meals",
+    "oldest-first",
   );
 }
 

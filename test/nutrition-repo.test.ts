@@ -474,3 +474,66 @@ describe("виправлення за рев'ю 3.1", () => {
     expect(await cancelMeal(U, id)).toBe(true);
   });
 });
+
+/** D1, що рахує SELECT-запити (drizzle і сирий prepare йдуть через `prepare`). */
+function countingDb(): { db: D1Database; selects: () => number } {
+  let n = 0;
+  const db = new Proxy(env.DB, {
+    get(t, prop) {
+      if (prop === "prepare") {
+        return (q: string) => {
+          if (/^\s*select/i.test(q)) n++;
+          return t.prepare(q);
+        };
+      }
+      const v = Reflect.get(t, prop) as unknown;
+      return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+    },
+  });
+  return { db, selects: () => n };
+}
+
+describe("борг [3.1] Д4: cancelMeal і updateMealGrams читають один раз, не getMeal (два запити)", () => {
+  it("cancelMeal pending: рівно 1 SELECT; чистка осиротілої оцінки й результат ті самі", async () => {
+    const rice = await seedFood("рис", 130, 27, 3, 280);
+    const est = (await repo.insertEstimatedFood({ nameUk: "кефір", kcal100: 40, protein100Dg: 30, fat100Dg: 10, carbs100Dg: 40 }, NOW))!.id;
+    const id = await pending(U, [{ foodId: rice, grams: 100, confidence: "high" }, { foodId: est, grams: 200, confidence: "low" }]);
+    const c = countingDb();
+    const r = createRepo(createDb(c.db));
+    expect(await r.cancelMeal(U, id)).toBe(true);
+    expect(c.selects()).toBe(1);
+    expect(await count("meal_items")).toBe(0);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM foods WHERE id = ?").bind(est).first("n")).toBe(0);
+    expect(await r.cancelMeal(U, id)).toBe(false); // повтор
+    expect(await r.cancelMeal(OTHER, id)).toBe(false);
+    expect(await r.cancelMeal(U, 99999)).toBe(false);
+  });
+
+  it("cancelMeal confirmed: знімок лишається; чужий — false і прийом цілий", async () => {
+    const rice = await seedFood("рис", 130, 27, 3, 280);
+    const id = await pending(U, [{ foodId: rice, grams: 100, confidence: "high" }]);
+    await repo.confirmMeal(U, id, NOW);
+    expect(await createRepo(createDb(env.DB)).cancelMeal(OTHER, id)).toBe(false);
+    expect((await repo.getMeal(U, id))!.status).toBe("confirmed");
+    expect(await repo.cancelMeal(U, id)).toBe(true);
+    expect((await repo.getMeal(U, id))!.items).toHaveLength(1);
+  });
+
+  it("updateMealGrams: рівно 1 SELECT до batch; відмови без запису, успіх — як раніше", async () => {
+    const rice = await seedFood("рис", 130, 27, 3, 280);
+    const chicken = await seedFood("курка", 165, 310, 36, 0);
+    const id = await pending(U, [{ foodId: rice, grams: 100, confidence: "high" }, { foodId: chicken, grams: 150, confidence: "high" }]);
+    const c = countingDb();
+    const r = createRepo(createDb(c.db));
+    expect(await r.updateMealGrams(U, id, [{ position: 1, grams: 120 }, { position: 2, grams: 0 }])).toBe(true);
+    expect(c.selects()).toBe(1);
+    const left = (await r.getMeal(U, id))!.items;
+    expect(left.map((i) => [i.position, i.grams])).toEqual([[1, 120]]);
+    // не свій / неіснуючий / не pending / усі вилучити — false
+    expect(await r.updateMealGrams(OTHER, id, [{ position: 1, grams: 5 }])).toBe(false);
+    expect(await r.updateMealGrams(U, 99999, [{ position: 1, grams: 5 }])).toBe(false);
+    expect(await r.updateMealGrams(U, id, [{ position: 1, grams: 0 }])).toBe(false);
+    await repo.cancelMeal(U, id);
+    expect(await r.updateMealGrams(U, id, [{ position: 1, grams: 5 }])).toBe(false);
+  });
+});

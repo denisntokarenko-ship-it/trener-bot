@@ -53,7 +53,7 @@ const hang = (signal: AbortSignal | null | undefined) =>
 function fakeTg() {
   const calls: Call[] = [];
   const downloads: string[] = [];
-  const s = { getFile: "ok" as Step, download: "ok" as Step };
+  const s = { getFile: "ok" as Step, download: "ok" as Step, editNotModified: false };
   let nextId = 500;
   const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
@@ -70,6 +70,10 @@ function fakeTg() {
       if (s.getFile === "hang") return hang(init?.signal);
       const fileId = String(payload.file_id);
       return Response.json({ ok: true, result: { file_id: fileId, file_unique_id: "u" + fileId, file_size: JPEG.length, file_path: `photos/${fileId}.jpg` } });
+    }
+    // Telegram на редагування без зміни тексту й клавіатури: 400 «message is not modified».
+    if (method === "editMessageText" && s.editNotModified) {
+      return Response.json({ ok: false, error_code: 400, description: "Bad Request: message is not modified: specified new message content and reply markup are exactly the same as a current content and reply markup of the message" }, { status: 400 });
     }
     const result = method === "sendMessage" ? { message_id: nextId++, date: 0, chat: { id: OWNER, type: "private" } } : true;
     return Response.json({ ok: true, result });
@@ -493,6 +497,27 @@ describe("P3.3.8 і P3.3.15 введення грамів", () => {
     await say("100 90");
     expect(await grams(id)).toEqual([100, 90]);
     expect(await count("workout_sets")).toBe(0);
+  });
+
+  it("борг [3.3]: Telegram «message is not modified» на редагування — успіх: грами записані, нового повідомлення немає", async () => {
+    const id = await pendingTwo();
+    tg.steps.editNotModified = true;
+    const before = tg.calls.filter((c) => c.method === "sendMessage").length;
+    await say("200 150");
+    expect(await grams(id)).toEqual([200, 150]);
+    expect((await meals())[0]!.await_grams_at).toBeNull();
+    expect(tg.calls.filter((c) => c.method === "editMessageText").at(-1)!.payload.message_id).toBe(500); // редагували наявне
+    expect(tg.calls.filter((c) => c.method === "sendMessage")).toHaveLength(before); // нового немає
+    expect(tg.calls.filter((c) => c.method === "sendMessage").some((c) => String(c.payload.text).includes("рис варений ~200 г"))).toBe(false);
+  });
+
+  it("немає message_id — лишається запасне нове повідомлення (не «not modified»)", async () => {
+    const id = await pendingTwo();
+    await env.DB.prepare("UPDATE meals SET message_id = NULL WHERE id = ?").bind(id).run(); // немає що редагувати → шлях sendMessage
+    await say("200 150");
+    expect(await grams(id)).toEqual([200, 150]);
+    expect(String(tg.calls.filter((c) => c.method === "sendMessage").at(-1)!.payload.text)).toContain("рис варений ~200 г");
+    expect((await meals())[0]!.message_id).not.toBeNull();
   });
 
   it("команда знімає очікування грамів", async () => {
