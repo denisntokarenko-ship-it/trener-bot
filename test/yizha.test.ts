@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Update } from "grammy/types";
+import { foodsSeedStatements, type FoodsSeed } from "../scripts/foods-seed-core";
 import { handleRequest, telegramHandler } from "../src/app";
 import { isFoodCb } from "../src/bot/food-flow";
 import { BOT_COMMANDS, FOOD_ASK_HEAD, foodAskFieldOf, foodAskText } from "../src/bot/texts";
@@ -373,5 +374,29 @@ describe("маршрутизація й меню", () => {
     expect(foodAskFieldOf(foodAskText("height_cm"))).toBe("height_cm");
     expect(foodAskFieldOf("…")).toBeNull();
     expect(foodAskFieldOf(undefined)).toBeNull();
+  });
+});
+
+describe("В1 рев'ю Фази 3: /yizha показує знімок, не foods наживо", () => {
+  const seedOf = (kcal: number): FoodsSeed => ({
+    source_note: "test",
+    sampled_at: "2026-11-20",
+    foods: [{ name_uk: "рис варений", aliases: ["рис варений"], fdc_ref: "990001", kcal_100: kcal, protein_100_dg: 27, fat_100_dg: 3, carbs_100_dg: 280 }],
+  });
+  const summary = () => texts().filter((t) => t.includes("Їжа за сьогодні")).at(-1)!; // далі може йти питання про профіль
+  const applySeed = (kcal: number) => env.DB.batch(foodsSeedStatements(seedOf(kcal), 0).map((q) => env.DB.prepare(q)));
+
+  it("правка foods повторним сидом після підтвердження не змінює ні рядка прийому, ні «З'їдено»", async () => {
+    await applySeed(130);
+    const riceId = (await env.DB.prepare("SELECT id FROM foods WHERE fdc_ref = '990001'").first<{ id: number }>())!.id;
+    await meal(riceId, 180, { at: "2026-11-20T08:00:00Z" }); // 10:00 Києва, знімок 234 ккал
+    await say("/yizha");
+    const before = summary();
+    expect(before).toContain("• 10:00 — рис варений 180 г · 234 ккал");
+    expect(before).toContain("З'їдено <b>234</b> ккал");
+    await applySeed(200); // сид оновлює продукт на місці (ON CONFLICT (fdc_ref) DO UPDATE)
+    expect(await env.DB.prepare("SELECT kcal_100 FROM foods WHERE id = ?").bind(riceId).first("kcal_100")).toBe(200);
+    await say("/yizha");
+    expect(summary()).toBe(before);
   });
 });

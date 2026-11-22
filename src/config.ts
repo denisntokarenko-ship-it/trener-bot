@@ -25,7 +25,7 @@ export const FOOD_CALL_EST_MICRO = 15_000;
 export const FOOD_TIMEOUT_MS = 25_000;
 /** Стеля відповіді моделі (мислення вимкнено `between_tools`). */
 export const FOOD_MAX_TOKENS = 1500;
-/** Найбільше позицій у відповіді. */
+/** Найбільше позицій у відповіді моделі й у прийомі — єдине джерело (parseFoodResponse, createPendingMeal, промпт); CHECK `position` 1–8 у БД — та сама межа. */
 export const FOOD_MAX_ITEMS = 8;
 /** Найбільший розмір фото, що завантажуємо (беремо найбільший PhotoSize не більший за це). */
 export const FOOD_PHOTO_MAX_BYTES = 2 * 1024 * 1024;

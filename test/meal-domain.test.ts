@@ -1,5 +1,7 @@
 // P3.3.3, P3.3.8, P3.3.14: чисті функції потоку фото — межі валідації, введення грамів, округлення, вартість.
 import { describe, expect, it } from "vitest";
+import { FOOD_SYSTEM } from "../src/ai/food-prompt";
+import { FOOD_MAX_ITEMS } from "../src/config";
 import { costMicro, estimateOf, itemNutrients, looksDryPortion, parseFoodResponse, parseGrams, type FoodResponse } from "../src/domain/meal";
 
 const ok = (items: unknown[], extra: Partial<FoodResponse> = {}): FoodResponse => ({
@@ -133,5 +135,25 @@ describe("В5 рев'ю 3.3: «сухий/сирий» стан порції", (
     const r = parseFoodResponse(ok([{ ...it0, name_uk: "рис сухий", grams: 200, kcal_100: 350, protein_100: 7, fat_100: 1, carbs_100: 77, confidence: "high" }]));
     expect(r).toMatchObject({ kind: "ok", items: [{ confidence: "low" }] });
     expect(parseFoodResponse(ok([it0]))).toMatchObject({ items: [{ confidence: "high" }] });
+  });
+});
+
+// Сирі тексти файлів підтягує Vite під час збирання тесту (у workerd немає доступу до диска).
+const ITEM_LIMIT_SOURCES = import.meta.glob(["../src/domain/meal.ts", "../src/db/repo.ts", "../src/ai/food-prompt.ts"], { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+
+describe("Д2 рев'ю Фази 3: одне джерело ліміту позицій", () => {
+  it("розбір, repo й промпт беруть FOOD_MAX_ITEMS: без власних копій константи й літерала 8", () => {
+    expect(Object.keys(ITEM_LIMIT_SOURCES).sort()).toEqual(["../src/ai/food-prompt.ts", "../src/db/repo.ts", "../src/domain/meal.ts"]);
+    for (const [path, src] of Object.entries(ITEM_LIMIT_SOURCES)) {
+      expect(src, path).toContain("FOOD_MAX_ITEMS");
+      expect(src, path).not.toContain("FOOD_ITEMS_MAX");
+    }
+    expect(ITEM_LIMIT_SOURCES["../src/db/repo.ts"]).not.toMatch(/items\.length > 8(?!\d)/);
+    expect(FOOD_SYSTEM).toContain(`Не більше ${FOOD_MAX_ITEMS} позицій`);
+  });
+
+  it("межа розбору йде за константою: FOOD_MAX_ITEMS позицій проходять, на одну більше — INVALID", () => {
+    expect(kind(ok(Array.from({ length: FOOD_MAX_ITEMS }, () => it0)))).toBe("ok");
+    expect(kind(ok(Array.from({ length: FOOD_MAX_ITEMS + 1 }, () => it0)))).toBe("invalid");
   });
 });

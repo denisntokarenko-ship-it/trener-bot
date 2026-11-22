@@ -313,3 +313,13 @@ new = '''        LIMIT ${limit + 100000}`);
       return rows.map((r) => r.name_uk);'''
 why = "Д4: список відомих назв без ліміту 300"
 match = "Д4"
+
+# --- Рев'ю Фази 3 (R-3): мутант, що вижив, і тест fix/phase-3-review, що його вбиває ---
+
+[[mutant]]
+id = "X2"
+file = "src/bot/meal-flow.ts"
+old = '''localDate: localDate(now(), tz), estMicro'''
+new = '''localDate: localDate(now(), "UTC"), estMicro'''
+why = "резерв ліміту за UTC-датою, а не локальною (ліміт скидається о 02:00 Києва; aiSpendToday за локальну дату не бачить нічних витрат)"
+match = "В2 рев'ю Фази 3|00:30 Києва|локальний день вичерпано"
