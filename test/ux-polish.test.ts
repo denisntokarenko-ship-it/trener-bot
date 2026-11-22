@@ -1,11 +1,11 @@
 // Завдання 1b.4: оформлення бота й текстів (docs/spec/phase-1b.md, §6 і історії P3.4–P3.6).
 // Екрани — чисті функції, тож перевіряємо їх напряму: ліміти, екранування HTML, знімки, відео-кнопка, мова.
 import { describe, expect, it } from "vitest";
-import { runSetBotProfile, type SetBotProfileIo } from "../scripts/set-bot-profile-core.ts";
+import { AVATAR_FILES, runSetBotProfile, type SetBotProfileIo } from "../scripts/set-bot-profile-core.ts";
 import { ENUMS, LIMIT_OPTS, emptyDayScreen, enumScreen, goalNoteScreen, limitsScreen, liftScreen, noteScreen, numberScreen, planScreen, profileScreen, resumeScreen, welcomeScreen, type Screen } from "../src/bot/onboarding-view";
 import { fmtSets, progressText } from "../src/bot/progress-view";
 import {
-  BOT_COMMANDS, BOT_DESCRIPTION, NEXT_WORKOUT, dayLabel, BOT_SHORT_DESCRIPTION, BTN, RATING_TEXT, TELEGRAM_TEXT_MAX, badLift, badWeightText, clip, dayName, esc, greeting,
+  BOT_COMMANDS, BOT_DESCRIPTION, BOT_PROFILES, NEXT_WORKOUT, PREVIEW_BOT_USERNAME, dayLabel, BOT_SHORT_DESCRIPTION, BTN, RATING_TEXT, TELEGRAM_TEXT_MAX, badLift, badWeightText, clip, dayName, esc, greeting,
   programText, recordReps, recordWeight, summaryText, swapTitle, weightPromptText,
 } from "../src/bot/texts";
 import { screenKeyboard, screenText, swapMenu, weightPrompt, type ScreenModel } from "../src/bot/workout-view";
@@ -382,62 +382,137 @@ describe("мова: літералів поза texts.ts немає", () => {
 
 describe("P3.6 set-bot-profile", () => {
   const TOKEN = "123456:SECRET-BOT-TOKEN";
+  const PHOTO = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
 
-  /** Фейковий Telegram зі станом: set* змінюють те, що повертають get*. */
-  function harness(fail?: string) {
+  /** Фейковий Telegram зі станом: set* змінюють те, що повертають get*. `username` — кому належить токен. */
+  function harness(opts: { fail?: string; username?: string } = {}) {
     const calls: string[] = [];
     const out: string[] = [];
-    const state = { commands: [] as { command: string; description: string }[], description: "", short: "" };
+    const photos: { photo: string; avatar: Blob | string | null }[] = [];
+    const reads: string[] = [];
+    const state = { name: "", commands: [] as { command: string; description: string }[], description: "", short: "" };
     const io: SetBotProfileIo = {
       env: { TELEGRAM_BOT_TOKEN: TOKEN },
       log: (l) => out.push(l),
       error: (l) => out.push(l),
+      readFile: (path) => {
+        reads.push(path);
+        return PHOTO;
+      },
       fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
         const method = String(input).slice(String(input).lastIndexOf("/") + 1);
-        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
         calls.push(method);
-        if (method === fail) return Response.json({ ok: false, description: `Bad Request: token ${TOKEN}` });
+        if (method === opts.fail) return Response.json({ ok: false, description: `Bad Request: token ${TOKEN}` });
         let result: unknown = true;
-        if (method === "getMyCommands") result = state.commands;
+        if (init?.body instanceof FormData) {
+          photos.push({ photo: String(init.body.get("photo")), avatar: init.body.get("avatar") as Blob | string | null });
+          return Response.json({ ok: true, result });
+        }
+        const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
+        if (method === "getMe") result = { username: opts.username ?? PREVIEW_BOT_USERNAME };
+        else if (method === "getMyName") result = { name: state.name };
+        else if (method === "getMyCommands") result = state.commands;
         else if (method === "getMyDescription") result = { description: state.description };
         else if (method === "getMyShortDescription") result = { short_description: state.short };
+        else if (method === "setMyName") state.name = String(body.name);
         else if (method === "setMyCommands") state.commands = body.commands as typeof state.commands;
         else if (method === "setMyDescription") state.description = String(body.description);
         else if (method === "setMyShortDescription") state.short = String(body.short_description);
         return Response.json({ ok: true, result });
       }) as typeof fetch,
     };
-    return { io, calls, out, state };
+    return { io, calls, out, state, photos, reads };
   }
+  const writes = (calls: string[]) => calls.filter((c) => c.startsWith("setMy"));
 
-  it("перший прогін пише все; другий — без жодного set* і з кодом 0", async () => {
+  it("перший прогін пише все (з аватаркою); другий — лише аватарка (її не прочитати) і код 0", async () => {
     const h = harness();
-    expect(await runSetBotProfile(h.io)).toBe(0);
-    expect(h.calls.filter((c) => c.startsWith("setMy")).sort()).toEqual(["setMyCommands", "setMyDescription", "setMyShortDescription"]);
-    expect(h.state).toEqual({ commands: [...BOT_COMMANDS], description: BOT_DESCRIPTION, short: BOT_SHORT_DESCRIPTION });
+    expect(await runSetBotProfile(["preview"], h.io)).toBe(0);
+    expect(writes(h.calls).sort()).toEqual(["setMyCommands", "setMyDescription", "setMyName", "setMyProfilePhoto", "setMyShortDescription"]);
+    expect(h.state).toEqual({ name: BOT_PROFILES.preview.name, commands: [...BOT_COMMANDS], description: BOT_PROFILES.preview.description, short: BOT_PROFILES.preview.shortDescription });
     h.calls.length = 0;
     h.out.length = 0;
-    expect(await runSetBotProfile(h.io)).toBe(0);
-    expect(h.calls.filter((c) => c.startsWith("setMy"))).toEqual([]);
-    expect(h.out).toEqual(["Меню команд: без змін", "Опис: без змін", "Короткий опис: без змін"]);
+    expect(await runSetBotProfile(["preview"], h.io)).toBe(0);
+    expect(writes(h.calls)).toEqual(["setMyProfilePhoto"]);
+    expect(h.out.slice(1, 5)).toEqual(["Назва: без змін", "Меню команд: без змін", "Опис: без змін", "Короткий опис: без змін"]);
   });
 
-  it("змінений опис — оновлюється лише він", async () => {
+  it("--no-photo: аватарку не чіпає і файл не читає", async () => {
     const h = harness();
-    await runSetBotProfile(h.io);
+    expect(await runSetBotProfile(["preview", "--no-photo"], h.io)).toBe(0);
+    expect(h.calls).not.toContain("setMyProfilePhoto");
+    expect(h.reads).toEqual([]);
+  });
+
+  it("аватарка: multipart, photo = static + attach://, файл — JPG цього середовища", async () => {
+    const h = harness();
+    await runSetBotProfile(["preview"], h.io);
+    expect(h.reads).toEqual([AVATAR_FILES.preview]);
+    expect(AVATAR_FILES).toEqual({ preview: "assets/bot/preview.jpg", production: "assets/bot/prod.jpg" });
+    const [p] = h.photos;
+    expect(JSON.parse(p!.photo)).toEqual({ type: "static", photo: "attach://avatar" });
+    const blob = p!.avatar as Blob;
+    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(PHOTO);
+  });
+
+  it("production: профіль робочого бота — інша назва, опис і аватарка, ніж у тестового", async () => {
+    const h = harness({ username: "Trener_prod_bot" });
+    expect(await runSetBotProfile(["production"], h.io)).toBe(0);
+    expect(h.state.name).toBe(BOT_PROFILES.production.name);
+    expect(h.state.description).toBe(BOT_DESCRIPTION);
+    expect(h.state.short).toBe(BOT_SHORT_DESCRIPTION);
+    expect(h.reads).toEqual([AVATAR_FILES.production]);
+    expect(BOT_PROFILES.production.name).not.toBe(BOT_PROFILES.preview.name);
+  });
+
+  it("токен не того середовища: нічого не пишемо (ні назву, ні аватарку), код 1", async () => {
+    const wrongProd = harness(); // токен тестового бота, ціль production
+    expect(await runSetBotProfile(["production"], wrongProd.io)).toBe(1);
+    expect(writes(wrongProd.calls)).toEqual([]);
+    const wrongPreview = harness({ username: "Trener_prod_bot" }); // токен робочого, ціль preview
+    expect(await runSetBotProfile(["preview"], wrongPreview.io)).toBe(1);
+    expect(writes(wrongPreview.calls)).toEqual([]);
+    expect(wrongPreview.out.join("\n")).not.toContain(TOKEN);
+  });
+
+  it("без цілі або з чужою ціллю — код 1 без жодного запиту", async () => {
+    for (const args of [[], ["dev"], ["--no-photo"]]) {
+      const h = harness();
+      expect(await runSetBotProfile(args, h.io)).toBe(1);
+      expect(h.calls).toEqual([]);
+    }
+  });
+
+  it("змінений опис — оновлюється лише він (і аватарка)", async () => {
+    const h = harness();
+    await runSetBotProfile(["preview"], h.io);
     h.state.description = "старий опис";
     h.calls.length = 0;
-    expect(await runSetBotProfile(h.io)).toBe(0);
-    expect(h.calls.filter((c) => c.startsWith("setMy"))).toEqual(["setMyDescription"]);
+    expect(await runSetBotProfile(["preview"], h.io)).toBe(0);
+    expect(writes(h.calls).sort()).toEqual(["setMyDescription", "setMyProfilePhoto"]);
   });
 
   it("помилка Telegram — код 1, токен не потрапляє в вивід; без токена — код 1", async () => {
-    const h = harness("setMyCommands");
-    expect(await runSetBotProfile(h.io)).toBe(1);
+    const h = harness({ fail: "setMyCommands" });
+    expect(await runSetBotProfile(["preview"], h.io)).toBe(1);
     expect(h.out.join("\n")).not.toContain(TOKEN);
     const h2 = harness();
-    expect(await runSetBotProfile({ ...h2.io, env: {} })).toBe(1);
+    expect(await runSetBotProfile(["preview"], { ...h2.io, env: {} })).toBe(1);
     expect(h2.calls).toEqual([]);
+  });
+
+  it("два бота відрізняються з першого погляду: назва, обидва описи; ліміти Telegram", () => {
+    const { preview, production } = BOT_PROFILES;
+    expect(preview.name).toContain("тест");
+    expect(preview.name.startsWith("🧪")).toBe(true);
+    expect(production.name).not.toMatch(/тест/i);
+    expect(preview.description).not.toBe(production.description);
+    expect(preview.shortDescription).not.toBe(production.shortDescription);
+    for (const p of [preview, production]) {
+      expect([...p.name].length).toBeLessThanOrEqual(64);
+      expect([...p.description].length).toBeLessThanOrEqual(512);
+      expect([...p.shortDescription].length).toBeLessThanOrEqual(120);
+    }
   });
 });
 

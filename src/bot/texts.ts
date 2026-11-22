@@ -90,6 +90,24 @@ export const BOT_DESCRIPTION =
 /** `setMyShortDescription` ≤ 120 символів: рядок у профілі бота. */
 export const BOT_SHORT_DESCRIPTION = "Щоденник тренувань: персональний план, ваги й повтори в кілька натискань.";
 
+/** Юзернейм тестового (preview) бота. Скрипт `set-bot-profile` звіряє його з `getMe`, щоб тестове оформлення не потрапило на робочого й навпаки. */
+export const PREVIEW_BOT_USERNAME = "Tokarenko_trener_preview_bot";
+
+/** Профіль бота для середовища. Два бота мають відрізнятися з першого погляду (назва, опис, аватарка `assets/bot/`). `setMyName` ≤ 64 символів. */
+export const BOT_PROFILES = {
+  production: {
+    name: "💪 Тренер",
+    description: BOT_DESCRIPTION,
+    shortDescription: BOT_SHORT_DESCRIPTION,
+  },
+  preview: {
+    name: "🧪 Тренер · тест",
+    description:
+      "🧪 ТЕСТОВИЙ бот «Тренер»: тут перевіряють нові функції, дані можуть зникнути. Не записуй сюди справжні тренування — для них є робочий бот «💪 Тренер».",
+    shortDescription: "🧪 ТЕСТ. Справжні тренування — у боті «💪 Тренер».",
+  },
+} as const;
+
 export function greeting(firstName: string): string {
   const list = BOT_COMMANDS.map((c) => `/${c.command} — ${c.description}`).join("\n");
   return `👋 <b>Привіт, ${esc(firstName)}!</b>\nЯ записую твої тренування й підказую ваги.\n\n${list}`;

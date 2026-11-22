@@ -13,7 +13,7 @@ const scripts = resolve(import.meta.dirname);
 /** Точки входу: аргументи, очікуваний код виходу і фрагмент виводу. */
 const ENTRY = {
   'set-webhook.ts': { args: ['preview'], code: 1, out: 'Не задано змінну середовища TELEGRAM_BOT_TOKEN' },
-  'set-bot-profile.ts': { args: [], code: 1, out: 'Не задано змінну середовища TELEGRAM_BOT_TOKEN' },
+  'set-bot-profile.ts': { args: ['preview'], code: 1, out: 'Не задано змінну середовища TELEGRAM_BOT_TOKEN' },
   'seed.ts': { args: [], code: 0, out: 'INSERT' },
   'seed-foods.ts': { args: [], code: 0, out: 'INSERT' },
   'build-foods-seed.ts': { args: [], code: 2, out: 'Використання' },

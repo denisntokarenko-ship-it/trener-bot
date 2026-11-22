@@ -30,6 +30,15 @@
 5. *Людина:* `powershell -ExecutionPolicy Bypass -File scripts\setup-secrets.ps1 -Only production` — секрети + вебхук на `trener-prod.maistry-gromady.workers.dev` (`drop_pending_updates: false` → накопичене доходить). Скрипт відмовляє, поки в `users` нової БД 0 рядків.
 6. *Агент:* `/health`; Observability нового акаунта — перший `POST /tg/webhook` `ok` і тік крону; `SELECT max(created_at) FROM processed_updates` — новий час.
 
+### Що сталося (2026-11-22, UTC)
+
+- **16:41–16:48 крок 0** (preview): 4 секрети, `set-webhook preview` → `@Tokarenko_trener_preview_bot`, хост `trener-preview.maistry-gromady.workers.dev`; перший `/start` у новому `trener-preview` — 16:48:36 (`processed_updates` 1). Перша спроба впала: `set-webhook` під голим node → `ERR_MODULE_NOT_FOUND src/domain/plan` (імпорт без `.ts` у `texts.ts`) — виправлено, `scripts/test-entrypoints.mjs` запускає кожен `scripts/*.ts` справжнім node.
+- **Крок 1:** `auth create trener-old` — дві перші спроби впали («Consent denied» — не натиснуто «Allow»; тайм-аут 2 хв), третя з `--browser=false` у приватному вікні — ✅. `whoami --profile` не існує: свідок профілю — читання старого акаунта (`d1 list --config wrangler.old.jsonc --profile trener-old`).
+- **17:00 недільний звіт** — ще зі старого прода (свідок 4.4). **Крок 2:** `deleteWebhook` (вебхук до — `trener-prod.adhd-bot.workers.dev`, після — порожній, pending 0).
+- **17:13 крок 3:** крони старих `trener-prod` і `trener-preview` → `[]` (API `schedules`); Worker і D1 старого акаунта на місці. Бекап старого прода `prod-20261122-171313.sql` (sha256 `6a5b3d6d…`) + `-data.sql` (`49370a5a…`), preview — `preview-20261122-171324.sql` (`efdb7de0…`) + `-data.sql` (`2ed1ec17…`), стабільна тека `D:CLOud CODEТренерackups`. Bookmark старого прода — `000000e0-00000000-0000512b-dbd7270fafa4fe4bd63a7dd9900ee92e`. Після бекапу стара база не змінювалась (останній тік 17:00:30, `processed_updates` 48).
+- **17:14:32 крок 4:** `import-data.mjs` у новий `trener-prod` (bookmark до імпорту `0000000e-00000000-0000512b-33dfa92e6584cc04b6ed526cd999b8cf`; той самий файл спершу — у локальну D1): 22 таблиці = стара БД (`users` 1, `user_profiles` 1, `programs` 1, `program_days` 2, `program_exercises` 12, `exercises` 30, `exercise_substitutes` 40, `body_weights` 3, `foods` 106, `food_aliases` 253, `meals` 1, `meal_items` 1, `nutrition_targets` 1, `ai_usage` 5, `ai_proposals` 1, `chat_turns` 6, `reminders_sent` 3, `processed_updates` 48, `cron_state` 1, решта 0), вміст 520/520. Тік нового крону 17:15:39 до секретів — помилка без заявок (`runReminders` без токена кидає до будь-якої заявки), `last_ok_at` не зрушив.
+- **17:16:53 крок 5:** секрети prod (версія `22249f6c`, Secret Change), «PROD database users: 1», перевірка Worker 200, `set-webhook production` → `@Tokarenko_trener_bot`, хост `trener-prod.maistry-gromady.workers.dev`, pending 0. Перший апдейт у новому проді — 17:17:37 (`processed_updates` 48 → 49, `/progres`).
+
 **Відкат на старий акаунт** (`3d91f589…`; його Time Travel — 7 днів, Free):
 - *До кроку 5* (вебхук ще не на новому): база старого прода не змінювалась. Крон назад — `triggers deploy --env production --config wrangler.old.jsonc --profile trener-old`; секрет вебхука ніде не записаний, тож вебхук — заново: `git worktree add ../trener-old 643ccee`, `npm ci`, wrangler залогінений у старий акаунт, `powershell -ExecutionPolicy Bypass -File scripts\setup-secrets.ps1 -Only production` зі **старого** checkout (його скрипт за замовчуванням ставить `trener-prod.adhd-bot.workers.dev`; `ANTHROPIC_API_KEY` у старому Worker уже є).
 - *Після кроку 5*, коли в новому вже є нові записи: спершу `npm run backup:prod` нового прода, далі те саме, що вище, а нові дані — `import-data.mjs` у **порожню** D1 старого акаунта (`d1 create`, міграції, `database_id` у старому конфігу, `deploy`), бо в непорожню базу скрипт не пише.
@@ -54,15 +63,16 @@ npm run set-webhook -- preview
 
 Скрипт друкує `@username` бота — звір, що це бот потрібного середовища. Повторний запуск безпечний.
 
-## Профіль бота (меню, опис)
+## Профіль бота (назва, аватарка, меню, опис)
 
-Той самий `TELEGRAM_BOT_TOKEN` (потрібного бота) у середовищі терміналу:
+Два боти мають відрізнятися з першого погляду: робочий — «💪 Тренер», тестовий (`@Tokarenko_trener_preview_bot`) — «🧪 Тренер · тест». Оформлення — `BOT_PROFILES` у `src/bot/texts.ts`, аватарки — `assets/bot/` (SVG-джерело, PNG 640×640, JPG для Telegram; перегенерація — `python assets/bot/render.py`). Токен вводиш прихованим вводом, не аргументом; по одному боту за запуск:
 
-```bash
-npm run set-bot-profile
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\set-bot-profile.ps1 preview
+powershell -ExecutionPolicy Bypass -File scripts\set-bot-profile.ps1 production
 ```
 
-Скрипт читає з Telegram меню команд, опис і короткий опис (`getMyCommands`, `getMyDescription`, `getMyShortDescription`) і пише лише те, що відрізняється; тексти — `BOT_COMMANDS`, `BOT_DESCRIPTION`, `BOT_SHORT_DESCRIPTION` у `src/bot/texts.ts`. Повторний запуск безпечний («без змін»). `set-webhook` теж виставляє меню команд.
+Скрипт спершу питає `getMe` і відмовляє (нічого не змінивши), якщо токен не того бота: preview — лише `@Tokarenko_trener_preview_bot`, production — будь-який інший. Далі читає назву, меню команд, опис і короткий опис (`getMyName`, `getMyCommands`, `getMyDescription`, `getMyShortDescription`) і пише лише різницю («без змін»). Аватарку Telegram прочитати не дає, тож `setMyProfilePhoto` (Bot API, лише JPG) виконується щоразу; `-NoPhoto` пропускає. `set-webhook` теж виставляє меню команд.
 
 ## Чек-лист «міграція прода»
 
@@ -77,10 +87,11 @@ npm run set-bot-profile
 
 ## Відкат через Time Travel
 
-- Time Travel тримає історію **30 днів на Paid** (7 на Free; акаунт тепер платний). Bookmark — точка в часі; restore повертає БД цілком у цей стан.
+- Time Travel тримає історію **30 днів на Paid** (7 на Free). Акаунт `d156e789…` — Paid за словами людини (2026-11-22); API підписок токеном wrangler не читається (Authentication error), тариф у Billing не звірено агентом. Bookmark — точка в часі; restore повертає БД цілком у цей стан.
 - ⚠️ Restore відкочує **всі** дані, записані після bookmark, — не лише зміни міграції. Тренування, записані між міграцією й відкатом, зникнуть: перед restore зроби ще один `npm run backup:prod`, щоб їх можна було дістати вручну.
 - Без записаного bookmark: `npx wrangler d1 time-travel restore trener-prod --env production --timestamp=2026-10-23T12:00:00Z`.
 - Перевірка після restore: `npx wrangler d1 execute trener-prod --remote --env production --command "SELECT name FROM d1_migrations"`.
+- **Репетиція на preview (4.4, 2026-11-22 15:09 UTC):** `time-travel info trener-preview --env preview` → bookmark; `INSERT` тестового `processed_updates` (update_id 999000044) → рядок є, усього 63; `time-travel restore trener-preview --env preview --bookmark=<записаний>` → рядка немає, усього 62. Прапорця `--yes` у `restore` немає (`Unknown argument: yes`); у неінтерактивному запуску (`CI=1`, stdin не термінал) wrangler сам відповідає «yes» на «OK to proceed» — restore у скрипті не має запобіжника, перевір `--env` і ім'я БД до запуску. Результат дає bookmark для скасування («To undo … restore to the previous bookmark»).
 
 ## Відкат пізніше ніж за 7 днів
 
@@ -223,6 +234,32 @@ Worker `https://trener-prod.adhd-bot.workers.dev` (до переносу 2026-11
 - **Живий пакет 2026-11-22 11:32–11:33 UTC** (людина, PR #40): анкета норми → `nutrition_targets` `formula`, `valid_from` 2026-11-22, 2940 ккал; фото → `ai_usage` `food_photo` `claude-sonnet-5-5`, 6669 + 83 токенів, `cost_micro` 14 168 (= 6669 × 2 + 83 × 10, не резерв 15 000), `aiSpendToday` 14 168 ≤ 300 000; ✅ → `meals` id 1 `confirmed`, 1 позиція (яблуко 180 г, `seed`) зі знімком 94 ккал / 0,5 / 0,4 / 24,8 г, `NULL` у знімку 0; `foods` `ai_estimate` 0, сиріт 0. `processed_updates` 35 → 42.
 - **Логи пакета:** `wrangler tail` (12:46–15:46 UTC 21.11) завершився до пакета, тож доказ — Workers Observability (дашборд, лише читання): за 24 год 212 подій, **0 Errors**; 7 × `POST /tg/webhook`, усі `ok`, версія `9c67e31b`; вебхук фото — статус 200, `cpuTime` 112 мс, wall 3,4 с.
 - **Розбіжність (не перевірено):** банер Observability пише «You're on Workers Free», а цей RUNBOOK — «платний тариф». `cpuTime` 112 мс пройшов `ok`; тариф звірити в Billing перед Фазою 4.
+
+## Реліз Фази 4 — факти (2026-11-22, 4.4)
+
+До релізу: прод на коді Фази 3 (`main ff026a3`), версія `9c67e31b` (остання і за `versions list`: Secret Change після неї не було; секрети `ALLOWED_TELEGRAM_IDS`, `ANTHROPIC_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`), міграції 0000–0008. Реліз: `0009_ai_proposals` (лише нові таблиці `ai_proposals`, `chat_turns`), код `main` (`643ccee`). Нових секретів немає: чат і недільний коментар ходять тим самим `ANTHROPIC_API_KEY`.
+
+### План відкату Фази 4 (записано до першої prod-команди)
+
+Сумісність: код Фази 3 зі схемою 0009 працює — нових таблиць не читає, наявні таблиці 0009 не змінює. Код Фази 4 без 0009 падає (пише `chat_turns`, `ai_proposals`). Порядок: міграція → деплой; відкат — спершу код.
+
+1. **Збій міграції 0009** (до деплою): код Фази 3 ще працює. `SELECT name FROM d1_migrations` і `SELECT name FROM sqlite_master WHERE name IN ('ai_proposals','chat_turns')`. Частково створені таблиці не лагодити руками: `time-travel restore --bookmark=<до міграції>` (значення — у коментарі PR 4.4). Атомарність файлу міграції в D1 — не перевірено (як у 3.5).
+2. **Збій коду після деплою** (`/health` не `ok`, помилки в Observability/tail, бот мовчить на текст): `npx wrangler rollback 9c67e31b-cc89-4c17-bfc2-9ef550c6cdb9 --env production`. Базу не чіпати (крок «Сумісність»). Пропозиції `pending` код Фази 3 ігнорує; кнопки [Так]/[Ні] (`i:…`) у старих повідомленнях після відкату потрапляють у загальний обробник кнопок тренування (`flow.callback`) і дають тост «Кнопка застаріла» — тиші немає (рев'ю 4.4, Д2).
+3. **ШІ дає шкоду** (хибна пропозиція застосувалась, перевитрата) при живій решті: `AI_DAILY_LIMIT_MICRO` (300 000 мкр = $0,30) обмежує лише **добу** — спільно для фото, чату й коментаря. **Місяць кодом не обмежено:** $0,30 × 30 = до **$9**, тоді як ліміт Anthropic Console — $5 (R-3); що робити, коли Console обріже ключ, — крок 5; рішення про місячну межу — `docs/spec/decisions.md`, ВІДКРИТЕ за людиною. Негайно при шкоді — крок 2. Застосовану пропозицію відкочує людина в боті (зміна підходів/вправи — звичайні дані програми), не restore.
+4. **Зіпсовано дані:** ще один `npm run backup:prod` → відкат коду → `time-travel restore --bookmark=<до міграції>` (стирає все після bookmark). Вікно Time Travel: тариф Workers не підтверджено (банер Observability — «Workers Free»), тож розраховуй на **≤ 7 днів — bookmark, далі — файл бекапу**: дамп даних `…-data.sql` зі стабільної теки за рецептом «Відкат пізніше ніж за 7 днів» на коміті з міграціями 0000–0008. 30 днів — лише після підтвердження Paid у Billing (рев'ю 4.4, В2).
+5. **Console обрізав ключ** (місячний ліміт витрат в Anthropic Console вичерпано; R-3, рев'ю 4.4 В1). **Як упізнати:** `/health` → `ok`, крон `ok`, вебхуки в Observability/tail — `ok`, але кожен виклик ШІ відхиляється з 4xx: на фото людина бачить «Не вдалося розібрати відповідь. Спробуй ще раз.» (`MEAL_INVALID`), у чаті — «Не вдалося отримати відповідь. Спробуй ще раз.» (`CHAT_INVALID`), недільний звіт приходить без 💬. У логах Observability — `anthropic call failed` зі `status` 4xx (фото/чат) або `weekly comment failed`; у `ai_usage` за день нових рядків із `input_tokens > 0` немає (резерв знімається, бо 4xx не оплачується). **Що робити:** відкат коду **не** допомагає (ключ той самий) — людина в Anthropic Console → Limits піднімає місячний ліміт (рекомендовано ≥ $10) або чекає початку місяця; ключ і секрет `ANTHROPIC_API_KEY` не міняти. Без ШІ решта бота працює: тренування, вага, нагадування, `/yizha` з уже записаного.
+
+### Що сталося (2026-11-22, UTC)
+
+- **15:06 бекап:** `npm run backup:prod` → `prod-20261122-150618.sql` (93 920 Б) і `…-data.sql` (73 608 Б); «Рядки (дамп = БД)» для 21 таблиці, серед них `workout_sets` 0, `body_weights` 3, `meals` 1, `nutrition_targets` 1. Обидва файли скопійовано в стабільну `D:\01CLOud CODE\Тренер\backups\` (gitignored): sha256 повного `25d510c0…`, даних `c1807077…` — копія = оригінал.
+- **Репетиція на дампі прода** (локальна D1, кроки розділу «Генеральна репетиція»): дамп даних → чиста БД з 0000–0008 → 22 лічильники = прод; `0009` застосовано → `ai_proposals`, `chat_turns` порожні, рядки `meals`, `meal_items`, `nutrition_targets`, `ai_usage`, `reminders_sent`, `body_weights`, `program_exercises` байт у байт до/після, CHECK `kind` відхиляє невалідний рядок на прод-даних.
+- **15:06:47 bookmark** до 0009 і знімок «до» — у коментарі PR #47 (не в git).
+- **15:08 міграція:** `npm run db:migrate:prod` → `0009_ai_proposals.sql ✅`.
+- **15:08 деплой:** `npm run deploy:prod -- --message "main 643ccee (4.4)"` → версія `c7ffa35f`; `git diff origin/main` — лише `docs/`; `/health` → `ok cron=8m ok=8m`, у tail `scriptVersion` = `c7ffa35f`. Секрети (імена): ті самі чотири, нових не треба.
+- **Тік 15:15:31 (код Фази 4):** `outcome: ok`, `cpuTime` 25 мс, wall 694 мс, `exceptions: []`, `cron tick {sent:0, skipped:0, released:0, errors:0}`; `/health` → `ok cron=0m ok=0m`. Знімок «після» = «до», крім `d1_migrations` 9 → 10 і нових порожніх `ai_proposals`, `chat_turns`.
+- **Репетиція Time Travel на preview** — розділ «Відкат через Time Travel».
+- **Живий пакет, чат 15:23 UTC** (людина, PR #47; крок 3 — «Заміни жим ногами на гоблет-присідання»: присідань зі штангою в прод-програмі немає): `chat_turns` 1–6. Відповідь 1 — вага 91 кг (22.11), середня 91,4 (= (935 + 898 + 910) / 3 дг з `body_weights`), норма **2940** ккал / Б 165 / Ж 73 / В 406 = рядок `nutrition_targets` `formula`; відповідь 2 — яблуко 180 г, 94 ккал = знімок `meal_items`. `ai_proposals` id 1 `swap_exercise` `pe:8` «Жим ногами» → «Гоблет-присідання» (день B), `rejected`, `decided_at` є, `applied_at` NULL, `message_id` 57; `program_exercises` — «Жим ногами» на місці (день 2, позиція 2). `ai_usage` 2–4 `chat` `claude-haiku-5-5`: 665 / 886 / 1426 мкр; `aiSpendToday` 22.11 = 17 145 ≤ 300 000. Tail: 4 × `POST /tg/webhook` `ok`, `c7ffa35f`, `cpuTime` 57 / 17 / 40 / 5 мс, wall ≤ 4,1 с, `exceptions` 0; `processed_updates` 42 → 46.
+- **Недільний звіт 22.11, 17:00:30 UTC** (19:00 Київ, природний тік на `c7ffa35f`, без ручного крону): `reminders_sent` `report` 22.11, `message_id` 64; `ai_usage` id 5 `weekly_comment` `claude-haiku-5-5`, 415 / 79 токенів, 81 мкр, `created_at` = `sent_at` (коментар згенеровано перед claim); `aiSpendToday` 22.11 = 17 226 (= 17 145 + 81), 5 рядків. Текст — скріншот людини (через оркестратора): «📊 Тиждень 16–22 листопада», «Цього тижня тренувань не було…», «⚖️ Середня вага 91,4 кг» і блок 💬 «…заплановано 3, виконано 0…» — числа коментаря 16, 22, 91,4 зі звіту, 3 і 0 — дозволені малі цілі. Логів цього тіку (tail/Observability) немає: tail зупинено о ~16:40, бо wrangler перелогінено в інший акаунт; БД читалась `--profile trener-old`, лише `SELECT`.
 
 ## Генеральна репетиція міграцій на дампі прода
 
