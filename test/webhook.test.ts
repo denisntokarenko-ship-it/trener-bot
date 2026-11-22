@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type UpdateHandler, handleRequest, telegramHandler } from "../src/app";
-import { SOMETHING_WRONG } from "../src/bot/texts";
-import { NOT_UNDERSTOOD } from "../src/bot/workout-view";
+import { CHAT_NO_KEY, SOMETHING_WRONG } from "../src/bot/texts";
 import {
   OWNER,
   SECRET,
@@ -226,11 +225,11 @@ describe("P1.4 /start", () => {
     expect(await userRow(OWNER)).toEqual({ id: OWNER, first_name: "Нове", tz: "Europe/Warsaw", created_at: 5 });
   });
 
-  it("перший апдейт — не /start: профіль створюється, відповідь «лише /start»", async () => {
+  it("перший апдейт — не /start: профіль створюється; текст іде в чат (без ключа — «Чат ще не підключений»)", async () => {
     const { tg, handler } = realHandler();
     await handleRequest(webhookRequest(textUpdate(3, OWNER, "привіт")), env, handler);
     expect(await count("users")).toBe(1);
-    expect(tg.calls.map((c) => c.payload.text)).toEqual([NOT_UNDERSTOOD]);
+    expect(tg.calls.map((c) => c.payload.text)).toEqual([CHAT_NO_KEY]);
   });
 
   it("first_name довший за 64 символи обрізається", async () => {

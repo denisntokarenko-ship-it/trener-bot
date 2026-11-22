@@ -245,6 +245,8 @@ export interface AiUsageReservation {
   estMicro: number;
   /** Денний ліміт, мікро-USD. */
   limitMicro: number;
+  /** Чат: відмовити, якщо є свіже (молодше за стільки мс) резервування того ж `purpose` без токенів — відповідь ще триває. */
+  exclusiveWithinMs?: number;
 }
 export interface AiUsageActual {
   inputTokens: number;
@@ -1241,13 +1243,17 @@ export function createRepo(db: Db) {
      * Повертає id рядка або null, якщо `сума за локальну дату + estMicro > limitMicro` чи користувача немає.
      */
     async reserveAiUsage(userId: number, r: AiUsageReservation, now: number): Promise<number | null> {
+      // `exclusiveWithinMs` (чат): той самий оператор ще й відмовляє, якщо є свіже резервування того ж purpose (токени 0/0) — два паралельні повідомлення дають один рядок.
+      const exclusive = r.exclusiveWithinMs
+        ? " AND NOT EXISTS (SELECT 1 FROM ai_usage x WHERE x.user_id = u.id AND x.purpose = ? AND x.input_tokens = 0 AND x.output_tokens = 0 AND x.created_at > ?)"
+        : "";
       const res = await db.$client
         .prepare(
           `INSERT INTO ai_usage (user_id, model, input_tokens, output_tokens, cost_micro, purpose, local_date, created_at)
            SELECT u.id, ?, 0, 0, ?, ?, ?, ? FROM users u
-           WHERE u.id = ? AND (SELECT COALESCE(SUM(cost_micro), 0) FROM ai_usage WHERE user_id = u.id AND local_date = ?) + ? <= ?`,
+           WHERE u.id = ? AND (SELECT COALESCE(SUM(cost_micro), 0) FROM ai_usage WHERE user_id = u.id AND local_date = ?) + ? <= ?${exclusive}`,
         )
-        .bind(r.model, r.estMicro, r.purpose, r.localDate, now, userId, r.localDate, r.estMicro, r.limitMicro)
+        .bind(r.model, r.estMicro, r.purpose, r.localDate, now, userId, r.localDate, r.estMicro, r.limitMicro, ...(r.exclusiveWithinMs ? [r.purpose, now - r.exclusiveWithinMs] : []))
         .run();
       return res.meta.changes === 1 ? res.meta.last_row_id : null;
     },
@@ -1439,6 +1445,22 @@ export function createRepo(db: Db) {
     async dayHasExercise(programDayId: number, exerciseId: number): Promise<boolean> {
       const rows = await db.all<{ n: number }>(sql`SELECT COUNT(*) AS n FROM program_exercises WHERE program_day_id = ${programDayId} AND exercise_id = ${exerciseId}`);
       return (rows[0]?.n ?? 0) > 0;
+    },
+
+    /**
+     * Стан пропозицій для контексту чату: відкриті (`pending`, не прострочені) і рішення кнопкою (`accepted`/`rejected`) не старші `sinceMs`.
+     * `expired` не повертається (збійні ходи — шум). Від нових до старих, не більше 8.
+     */
+    async listProposalsForChat(userId: number, now: number, sinceMs: number): Promise<ProposalView[]> {
+      const res = await db.$client
+        .prepare(
+          `SELECT ${PROPOSAL_COLUMNS} FROM ai_proposals
+           WHERE user_id = ?1 AND ((status = 'pending' AND expires_at > ?2) OR (status IN ('accepted', 'rejected') AND decided_at >= ?3))
+           ORDER BY id DESC LIMIT 8`,
+        )
+        .bind(userId, now, now - sinceMs)
+        .all<ProposalRow>();
+      return res.results.map(toProposal);
     },
 
     async getProposal(userId: number, id: number): Promise<ProposalView | null> {

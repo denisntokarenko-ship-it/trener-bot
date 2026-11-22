@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Update } from "grammy/types";
 import { seedStatements } from "../scripts/seed-core";
 import { handleRequest, telegramHandler } from "../src/app";
-import { NOT_UNDERSTOOD, WEIGHT_BAD, WEIGHT_HINT, WEIGH_REMINDER_STALE } from "../src/bot/texts";
+import { CHAT_NO_KEY, NOT_UNDERSTOOD, WEIGHT_BAD, WEIGHT_HINT, WEIGH_REMINDER_STALE } from "../src/bot/texts";
 import { createDb } from "../src/db/client";
 import { createRepo } from "../src/db/repo";
 import { OWNER, botInfo, env, fakeTelegram, outgoingProblems, resetDb, textUpdate, webhookRequest } from "./helpers";
@@ -142,11 +142,11 @@ describe("крок 4: голе число при відкритому нагад
     expect(reply()).toContain(NOT_UNDERSTOOD);
   });
 
-  it("текст, не число, при відкритому нагадуванні — звичайна відповідь", async () => {
+  it("текст, не число, при відкритому нагадуванні — не вага: іде в чат (тут ключа немає)", async () => {
     await weighReminder(TODAY, 777);
     await say("привіт");
     expect(await weights()).toEqual([]);
-    expect(reply()).toBe(NOT_UNDERSTOOD);
+    expect(reply()).toBe(CHAT_NO_KEY);
   });
 });
 

@@ -95,6 +95,7 @@ export function telegramHandler(
     waitUntil?: (p: Promise<unknown>) => void;
     anthropicFetch?: typeof fetch;
     foodTimeoutMs?: number;
+    chatTimeoutMs?: number;
   } = {},
 ): UpdateHandler {
   return async (_update, body) => {
@@ -108,6 +109,7 @@ export function telegramHandler(
       anthropicApiKey: env.ANTHROPIC_API_KEY || undefined,
       anthropicFetch: opts.anthropicFetch,
       foodTimeoutMs: opts.foodTimeoutMs,
+      chatTimeoutMs: opts.chatTimeoutMs,
     });
     const callback = webhookCallback(bot, "cloudflare-mod");
     try {
