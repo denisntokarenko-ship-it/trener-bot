@@ -5,7 +5,7 @@ import { PROPOSAL_TTL_MS } from "../src/config";
 import { TOOL_DEFS, TOOL_NAMES, fitJson, runTool, type ToolContext } from "../src/ai/tools";
 import { createDb } from "../src/db/client";
 import { createRepo, type NutritionTarget, type ProgramDay, type Repo } from "../src/db/repo";
-import { localDate } from "../src/domain/time";
+import { addDays, localDate } from "../src/domain/time";
 import { env, resetDb } from "./helpers";
 
 const repo = createRepo(createDb(env.DB));
@@ -138,6 +138,15 @@ describe("читальні інструменти (P4.1.1)", () => {
     expect(t.n).toBe(4);
     expect((await call("get_weight_trend", { days: 6 })).isError).toBe(true);
     expect((await call("get_recent_workouts", { n: 9 })).isError).toBe(true);
+  });
+
+  it("get_weight_trend: 40 записів → 30 найновіших, n = 40 (Д3)", async () => {
+    for (let i = 0; i < 40; i++) await repo.upsertBodyWeight(A, addDays(TODAY, -i), 800 + i, NOW);
+    const t = json(await call("get_weight_trend", { days: 60 })) as { entries: { date: string }[]; n: number };
+    expect(t.n).toBe(40);
+    expect(t.entries).toHaveLength(30);
+    expect(t.entries[0]!.date).toBe(addDays(TODAY, -29));
+    expect(t.entries[29]!.date).toBe(TODAY);
   });
 
   it("get_exercise_history: next_prescription збігається з prescribeSlot; нема в програмі — null; чужої історії немає (P4.1.3)", async () => {
@@ -298,6 +307,29 @@ describe("propose_change: валідація (P4.1.4)", () => {
     expect((await proposalRow(old.proposal_id))!.status).toBe("expired");
     expect(await proposalsCount()).toBe(2);
   });
+
+  it("межа: pending з expires_at == now уже прострочений — стара → expired, нова створена (Д3)", async () => {
+    const { slotId, toId } = await squatSwap();
+    const old = json(await propose({ kind: "swap_exercise", program_exercise_id: slotId, to_exercise_id: toId })) as { proposal_id: number };
+    const fresh = await propose({ kind: "swap_exercise", program_exercise_id: slotId, to_exercise_id: toId }, A, NOW + PROPOSAL_TTL_MS);
+    expect(json(fresh).status).toBe("pending_user_confirmation");
+    expect((await proposalRow(old.proposal_id))!.status).toBe("expired");
+  });
+
+  it("ізоляція: `target` спільний для всіх subject_key — чужа відкрита пропозиція не повертається як наявна (В2)", async () => {
+    await repo.insertTarget(B, target("2023-11-01"), NOW);
+    const theirs = json(await propose({ kind: "adjust_target", kcal: 2300 }, B)) as { proposal_id: number };
+    expect(theirs.proposal_id).toBeGreaterThan(0);
+    // A заповнює ліміт іншими предметами: INSERT дає 0 змін, пошук «наявної» мусить фільтрувати user_id.
+    expect((await propose({ kind: "swap_exercise", program_exercise_id: (await squatSwap()).slotId, to_exercise_id: (await squatSwap()).toId })).isError).toBe(false);
+    expect((await propose({ kind: "change_sets_reps", program_exercise_id: dayA.slots[1]!.id, sets: 4, rep_min: 8, rep_max: 12 })).isError).toBe(false);
+    expect((await propose({ kind: "change_sets_reps", program_exercise_id: dayA.slots[2]!.id, sets: 4, rep_min: 8, rep_max: 12 })).isError).toBe(false);
+    const mine = await propose({ kind: "adjust_target", kcal: 2300 });
+    expect(mine.isError).toBe(true);
+    expect(mine.content).not.toContain(String(theirs.proposal_id));
+    expect(mine.proposal).toBeUndefined();
+    expect(await proposalsCount()).toBe(4); // 3 в A + 1 у B
+  });
 });
 
 describe("applyProposal (P4.1.5–6)", () => {
@@ -446,5 +478,44 @@ describe("applyProposal (P4.1.5–6)", () => {
     expect(await repo.expireOwnProposals(A, [], NOW)).toBe(0);
     expect(await repo.expireOwnProposals(A, [id, 99999], NOW)).toBe(1);
     expect((await proposalRow(id))!.status).toBe("expired");
+  });
+
+  it("програму змінено (стара неактивна): нова пропозиція на її слот — помилка, створена раніше — stale, зміни немає (В1)", async () => {
+    const sw = await makeSwap();
+    const sets = await makeSets(1);
+    await env.DB.prepare("UPDATE programs SET active = 0 WHERE user_id = ?").bind(A).run(); // активним став би інший план
+    const r = await call("propose_change", { kind: "change_sets_reps", program_exercise_id: dayA.slots[2]!.id, sets: 4, rep_min: 8, rep_max: 12, reason: "x" });
+    expect(r.isError).toBe(true);
+    expect(r.content).toContain("активній програмі");
+    const before = [await slotRow(sw.slotId), await slotRow(sets.slotId)];
+    expect((await repo.applyProposal(A, sw.id, NOW + 1000, TODAY)).outcome).toBe("stale");
+    expect((await repo.applyProposal(A, sets.id, NOW + 1000, TODAY)).outcome).toBe("stale");
+    expect([await slotRow(sw.slotId), await slotRow(sets.slotId)]).toEqual(before);
+    expect((await proposalRow(sw.id))!.status).toBe("expired");
+  });
+
+  it("тренування завершилось між batch і з'ясуванням причини — повтор застосовує, а не гасить дійсну пропозицію (Д1)", async () => {
+    const { id, slotId, toId } = await makeSwap();
+    const w = await repo.startWorkout(A, dayB.id, NOW);
+    let hook = true;
+    const raced = new Proxy(env.DB, {
+      get(t, p) {
+        if (p === "batch")
+          return async (...a: Parameters<D1Database["batch"]>) => {
+            const res = await t.batch(...a);
+            if (hook) {
+              hook = false;
+              await repo.finishWorkout(A, w!.workout.id, 3, NOW + 500); // тап у ту саму мить, коли тренування закінчилось
+            }
+            return res;
+          };
+        const v = Reflect.get(t, p) as unknown;
+        return typeof v === "function" ? (v as (...x: unknown[]) => unknown).bind(t) : v;
+      },
+    });
+    const racedRepo = createRepo(createDb(raced));
+    const r = await racedRepo.applyProposal(A, id, NOW + 1000, TODAY);
+    expect(r.outcome).toBe("applied");
+    expect((await slotRow(slotId))!.exercise_id).toBe(toId);
   });
 });

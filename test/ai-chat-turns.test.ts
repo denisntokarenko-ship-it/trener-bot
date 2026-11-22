@@ -47,6 +47,12 @@ describe("chat_turns (P4.1.7)", () => {
     expect(await repo.getChatTurns(B, NOW)).toEqual([]);
   });
 
+  it("межа: рядок рівно `CHAT_HISTORY_MAX_AGE_MS` тому ще в контексті («не старші 6 год»), на мс старший — ні (Д3)", async () => {
+    await repo.addChatTurns(A, "рівно межа", "відповідь межі", NOW - CHAT_HISTORY_MAX_AGE_MS);
+    expect((await repo.getChatTurns(A, NOW)).map((t) => t.text)).toEqual(["рівно межа", "відповідь межі"]);
+    expect(await repo.getChatTurns(A, NOW + 1)).toEqual([]);
+  });
+
   it("текст 3501 символ обрізається до 3500 і записується; порожній текст — false без рядків; невідомий користувач — false", async () => {
     expect(await repo.addChatTurns(A, "я".repeat(3501), "ї".repeat(4000), NOW)).toBe(true);
     const r = await rows(A);

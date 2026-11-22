@@ -102,3 +102,63 @@ old = '''  return extra.length > 0 ? `невідомі поля: ${extra.join(",
 new = '''  return input as Record<string, unknown>;'''
 why = "зайві поля (зокрема user_id) мовчки приймаються"
 match = "невідомий інструмент і чужі поля"
+
+# --- Мутанти рев'ю 4.1 (виправлення В1, В2, Д1, Д3) ---
+
+[[mutant]]
+id = "R-B1a"
+file = "src/db/repo.ts"
+old = '''WHERE pe.id = ${programExerciseId} AND pr.user_id = ${userId} AND pr.active = 1`);'''
+new = '''WHERE pe.id = ${programExerciseId} AND pr.user_id = ${userId}`);'''
+why = "getOwnSlot не вимагає активної програми (створення пропозиції на слот старого плану)"
+match = "В1"
+
+[[mutant]]
+id = "R-B1b"
+file = "src/db/repo.ts"
+old = '''AND pr.user_id = ${user} AND pr.active = 1${extra})`;'''
+new = '''AND pr.user_id = ${user}${extra})`;'''
+why = "застосування не вимагає активної програми — [Так] міняє слот неактивного плану"
+match = "В1"
+
+[[mutant]]
+id = "R-B2"
+file = "src/db/repo.ts"
+old = '''FROM ai_proposals WHERE user_id = ? AND subject_key = ? AND status = 'pending'`)
+        .bind(userId, p.subjectKey)'''
+new = '''FROM ai_proposals WHERE ? IS NOT NULL AND subject_key = ? AND status = 'pending'`)
+        .bind(userId, p.subjectKey)'''
+why = "пошук наявної відкритої пропозиції без user_id: subject_key 'target' спільний — повертається чужа"
+match = "В2"
+
+[[mutant]]
+id = "R-D1"
+file = "src/db/repo.ts"
+old = '''      if (!retried) return repo.applyProposal(userId, id, now, today, true);'''
+new = '''      if (!retried) return expire("stale");'''
+why = "без повтору: нез'ясована причина гасить дійсну пропозицію (стара поведінка)"
+match = "Д1"
+
+[[mutant]]
+id = "R-D3a"
+file = "src/db/repo.ts"
+old = '''WHERE user_id = ? AND status = 'pending' AND expires_at <= ?").bind(now, userId, now),'''
+new = '''WHERE user_id = ? AND status = 'pending' AND expires_at < ?").bind(now, userId, now),'''
+why = "межа expires_at == now у createProposal"
+match = "Д3"
+
+[[mutant]]
+id = "R-D3b"
+file = "src/db/repo.ts"
+old = '''AND created_at >= ${now - CHAT_HISTORY_MAX_AGE_MS} ORDER BY id`);'''
+new = '''AND created_at > ${now - CHAT_HISTORY_MAX_AGE_MS} ORDER BY id`);'''
+why = "межа 6 год у getChatTurns"
+match = "Д3"
+
+[[mutant]]
+id = "R-D3c"
+file = "src/ai/tools.ts"
+old = '''inPeriod.slice(-30).map('''
+new = '''inPeriod.map('''
+why = "get_weight_trend без обмеження 30 останніх записів"
+match = "Д3"

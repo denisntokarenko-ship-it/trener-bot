@@ -1482,7 +1482,7 @@ export function createRepo(db: Db) {
      * (1) `pending → accepted` за умов (не прострочена, передумови виду, немає активного тренування), (2) зміна, (3) `applied_at`.
      * Повторне натискання й гонка двох натискань — усі три оператори по 0 змін. Якщо (1) змінив 0 рядків — з'ясовуємо причину.
      */
-    async applyProposal(userId: number, id: number, now: number, today: string): Promise<{ outcome: ApplyOutcome; proposal: ProposalView | null }> {
+    async applyProposal(userId: number, id: number, now: number, today: string, retried = false): Promise<{ outcome: ApplyOutcome; proposal: ProposalView | null }> {
       const p0 = await repo.getProposal(userId, id);
       if (!p0) return { outcome: "missing", proposal: null };
       const d1 = db.$client;
@@ -1573,6 +1573,9 @@ export function createRepo(db: Db) {
         return expire("stale");
       }
       if (await repo.getActiveWorkout(userId)) return { outcome: "busy", proposal: p1 };
+      // Причину не знайдено: стан змінився між batch і читанням (напр., тренування щойно завершилось). Один повтор замість
+      // того, щоб загасити дійсну пропозицію (рев'ю 4.1, Д1).
+      if (!retried) return repo.applyProposal(userId, id, now, today, true);
       return expire("stale");
     },
 
