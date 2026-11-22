@@ -41,7 +41,7 @@
 | 3.4 | Корекція норми за трендом ваги | Sonnet 5.5 | high | phase-3/04-target-trend | ✅ | — |
 | 3.5 | Деплой Фази 3 у прод | Opus 5.5 | xhigh | phase-3/05-prod-release | ✅ | ✅ |
 | R-3 | Незалежне рев'ю Фази 3 | Opus 5.5 | xhigh | review/phase-3 | ✅ | — |
-| F-3 | Виправлення за рев'ю Фази 3 | Opus 5.5 | xhigh | fix/phase-3-review | 🟡 | — |
+| F-3 | Виправлення за рев'ю Фази 3 | Opus 5.5 | xhigh | fix/phase-3-review | ✅ | — |
 | 4.0 | Специфікація Фази 4 | Opus 5.5 | high | docs/spec-phase-4 | ✅ | ✅ |
 | 4.1 | Схема ШІ й інструменти читання (ворота: 4.0 + R-3) | Opus 5.5 | high | phase-4/01-ai-tools | ⬜ | ⬜ |
 | 4.2 | ШІ-тренер у чаті | Opus 5.5 | high | phase-4/02-ai-chat | ⬜ | ⬜ |
