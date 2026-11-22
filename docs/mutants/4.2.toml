@@ -102,8 +102,8 @@ match = "дедлайн до першого запиту"
 [[mutant]]
 id = "M12"
 file = "src/bot/chat-flow.ts"
-old = '''await say(chatReplyText(text, cut, result.proposals.length > 0));'''
-new = '''await say(chatReplyText(text, cut, false));'''
+old = '''await say(chatReplyText(text, cut, result.proposals.length > 0, brokenPromise));'''
+new = '''await say(chatReplyText(text, cut, false, brokenPromise));'''
 why = "статичний рядок «Підтверди кнопкою» не додається — модель могла сказати «готово»"
 match = "P4[.]2[.]4|propose_change →"
 
@@ -142,7 +142,7 @@ match = "Наступне призначення"
 [[mutant]]
 id = "M17"
 file = "src/bot/chat-flow.ts"
-old = '''userMessage: chatUserMessage(job.text, today, isoWeekday(today)),'''
+old = '''userMessage: chatUserMessage(job.text, today, isoWeekday(today), stateLine),'''
 new = '''userMessage: job.text,'''
 why = "дата й день тижня не додаються до повідомлення користувача"
 match = "форма запиту"
@@ -201,8 +201,8 @@ match = "Д3"
 [[mutant]]
 id = "R-D4"
 file = "src/bot/chat-flow.ts"
-old = '''userMessage: chatUserMessage(job.text, today, isoWeekday(today)),'''
-new = '''userMessage: chatUserMessage(`${job.text} (id ${job.userId})`, today, isoWeekday(today)),'''
+old = '''userMessage: chatUserMessage(job.text, today, isoWeekday(today), stateLine),'''
+new = '''userMessage: chatUserMessage(`${job.text} (id ${job.userId})`, today, isoWeekday(today), stateLine),'''
 why = "числовий Telegram id власника потрапляє в запит до Anthropic"
 match = "форма запиту"
 
@@ -221,3 +221,37 @@ old = '''console.error("chat settle failed", { error: errorName(e) });'''
 new = '''throw e;'''
 why = "збій settleAiUsage губить оплачену відповідь (виняток замість логу)"
 match = "Д6"
+
+# --- Мутанти знахідки preview 4.2 (Д-А: обіцянка кнопки без пропозиції; Д-Б: рішення кнопкою не в контексті) ---
+
+[[mutant]]
+id = "R-DA1"
+file = "src/bot/chat-flow.ts"
+old = '''const brokenPromise = result.proposals.length === 0 && open.length === 0 && promisesConfirmation(text);'''
+new = '''const brokenPromise = false;'''
+why = "обіцянку кнопки без створеної пропозиції код не коментує (стара поведінка)"
+match = "Д-А"
+
+[[mutant]]
+id = "R-DA2"
+file = "src/bot/chat-flow.ts"
+old = '''result.proposals.length === 0 && open.length === 0 && promisesConfirmation(text);'''
+new = '''result.proposals.length === 0 && promisesConfirmation(text);'''
+why = "примітка «пропозицію не створено» й тоді, коли відкрита пропозиція існує (хибне спрацювання)"
+match = "Д-А"
+
+[[mutant]]
+id = "R-DB1"
+file = "src/bot/chat-flow.ts"
+old = '''stateLine = chatStateLine(await repo.listProposalsForChat(job.userId, now(), CHAT_HISTORY_MAX_AGE_MS));'''
+new = '''stateLine = chatStateLine([]);'''
+why = "стан пропозицій не потрапляє в повідомлення користувача: модель бере стан зі старих відповідей"
+match = "Д-Б"
+
+[[mutant]]
+id = "R-DB2"
+file = "src/db/repo.ts"
+old = '''OR (status IN ('accepted', 'rejected') AND decided_at >= ?3))'''
+new = '''OR (status IN ('rejected') AND decided_at >= ?3))'''
+why = "рішення «прийнято кнопкою» не повертається в контекст чату"
+match = "Д-Б"

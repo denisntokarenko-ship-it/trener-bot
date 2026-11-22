@@ -3,7 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Update } from "grammy/types";
 import { seedStatements } from "../scripts/seed-core";
-import { CHAT_SYSTEM } from "../src/ai/prompts";
+import { chatStateLine, promisesConfirmation } from "../src/ai/chat-state";
+import { CHAT_SYSTEM, chatDateLine } from "../src/ai/prompts";
 import { chatRequestCost } from "../src/ai/chat-loop";
 import { TOOL_NAMES } from "../src/ai/tools";
 import { handleRequest, telegramHandler } from "../src/app";
@@ -19,6 +20,7 @@ import {
   CHAT_ITERATIONS,
   CHAT_LIMIT,
   CHAT_NO_KEY,
+  CHAT_NO_PROPOSAL_NOTE,
   CHAT_REFUSAL,
   CHAT_TIMEOUT,
   CHAT_TOO_LONG,
@@ -584,7 +586,10 @@ describe("P4.2.6 форма запиту до Anthropic", () => {
     expect(body.messages.at(-1)!.role).toBe("user"); // жодного prefill
     expect(body.system).toBe(CHAT_SYSTEM);
     expect(body.system).not.toMatch(/\d{4}-\d{2}-\d{2}/);
-    expect(String(body.messages.at(-1)!.content)).toBe("Сьогодні: 2026-11-20, пʼятниця.\n\nякий сьогодні день?");
+    expect(String(body.messages.at(-1)!.content)).toBe(`${chatDateLine("2026-11-20", 5)}
+${chatStateLine([])}
+
+який сьогодні день?`);
     expect(body.tools.map((t) => t.name).sort()).toEqual([...TOOL_NAMES].sort());
     expect(raw).not.toContain("api.telegram.org");
     expect(raw).not.toContain(TOKEN);
@@ -630,5 +635,87 @@ describe("chatRequestCost: тариф за довжиною промпту (В3)
     expect(chatRequestCost({ input_tokens: 60_000, output_tokens: 0 })).toBe(6_000);
     expect(chatRequestCost({ input_tokens: 60_000, output_tokens: 0, cache_read_input_tokens: 40_001 })).toBe(30_000);
     expect(chatRequestCost({ input_tokens: 60_000, output_tokens: 0, cache_creation_input_tokens: 40_001 })).toBe(30_000);
+  });
+});
+
+describe("preview 4.2: обіцянка кнопки без пропозиції (Д-А) і рішення кнопкою в контексті (Д-Б)", () => {
+  const PROMISE = "Пропоную змінити денну норму з 2980 до 2900 ккал. Пропозиція чекає твого підтвердження кнопкою.";
+
+  it("Д-А: модель обіцяє кнопку, але propose_change не викликано — код дописує, що пропозицію не створено; картки й запису немає", async () => {
+    ai = fakeAi(say_(PROMISE));
+    await say("зменш норму до 2900 ккал");
+    const text = sentTexts()[0]!;
+    expect(text).toContain("чекає твого підтвердження кнопкою"); // відповідь моделі лишається
+    expect(text.endsWith(CHAT_NO_PROPOSAL_NOTE)).toBe(true);
+    expect(text).not.toContain(CHAT_CONFIRM_LINE);
+    expect(cardCalls()).toHaveLength(0);
+    expect(await count("ai_proposals")).toBe(0);
+  });
+
+  it("Д-А: propose_change відмовив (is_error), а модель усе одно обіцяє кнопку — примітка є", async () => {
+    ai = fakeAi(msg([use("tu1", "propose_change", { kind: "adjust_target", kcal: 1000, reason: "x" })]), say_(PROMISE));
+    await say("поставь 1000");
+    expect(sentTexts()[0]!.endsWith(CHAT_NO_PROPOSAL_NOTE)).toBe(true);
+    expect(await count("ai_proposals")).toBe(0);
+  });
+
+  it("Д-А: справжня пропозиція — примітки немає; відкрита пропозиція з минулого ходу — слова «чекає підтвердження» чесні, примітки немає", async () => {
+    ai = fakeAi(msg([await proposeSwap()]), say_("Пропоную заміну, чекаю підтвердження кнопкою"));
+    await say("заміни");
+    expect(sentTexts()[0]).not.toContain(CHAT_NO_PROPOSAL_NOTE);
+    ai = fakeAi(say_("Заміна ще чекає твого підтвердження кнопкою"));
+    await say("що з пропозицією?");
+    expect(sentTexts().at(-1)).not.toContain(CHAT_NO_PROPOSAL_NOTE);
+  });
+
+  it("promisesConfirmation: обіцянки впізнає, звичайний текст — ні", () => {
+    for (const t of ["Пропозиція чекає твого підтвердження кнопкою.", "Підтверди кнопкою — без цього нічого не зміниться", "Натисни кнопку, щоб підтвердити", "чекає підтвердження"]) expect(promisesConfirmation(t), t).toBe(true);
+    for (const t of ["Норма 2800 ккал діє.", "Підтверди, будь ласка, свою вагу.", "Кнопка «Так» застосовує зміну."]) expect(promisesConfirmation(t), t).toBe(false);
+  });
+
+  it("Д-Б: після [Так] наступний хід бачить «прийнято кнопкою й застосовано», а не «чекає»; після [Ні] — «відхилено»", async () => {
+    ai = fakeAi(msg([await proposeSwap()]), say_("Чекаю підтвердження кнопкою"));
+    await say("заміни");
+    const id = (await proposals())[0]!.id;
+    // поки кнопку не натиснуто — стан «чекає кнопки»
+    ai = fakeAi(say_("ок"));
+    await say("що там?");
+    expect(String(ai.requests[0]!.body.messages.at(-1)!.content)).toContain(`#${id} «Замінити «`);
+    expect(String(ai.requests[0]!.body.messages.at(-1)!.content)).toContain("— чекає кнопки");
+
+    await tap(`i:y:${id}`, 500);
+    ai = fakeAi(say_("ок"));
+    await say("що тепер із пропозицією?");
+    const msgNow = String(ai.requests[0]!.body.messages.at(-1)!.content);
+    expect(msgNow).toContain("відкриті — немає");
+    expect(msgNow).toContain(`#${id} «Замінити «`);
+    expect(msgNow).toContain("прийнято кнопкою й застосовано");
+    expect(msgNow).not.toContain("чекає кнопки");
+    // стара відповідь «Чекаю підтвердження кнопкою» лишилась в історії, але стан від коду новіший за неї
+    expect(ai.requests[0]!.body.messages.some((m) => m.role === "assistant" && String(m.content).includes("Чекаю підтвердження кнопкою"))).toBe(true);
+
+    ai = fakeAi(msg([use("tu9", "propose_change", { kind: "adjust_target", kcal: 2300, reason: "x" })]), say_("ок"));
+    await say("зменш норму");
+    const t = (await proposals()).find((p) => p.kind === "adjust_target")!;
+    await tap(`i:n:${t.id}`, 600);
+    ai = fakeAi(say_("ок"));
+    await say("а тепер?");
+    expect(String(ai.requests[0]!.body.messages.at(-1)!.content)).toContain("відхилено кнопкою");
+  });
+
+  it("Д-Б: get_today_food після застосованої норми повертає чинну (2800), а не формулу (2480)", async () => {
+    ai = fakeAi(msg([use("tu9", "propose_change", { kind: "adjust_target", kcal: 2300, reason: "x" })]), say_("ок"));
+    await say("зменш норму до 2300");
+    const t = (await proposals()).find((p) => p.kind === "adjust_target")!;
+    await tap(`i:y:${t.id}`, 600);
+    now += 86_400_000; // наступний день: нова норма діє
+    ai = fakeAi(msg([use("tu1", "get_today_food", {})]), say_("ок"));
+    await say("яка в мене норма?");
+    const r = ai.requests[1]!.body.messages.at(-1)!.content as { content: string }[];
+    expect((JSON.parse(r[0]!.content) as { target: { kcal: number } }).target.kcal).toBe(2300);
+  });
+
+  it("chatStateLine: порожній стан і обидва типи рішень", () => {
+    expect(chatStateLine([])).toContain("відкриті — немає; рішення за останні години — немає");
   });
 });

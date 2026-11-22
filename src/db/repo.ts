@@ -1447,6 +1447,22 @@ export function createRepo(db: Db) {
       return (rows[0]?.n ?? 0) > 0;
     },
 
+    /**
+     * Стан пропозицій для контексту чату: відкриті (`pending`, не прострочені) і рішення кнопкою (`accepted`/`rejected`) не старші `sinceMs`.
+     * `expired` не повертається (збійні ходи — шум). Від нових до старих, не більше 8.
+     */
+    async listProposalsForChat(userId: number, now: number, sinceMs: number): Promise<ProposalView[]> {
+      const res = await db.$client
+        .prepare(
+          `SELECT ${PROPOSAL_COLUMNS} FROM ai_proposals
+           WHERE user_id = ?1 AND ((status = 'pending' AND expires_at > ?2) OR (status IN ('accepted', 'rejected') AND decided_at >= ?3))
+           ORDER BY id DESC LIMIT 8`,
+        )
+        .bind(userId, now, now - sinceMs)
+        .all<ProposalRow>();
+      return res.results.map(toProposal);
+    },
+
     async getProposal(userId: number, id: number): Promise<ProposalView | null> {
       const row = await db.$client.prepare(`SELECT ${PROPOSAL_COLUMNS} FROM ai_proposals WHERE id = ? AND user_id = ?`).bind(id, userId).first<ProposalRow>();
       return row ? toProposal(row) : null;

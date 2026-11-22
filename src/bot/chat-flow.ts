@@ -4,12 +4,14 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { Api, Context } from "grammy";
 import { InlineKeyboard } from "grammy";
 import { runChatLoop, type LoopResult, type ProposalRef } from "../ai/chat-loop";
+import { chatStateLine, promisesConfirmation } from "../ai/chat-state";
 import { chatUserMessage } from "../ai/prompts";
 import { proposalSummary } from "../ai/proposals";
 import { classifyAiError, type AiFailure } from "../ai/food-prompt";
 import {
   AI_DAILY_LIMIT_MICRO,
   CHAT_CALL_EST_MICRO,
+  CHAT_HISTORY_MAX_AGE_MS,
   CHAT_INFLIGHT_MS,
   CHAT_INPUT_MAX_CHARS,
   CHAT_MODEL,
@@ -29,6 +31,7 @@ import {
   CHAT_ITERATIONS,
   CHAT_LIMIT,
   CHAT_NO_KEY,
+  CHAT_NO_PROPOSAL_NOTE,
   CHAT_REFUSAL,
   CHAT_TIMEOUT,
   CHAT_TOO_LONG,
@@ -102,8 +105,8 @@ const clip = (s: string, max: number): string => Array.from(s).slice(0, max).joi
  * Текст відповіді користувачу: сирий текст моделі → обрізати → `esc` → разом зі статичними рядками ≤ 4096 (`esc` розтягує `&` до 5×;
  * обрізання ПІСЛЯ `esc` могло б розрізати сутність `&am` → Telegram «can't parse entities»), інакше обрізати сирий текст і повторити.
  */
-export function chatReplyText(raw: string, cut: boolean, confirm: boolean): string {
-  const tail = [...(cut ? [CHAT_CUT] : []), ...(confirm ? [CHAT_CONFIRM_LINE] : [])];
+export function chatReplyText(raw: string, cut: boolean, confirm: boolean, noProposal = false): string {
+  const tail = [...(cut ? [CHAT_CUT] : []), ...(confirm ? [CHAT_CONFIRM_LINE] : []), ...(noProposal ? [CHAT_NO_PROPOSAL_NOTE] : [])];
   let body = clip(raw, CHAT_REPLY_MAX_CHARS);
   for (;;) {
     const text = [...(body ? [esc(body)] : []), ...tail].join("\n\n");
@@ -154,6 +157,8 @@ export function createChatFlow(repo: Repo, now: () => number, deps: ChatDeps) {
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), deps.timeoutMs);
     let result: LoopResult;
+    let open: ProposalView[];
+    let stateLine: string;
     try {
       try {
         await api.sendChatAction(job.chatId, "typing", undefined, ac.signal as unknown as GrammySignal);
@@ -161,11 +166,14 @@ export function createChatFlow(repo: Repo, now: () => number, deps: ChatDeps) {
         // «друкує…» — лише зручність
       }
       const history = await repo.getChatTurns(job.userId, now());
+      // Рішення кнопкою мусять бути в контексті наступного ходу: модель інакше бере стан зі своїх старих відповідей в історії (preview 4.2, Д-Б).
+      open = (await repo.listProposalsForChat(job.userId, now(), CHAT_HISTORY_MAX_AGE_MS)).filter((p) => p.status === "pending");
+      stateLine = chatStateLine(await repo.listProposalsForChat(job.userId, now(), CHAT_HISTORY_MAX_AGE_MS));
       const client = new Anthropic({ apiKey: deps.apiKey, maxRetries: 0, fetch: deps.anthropicFetch });
       result = await runChatLoop({
         client,
         history,
-        userMessage: chatUserMessage(job.text, today, isoWeekday(today)),
+        userMessage: chatUserMessage(job.text, today, isoWeekday(today), stateLine),
         tool: { repo, userId: job.userId, tz, now: t0 },
         signal: ac.signal,
       });
@@ -215,7 +223,9 @@ export function createChatFlow(repo: Repo, now: () => number, deps: ChatDeps) {
     // Порожня відповідь без пропозицій: гасити нічого (пропозицій немає). З пропозиціями порожній текст не дає CHAT_EMPTY — картки важливіші.
     if (text === "" && result.proposals.length === 0) return say(CHAT_EMPTY);
     // Крок 6: спершу відправка відповіді й карток, потім chat_turns (збій запису історії не скасовує оплачену відповідь).
-    await say(chatReplyText(text, cut, result.proposals.length > 0));
+    // Д-А: модель пообіцяла кнопку, а пропозиції (ні нової, ні відкритої) немає — код дописує правду, а не лишає обіцянку без картки.
+    const brokenPromise = result.proposals.length === 0 && open.length === 0 && promisesConfirmation(text);
+    await say(chatReplyText(text, cut, result.proposals.length > 0, brokenPromise));
     const cards: ProposalRef[] = result.proposals.filter((p) => p.created || p.messageId === null);
     for (const c of cards) {
       try {
