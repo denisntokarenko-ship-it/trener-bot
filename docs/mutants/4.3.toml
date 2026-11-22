@@ -1,0 +1,116 @@
+# Мутанти завдання 4.3 (недільний коментар ШІ, прострочення пропозицій у кроні). M1 — обов'язковий з промпту; решта — додаткові.
+test = "npx vitest run --reporter=dot test/ai-weekly.test.ts"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/ai/weekly-comment.ts"
+old = '''    console.warn("weekly comment failed", { error: errorName(e) });
+    return null;'''
+new = '''    console.warn("weekly comment failed", { error: errorName(e) });
+    throw e;'''
+why = "помилка ШІ перериває надсилання звіту (виняток летить у processPair до заявки)"
+match = "збої ШІ|помилка ШІ не перериває"
+
+[[mutant]]
+id = "M2"
+file = "src/ai/weekly-comment.ts"
+old = '''    if (small && !percent) continue;
+    return null;'''
+new = '''    continue;'''
+why = "перевірка чисел вимкнена: вигадане число проходить"
+match = "перевірка чисел|вигаданим числом"
+
+[[mutant]]
+id = "M3"
+file = "src/reminders.ts"
+old = '''    report = { ...report, comment };
+  }
+  // 1. Заявка: 0 рядків — інший тік уже взяв.
+  if (!(await c.repo.claimReminder(user.id, kind, date, c.now))) return "skipped";'''
+new = '''    report = { ...report, comment: null };
+  }
+  if (!(await c.repo.claimReminder(user.id, kind, date, c.now))) return "skipped";
+  if (kind === "report") report = { ...report!, comment: await generateWeeklyComment({ repo: c.repo, apiKey: c.apiKey, anthropicFetch: c.anthropicFetch, timeoutMs: c.commentTimeoutMs, now: c.now }, user.id, date, report!, weeklyReportText(report!)) };'''
+why = "виклик ШІ після заявки, а не до (подовжує вікно «заявлено, ще не надіслано»)"
+match = "виклик ШІ — до claimReminder"
+
+[[mutant]]
+id = "M4"
+file = "src/cron.ts"
+old = '''await repo.expireProposals(now);'''
+new = '''await repo.expireProposals(0);'''
+why = "крон не гасить прострочені пропозиції"
+match = "pending старші за 48 год"
+
+[[mutant]]
+id = "M5"
+file = "src/cron.ts"
+old = '''console.error("cron proposals expiry failed", { error: errorName(e) });'''
+new = '''throw e;'''
+why = "помилка кроку прострочення зупиняє решту (виняток з runCron)"
+match = "помилка кроку прострочення"
+
+[[mutant]]
+id = "M6"
+file = "src/ai/weekly-comment.ts"
+old = '''    if (!sent) await d.repo.releaseAiUsage(userId, usageId).catch(() => undefined);'''
+new = '''    await d.repo.releaseAiUsage(userId, usageId).catch(() => undefined);'''
+why = "резервування знімається й після відправки запиту (спека: оцінка лишається)"
+match = "HTTP 500|обрив мережі|дедлайн 10 с"
+
+[[mutant]]
+id = "M7"
+file = "src/ai/weekly-comment.ts"
+old = '''await d.repo.settleAiUsage(userId, usageId, { inputTokens'''
+new = '''void ({ inputTokens'''
+why = "відповідь 200 не розраховується: у ai_usage лишається оцінка"
+match = "успішний коментар|refusal|max_tokens без тексту|порожній текст|вигаданим числом"
+
+[[mutant]]
+id = "M8"
+file = "src/ai/weekly-comment.ts"
+old = '''  if (usageId === null) return null; // ліміт: звіт без коментаря'''
+new = '''  // (перевірку ліміту прибрано)'''
+why = "ліміт витрат не перевіряється: ШІ викликається за вичерпаного бюджету"
+match = "ліміт витрат вичерпано"
+
+[[mutant]]
+id = "M9"
+file = "src/ai/weekly-comment.ts"
+old = '''  if (!d.apiKey) return null;'''
+new = '''  // (перевірку ключа прибрано)'''
+why = "без ключа однаково йде виклик"
+match = "немає ключа"
+
+[[mutant]]
+id = "M10"
+file = "src/bot/texts.ts"
+old = '''lines.push(`💬 ${esc(m.comment)}`);'''
+new = '''lines.push(`💬 ${m.comment}`);'''
+why = "коментар моделі виводиться без esc()"
+match = "esc"
+
+[[mutant]]
+id = "M11"
+file = "src/ai/weekly-comment.ts"
+old = '''Array.from(text).length > WEEKLY_COMMENT_MAX_CHARS'''
+new = '''Array.from(text).length > 5000'''
+why = "межа 500 символів знята"
+match = "перевірка чисел"
+
+[[mutant]]
+id = "M12"
+file = "src/ai/weekly-comment.ts"
+old = '''    if (small && !percent) continue;'''
+new = '''    if (small) continue;'''
+why = "цілі 0–10 з суфіксом % дозволені"
+match = "перевірка чисел"
+
+[[mutant]]
+id = "M13"
+file = "src/ai/weekly-comment.ts"
+old = '''m.replace(/[\u0020\u00A0\u202F]/g, "").replace(",", ".")'''
+new = '''m.replace(",", ".")'''
+why = "пробіли тисяч не прибираються при нормалізації («12 450» ≠ «12450»)"
+match = "перевірка чисел"

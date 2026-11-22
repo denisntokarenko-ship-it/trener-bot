@@ -29,8 +29,15 @@ export async function runCron(env: Env, now: number, deps: { repo?: Repo } & Rem
     cleanupErrors++;
     console.error("cron meals expiry failed", { error: errorName(e) });
   }
+  // Прострочені пропозиції ШІ (pending старші за 48 год) → expired (phase-4.md, розділ 3); окремий try — збій не зупиняє решту прибирання й нагадування.
   try {
-    counters = await runReminders(repo, env.TELEGRAM_BOT_TOKEN, now, deps);
+    await repo.expireProposals(now);
+  } catch (e) {
+    cleanupErrors++;
+    console.error("cron proposals expiry failed", { error: errorName(e) });
+  }
+  try {
+    counters = await runReminders(repo, env.TELEGRAM_BOT_TOKEN, now, { anthropicApiKey: env.ANTHROPIC_API_KEY || undefined, ...deps });
   } catch (e) {
     counters.errors++;
     console.error("cron reminders failed", { error: errorName(e) });
