@@ -291,6 +291,8 @@ export function createOnboardingFlow(repo: Repo, now: () => number) {
     }
     const settings = await repo.getUserSettings(userId);
     const res = await repo.activatePlan(userId, built.plan, now());
+    // Паралельне подвійне [✅]: план уже створив інший запит — він і покаже екран; тут тиха відповідь на кнопку.
+    if (!res.ok && res.error === "CONCURRENT") return undefined;
     if (!res.ok) return res.error === "ACTIVE_WORKOUT" ? MSG.activeWorkout : MSG.failed;
     await save(userId, st, { status: "done" });
     // Дні нагадувань (Фаза 2): N — тренувань на тиждень з профілю (а не днів програми: «Верх/Низ» = 2 дні на 4 тренування).
