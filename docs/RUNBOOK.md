@@ -220,6 +220,9 @@ Worker `https://trener-prod.adhd-bot.workers.dev` (до переносу 2026-11
 - **15:06:47 bookmark** до 0009 і знімок «до» — у коментарі PR #47 (не в git).
 - **15:08 міграція:** `npm run db:migrate:prod` → `0009_ai_proposals.sql ✅`.
 - **15:08 деплой:** `npm run deploy:prod -- --message "main 643ccee (4.4)"` → версія `c7ffa35f`; `git diff origin/main` — лише `docs/`; `/health` → `ok cron=8m ok=8m`, у tail `scriptVersion` = `c7ffa35f`. Секрети (імена): ті самі чотири, нових не треба.
+- **Тік 15:15:31 (код Фази 4):** `outcome: ok`, `cpuTime` 25 мс, wall 694 мс, `exceptions: []`, `cron tick {sent:0, skipped:0, released:0, errors:0}`; `/health` → `ok cron=0m ok=0m`. Знімок «після» = «до», крім `d1_migrations` 9 → 10 і нових порожніх `ai_proposals`, `chat_turns`.
+- **Репетиція Time Travel на preview** — розділ «Відкат через Time Travel».
+- **Живий пакет** (питання в чаті, пропозиція → [Ні], недільний звіт із коментарем 19:00 Kyiv) — людина, у PR #47; свідки — `chat_turns`, `ai_usage`, `ai_proposals` (`SELECT`), Observability/tail.
 
 ## Генеральна репетиція міграцій на дампі прода
 
