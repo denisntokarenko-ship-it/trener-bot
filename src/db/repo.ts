@@ -2,6 +2,7 @@
 // читання дає null / [], запис — false без змін (phase-1.md, «Ізоляція»). Винятки без userId:
 // processed_updates (службова, ключ — update_id), foods і food_aliases (спільний каталог, як exercises), expirePendingMeals, abandonStale і getReminderUsers (крон по всіх користувачах) та cron_state (один рядок).
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
+import { FOOD_MAX_ITEMS } from "../config";
 import type { Db } from "./client";
 import type { Limit, Plan, PlanCatalogItem } from "../domain/plan";
 import type { ProgressSetRow } from "../domain/records";
@@ -972,12 +973,12 @@ export function createRepo(db: Db) {
     },
 
     /**
-     * `pending`-прийом з позиціями одним batch. Немає користувача або позицій не 1–8 → null. Знімка КБЖУ немає до confirmMeal.
+     * `pending`-прийом з позиціями одним batch. Немає користувача або позицій не 1–FOOD_MAX_ITEMS → null. Знімка КБЖУ немає до confirmMeal.
      * Значення поза межами схеми (грами не цілі 1–2000, дата не `YYYY-MM-DD`, caption > 300, ai_raw_json > 8192) — null без запису.
      * Невідомий food_id відхиляє FK — виняток, batch відкочується цілком.
      */
     async createPendingMeal(userId: number, m: NewMeal, now: number): Promise<number | null> {
-      if (m.items.length < 1 || m.items.length > 8) return null;
+      if (m.items.length < 1 || m.items.length > FOOD_MAX_ITEMS) return null;
       if (m.items.some((it) => !Number.isInteger(it.grams) || it.grams < 1 || it.grams > 2000)) return null;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(m.localDate) || [...(m.caption ?? "")].length > 300 || [...m.aiRawJson].length > 8192) return null;
       const u = await db.select({ id: users.id }).from(users).where(eq(users.id, userId)).get();

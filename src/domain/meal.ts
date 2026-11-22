@@ -1,5 +1,6 @@
 // Чисті функції потоку фото їжі (docs/spec/phase-3-photo.md §1): розбір відповіді моделі, введення грамів, округлення КБЖУ, вартість.
 // Без I/O і без Date.now; SDK Anthropic тут не імпортується — відповідь приходить структурною формою.
+import { FOOD_MAX_ITEMS } from "../config";
 import { normalizeAlias } from "./text";
 
 export type Confidence = "low" | "medium" | "high";
@@ -23,7 +24,6 @@ export interface FoodResponse {
   content: readonly { type: string; text?: string }[];
 }
 
-export const FOOD_ITEMS_MAX = 8;
 const CONFIDENCE: readonly string[] = ["low", "medium", "high"];
 
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -76,7 +76,7 @@ export function parseFoodResponse(res: FoodResponse): FoodParse {
   const d = data as Record<string, unknown>;
   if (typeof d.not_food !== "boolean" || !Array.isArray(d.items)) return { kind: "invalid" };
   if (d.not_food || d.items.length === 0) return { kind: "not_food" };
-  if (d.items.length > FOOD_ITEMS_MAX) return { kind: "invalid" };
+  if (d.items.length > FOOD_MAX_ITEMS) return { kind: "invalid" };
   const items: FoodGuess[] = [];
   for (const raw of d.items) {
     const it = parseItem(raw);

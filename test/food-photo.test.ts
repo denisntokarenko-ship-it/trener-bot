@@ -755,3 +755,34 @@ describe("рев'ю 3.3: виправлення", () => {
     expect(known[0]).toBe("рис варений");
   });
 });
+
+describe("В2 рев'ю Фази 3: ліміт за локальною датою", () => {
+  const AT = Date.parse("2026-11-20T22:30:00Z"); // 00:30 Києва 21.11, а в UTC — ще 20.11
+  const usageDates = () => env.DB.prepare("SELECT local_date AS d FROM ai_usage ORDER BY id").all<{ d: string }>().then((r) => r.results.map((x) => x.d));
+  async function spendOn(date: string, micro: number): Promise<void> {
+    await env.DB.prepare("INSERT INTO ai_usage (user_id, model, input_tokens, output_tokens, cost_micro, purpose, local_date, created_at) VALUES (?, 'm', 1, 1, ?, 'food_photo', ?, 0)").bind(OWNER, micro, date).run();
+  }
+
+  it("фото о 00:30 Києва резервує ліміт за локальною датою (21.11), не UTC (20.11)", async () => {
+    now = AT;
+    ai = fakeAi(food([RICE_M]));
+    await send(photoUpdate(undefined, Math.floor(AT / 1000)));
+    expect(await usageDates()).toEqual(["2026-11-21"]);
+    expect(await repo.aiSpendToday(OWNER, "2026-11-21")).toBe(FOOD_CALL_EST_MICRO);
+  });
+
+  it("локальний день вичерпано → «Денний ліміт…», клієнта не викликано; витрати вчорашньої (UTC) дати не заважають", async () => {
+    now = AT;
+    await spendOn("2026-11-21", AI_DAILY_LIMIT_MICRO);
+    await send(photoUpdate(undefined, Math.floor(AT / 1000)));
+    expect(lastText()).toBe(MEAL_LIMIT);
+    expect(ai.requests).toHaveLength(0);
+
+    await resetDb();
+    await repo.upsertUser(OWNER, "Денис", 0);
+    await spendOn("2026-11-20", AI_DAILY_LIMIT_MICRO); // UTC-дата 20.11 вичерпана, локальна 21.11 — ні
+    ai = fakeAi(food([RICE_M]));
+    await send(photoUpdate(undefined, Math.floor(AT / 1000)));
+    expect(ai.requests).toHaveLength(1);
+  });
+});

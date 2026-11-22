@@ -1,4 +1,4 @@
-test = "npx vitest run --reporter=dot test/text.test.ts test/foods-seed.test.ts test/nutrition-repo.test.ts"
+test = "npx vitest run --reporter=dot test/text.test.ts test/foods-seed.test.ts test/nutrition-repo.test.ts test/yizha.test.ts"
 timeout = 300
 
 # --- Обов'язкові з промпту 3.1 ---
@@ -6,8 +6,8 @@ timeout = 300
 [[mutant]]
 id = "M1"
 file = "src/db/repo.ts"
-old = '''AND m.local_date = ${localDate} AND m.status = 'confirmed''''
-new = '''AND m.local_date = ${localDate}'''
+old = '''AND m.local_date = ${localDate} AND m.status = 'confirmed'`);'''
+new = '''AND m.local_date = ${localDate}`);'''
 why = "dayTotals без фільтра status"
 match = "P3[.]1[.]1"
 
@@ -135,8 +135,8 @@ match = "ліміт тримається"
 [[mutant]]
 id = "M15"
 file = "src/db/repo.ts"
-old = '''ORDER BY valid_from DESC LIMIT 1'''
-new = '''ORDER BY valid_from ASC LIMIT 1'''
+old = '''valid_from <= ${localDate} ORDER BY valid_from DESC LIMIT 1'''
+new = '''valid_from <= ${localDate} ORDER BY valid_from ASC LIMIT 1'''
 why = "getTargetOn бере найстарішу норму"
 match = "getTargetOn"
 
@@ -228,3 +228,12 @@ new = ''' AND status = 'pending' AND ? IS NOT NULL")
 why = "В1: confirmMeal підтверджує порожній прийом"
 match = "В1: два паралельні"
 
+# --- Рев'ю Фази 3 (R-3): мутант, що вижив, і тест fix/phase-3-review, що його вбиває ---
+
+[[mutant]]
+id = "X1"
+file = "src/db/repo.ts"
+old = '''COALESCE(mi.kcal, 0) AS kcal'''
+new = '''(mi.grams * f.kcal_100 + 50) / 100 AS kcal'''
+why = "/yizha: ккал прийому в списку — з foods наживо, а не зі знімка (правка foods переписує історію в списку)"
+match = "В1 рев'ю Фази 3|правка foods повторним сидом"
