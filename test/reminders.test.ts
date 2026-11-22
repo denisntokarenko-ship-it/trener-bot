@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { seedStatements } from "../scripts/seed-core";
-import { handleRequest } from "../src/app";
+import { handleRequest, resetHealthCache } from "../src/app";
 import { runCron } from "../src/cron";
 import { createDb } from "../src/db/client";
 import { createRepo } from "../src/db/repo";
@@ -172,32 +172,48 @@ describe("P2.3.2 умови: не день тренування, тренува�
 });
 
 describe("P2.3.3 і P2.3.9 помилки Telegram", () => {
-  it("відповідь 500 → заявку знято; наступний тік у вікні надсилає", async () => {
+  // Д2 рев'ю 2.3: 5xx (502/504 від проксі) не гарантує, що Telegram не прийняв запит — повтор дав би дубль.
+  it.each([500, 502, 504])("відповідь %i → невизначена недоставка: заявку ЛИШЕНО, повтору немає (без дубля), тік із помилкою", async (status) => {
     await onlyTrain();
-    const c1 = await tick(MON_0800, [500]);
-    expect(c1).toEqual({ sent: 0, skipped: 0, released: 1, errors: 0 });
-    expect(await sentRows()).toEqual([]);
-    const c2 = await tick(MON_0800 + 15 * MIN);
-    expect(c2.sent).toBe(1);
-    expect(await sentRows()).toHaveLength(1);
+    const c1 = await tick(MON_0800, [status]);
+    expect(c1).toEqual({ sent: 0, skipped: 0, released: 0, errors: 1 });
+    expect(await sentRows()).toEqual([{ user_id: OWNER, kind: "train", local_date: "2026-10-19", sent_at: MON_0800, message_id: null }]);
+    await tick(MON_0800 + 15 * MIN);
+    expect(tg.calls).toHaveLength(1); // нових спроб немає
   });
 
-  it.each([429, 403])("відповідь %i — як визначена недоставка: заявку знято", async (status) => {
+  it.each([400, 429])("відповідь %i — визначена недоставка: заявку знято; наступний тік у вікні надсилає", async (status) => {
     await onlyTrain();
-    await tick(MON_0800, [status]);
+    const c1 = await tick(MON_0800, [status]);
+    expect(c1).toEqual({ sent: 0, skipped: 0, released: 1, errors: 0 });
     expect(await sentRows()).toEqual([]);
     await tick(MON_0800 + 15 * MIN);
     expect(await sentRows()).toHaveLength(1);
   });
 
+  // Д1 рев'ю 2.3: 403 детермінований — повтор до кінця вікна (4 тіки, для звіту — до кінця доби) лише палить виклики й побудову звіту.
+  it("відповідь 403 (бот заблокований) → заявку ЛИШЕНО (день пропущено), не помилка тіку; решта вікна без спроб; наступної доби — знову", async () => {
+    await onlyTrain();
+    const c1 = await tick(MON_0800, [403]);
+    expect(c1).toEqual({ sent: 0, skipped: 1, released: 0, errors: 0 });
+    expect(await sentRows()).toEqual([{ user_id: OWNER, kind: "train", local_date: "2026-10-19", sent_at: MON_0800, message_id: null }]);
+    for (const m of [15, 30, 45]) await tick(MON_0800 + m * MIN);
+    expect(tg.calls).toHaveLength(1); // лише перша спроба
+    expect((await repo.getCronTick())?.okAt).toBe(MON_0800 + 45 * MIN); // 403 не робить крон «хворим»
+    const WED_0800 = MON_0800 + 2 * 24 * 3_600_000; // Ср — наступний день тренування
+    await tick(WED_0800);
+    expect(tg.calls).toHaveLength(2);
+    expect((await sentRows()).map((r) => r.local_date)).toEqual(["2026-10-19", "2026-10-21"]);
+  });
+
   it("помилка триває все вікно → день пропущено, reminders_sent порожній, після T+60 спроб немає", async () => {
     await onlyTrain();
     for (const m of [0, 15, 30, 45]) {
-      await tick(MON_0800 + m * MIN, [500]);
+      await tick(MON_0800 + m * MIN, [429]);
       expect(tg.calls).toHaveLength(1); // кожен тік у вікні пробує знову
     }
     expect(await sentRows()).toEqual([]);
-    await tick(MON_0800 + 60 * MIN, [500]);
+    await tick(MON_0800 + 60 * MIN, [429]);
     expect(tg.calls).toHaveLength(0); // T+60: вікно закрите, спроби немає
   });
 
@@ -428,12 +444,19 @@ describe("P2.3.7 недільний звіт", () => {
     expect(reports()).toBe(1);
   });
 
-  it("тиждень рахується за локальними датами: тренування Нд 23:50 — у цьому тижні, Пн 00:10 наступного — ні", async () => {
+  // Д4 рев'ю 2.3: звіт іде з першим тіком ≥ 19:00, тож тиждень закінчується в Нд 19:00 локально, а не опівночі. Інакше тренування Нд після 19:00
+  // не потрапляло б ні в цей звіт, ні в наступний (вікно наступного починалося б з Пн 00:00).
+  it("межа тижня — Нд 19:00 локально (через перехід часу): тренування Нд після 19:00 і Пн 00:10 — у НАСТУПНОМУ звіті, ніде не губиться й не дублюється", async () => {
     await env.DB.prepare("UPDATE users SET weigh_time = NULL, remind_time = NULL").run();
-    await addWorkout("A", at("2026-10-25T21:50:00Z"), [[60, 8, 0, 0]]); // Нд 23:50 EET
-    await addWorkout("B", at("2026-10-25T22:10:00Z"), [[40, 10, 0, 0]]); // Пн 00:10 EET
+    await addWorkout("A", at("2026-10-18T15:30:00Z"), [[50, 10, 0, 0]]); // Нд 18:30 EEST (+3) — до 19:00: минулий тиждень
+    await addWorkout("B", at("2026-10-18T16:30:00Z"), [[40, 10, 0, 0]]); // Нд 19:30 EEST — після 19:00: цей тиждень (вікно від 16:00Z, а не 17:00Z)
+    await addWorkout("A", at("2026-10-25T16:50:00Z"), [[60, 8, 0, 0]]); // Нд 18:50 EET (+2) — ще цей тиждень
+    await addWorkout("B", at("2026-10-25T18:30:00Z"), [[30, 10, 0, 0]]); // Нд 20:30 EET — наступний
+    await addWorkout("A", at("2026-10-25T22:10:00Z"), [[20, 10, 0, 0]]); // Пн 00:10 EET — наступний
     await tick(SUN_1900);
-    expect(strip(tg.texts()[0]!)).toContain("Тренувань: 1 з 3 · Підходів: 1 · Обсяг: 480 кг");
+    expect(strip(tg.texts()[0]!)).toContain("Тренувань: 2 з 3 · Підходів: 2 · Обсяг: 880 кг");
+    await tick(at("2026-11-01T17:00:00Z")); // наступна Нд 19:00 EET
+    expect(strip(tg.texts()[1]!)).toContain("Тренувань: 2 з 3 · Підходів: 2 · Обсяг: 500 кг");
   });
 });
 
@@ -479,9 +502,29 @@ describe("P2.3.7 і P2.3.11 крон: незалежні збої, cron_state", 
   });
 });
 
+describe("P2.3.12 білий список у кроні (Д7 рев'ю 2.3)", () => {
+  it("користувач поза ALLOWED_TELEGRAM_IDS у users: нагадування йдуть лише власнику, заявок чужому немає", async () => {
+    await env.DB.prepare("INSERT INTO users (id, first_name, created_at) VALUES (?, 'Хтось', 0)").bind(OTHER).run();
+    await env.DB.prepare("UPDATE users SET weigh_time = NULL").run();
+    await runCron({ ...env, ALLOWED_TELEGRAM_IDS: String(OWNER) }, MON_0800, { fetch: tg.fetch, timeoutMs: 50 });
+    expect(tg.calls.map((x) => x.payload.chat_id)).toEqual([OWNER]);
+    expect((await sentRows()).map((r) => r.user_id)).toEqual([OWNER]);
+  });
+
+  it("список не заданий → нікому (fail closed, як вебхук); тік і прибирання відбуваються", async () => {
+    await env.DB.prepare("UPDATE users SET weigh_time = NULL").run();
+    const c = await runCron({ ...env, ALLOWED_TELEGRAM_IDS: undefined }, MON_0800, { fetch: tg.fetch, timeoutMs: 50 });
+    expect(c).toEqual({ sent: 0, skipped: 0, released: 0, errors: 0 });
+    expect(tg.calls).toHaveLength(0);
+    expect((await repo.getCronTick())?.tickAt).toBe(MON_0800);
+  });
+});
+
 describe("P2.3.11 /health: вік тіку й тіку без помилок (В1 рев'ю)", () => {
+  // Кеш /health між викликами скидаємо: тут стан БД і «годинник» міняються всередині тесту; сам кеш — у «Д8» нижче.
   const health = async (now: number): Promise<{ status: number; body: string }> => {
-    const res = await handleRequest(new Request("https://example.com/health"), env, async () => {}, () => now);
+    resetHealthCache();
+    const res = await handleRequest(new Request("https://example.com/health"), { ...env, CF_VERSION_METADATA: undefined }, async () => {}, () => now);
     return { status: res.status, body: await res.text() };
   };
 

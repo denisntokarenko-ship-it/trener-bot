@@ -10,8 +10,8 @@ const DEFAULT_TZ = "Europe/Kyiv";
 export function createWeightFlow(repo: Repo, now: () => number) {
   /** Запис ваги за сьогодні й відповідь із середнім (спільний для /vaga, reply і голого числа). */
   async function save(ctx: Context, userId: number, today: string, dg: number): Promise<void> {
-    const before = await repo.getWeights(userId, addDays(today, -14), today); // до запису: «попередній запис» не бачить сьогоднішнього
-    const replaced = await repo.upsertBodyWeight(userId, today, dg, now());
+    // Один батч: вікно ДО запису (старе значення дня лишається в `before`) і сам запис; `replaced` — з того ж знімка.
+    const { before, replaced } = await repo.saveBodyWeight(userId, today, dg, now(), addDays(today, -14));
     const entries = [...before.filter((e) => e.localDate !== today), { localDate: today, weightDg: dg }];
     const { avgDg, n } = avg7(entries, today);
     const jump = jumpFrom(before, today, dg);

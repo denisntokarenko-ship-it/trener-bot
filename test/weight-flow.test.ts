@@ -104,6 +104,49 @@ describe("P2.1.2 локальна дата, не UTC", () => {
     await say("/vaga 80");
     expect((await rows())[0]!.local_date).toBe("2026-11-19");
   });
+
+  // Рев'ю 2.1, дрібниця 3: рядок users.tz, якого Intl не приймає (запис у БД поза ботом), не має ламати /vaga на кожному виклику.
+  it.each(["Mars/Base", "Europe/Kiev2", ""])("невалідний users.tz «%s» → /vaga працює з дефолтним поясом, без «Щось пішло не так»", async (tz) => {
+    await env.DB.prepare("UPDATE users SET tz = ? WHERE id = ?").bind(tz, OWNER).run();
+    await say("/vaga 78,4");
+    expect(reply()).toBe("⚖️ 78,4 кг записано (середнє за 7 днів: 78,4 кг (1 зваж.))");
+    expect((await rows())[0]!.local_date).toBe("2026-11-20"); // 12:00 за Києвом (дефолт)
+    await say("/vaga");
+    expect(reply()).toContain("78,4");
+    expect(await repo.getUserTz(OWNER)).toBeNull();
+  });
+
+  it("getUserTz: валідний пояс повертається як є, користувача немає — null", async () => {
+    await env.DB.prepare("UPDATE users SET tz = 'America/New_York' WHERE id = ?").bind(OWNER).run();
+    expect(await repo.getUserTz(OWNER)).toBe("America/New_York");
+    expect(await repo.getUserTz(STRANGER)).toBeNull();
+  });
+});
+
+// Рев'ю 2.1, дрібниця 1: читання «попереднього» й запис не мають розходитися між запитами.
+describe("атомарність запису ваги", () => {
+  it("паралельні дубль-апдейти: «замінило» йде ланцюжком (кожен бачить значення попереднього запису), а не обидва — старе", async () => {
+    await repo.upsertBodyWeight(OWNER, "2026-11-20", 790, 1);
+    const [a, b] = await Promise.all([repo.upsertBodyWeight(OWNER, "2026-11-20", 780, 2), repo.upsertBodyWeight(OWNER, "2026-11-20", 770, 3)]);
+    expect([a, b].sort()).toEqual([780, 790]);
+    expect(await repo.getLastWeight(OWNER)).toMatchObject({ weightDg: 770 });
+  });
+
+  it("saveBodyWeight: вікно ДО запису (зі старим значенням дня) і replaced з того самого знімка; вікно ≤ localDate, лише свої рядки", async () => {
+    await repo.upsertUser(STRANGER, "Інший", 0);
+    await repo.upsertBodyWeight(STRANGER, "2026-11-19", 500, 1);
+    for (const [d, v] of [["2026-11-05", 810], ["2026-11-08", 800], ["2026-11-20", 790], ["2026-11-21", 700]] as const) await repo.upsertBodyWeight(OWNER, d, v, 1);
+    const r = await repo.saveBodyWeight(OWNER, "2026-11-20", 780, 5, "2026-11-06");
+    expect(r).toEqual({
+      before: [
+        { localDate: "2026-11-08", weightDg: 800 },
+        { localDate: "2026-11-20", weightDg: 790 },
+      ],
+      replaced: 790,
+    });
+    expect(await repo.getWeights(OWNER, "2026-11-20", "2026-11-20")).toEqual([{ localDate: "2026-11-20", weightDg: 780 }]);
+    expect((await repo.saveBodyWeight(OWNER, "2026-12-01", 770, 6, "2026-11-17")).replaced).toBeNull();
+  });
 });
 
 describe("P2.1.3 невалідне", () => {

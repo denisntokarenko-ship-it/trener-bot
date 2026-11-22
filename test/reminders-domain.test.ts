@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dueReminders, parseReminderTime, parseTrainingDays, type ReminderKind, type ReminderUser } from "../src/domain/reminders";
-import { isoWeekday, localDayStartUtc, localParts } from "../src/domain/time";
+import { isoWeekday, localDayStartUtc, localParts, localTimeUtc, usableTz } from "../src/domain/time";
 import { weekRecords } from "../src/domain/week-report";
 import type { ProgressSetRow } from "../src/domain/records";
 
@@ -210,5 +210,30 @@ describe("weekRecords: нові рекорди тижня", () => {
       row(4, "В", 8, 1, 11, 5), // +1 — четвертий, відсікається
     ];
     expect(weekRecords(rows, from, to).map((x) => x.nameUk)).toEqual(["Ґ", "А", "Б"]);
+  });
+});
+
+describe("localTimeUtc: локальний час доби, у т.ч. доба переходу (межа тижня звіту, Д4 рев'ю 2.3)", () => {
+  it.each([
+    ["2026-10-18", 19 * 60, "2026-10-18T16:00:00.000Z"], // EEST +3
+    ["2026-10-25", 19 * 60, "2026-10-25T17:00:00.000Z"], // доба переходу на EET: 19:00 уже +2
+    ["2027-03-28", 19 * 60, "2027-03-28T16:00:00.000Z"], // доба переходу на EEST: 19:00 уже +3
+    ["2026-10-25", 0, "2026-10-24T21:00:00.000Z"], // опівночі ще EEST
+    ["2026-11-20", 90, "2026-11-19T23:30:00.000Z"],
+  ])("Київ %s %i хв → %s", (date, minutes, utc) => {
+    expect(iso(localTimeUtc(date, minutes, "Europe/Kyiv"))).toBe(utc);
+  });
+  it("на захід від UTC: Нью-Йорк 19:00 EDT = 23:00Z, після переходу (EST) = 00:00Z наступної доби", () => {
+    expect(iso(localTimeUtc("2026-10-25", 19 * 60, "America/New_York"))).toBe("2026-10-25T23:00:00.000Z");
+    expect(iso(localTimeUtc("2026-11-01", 19 * 60, "America/New_York"))).toBe("2026-11-02T00:00:00.000Z");
+  });
+  it("нуль хвилин збігається з localDayStartUtc", () => {
+    expect(localTimeUtc("2026-10-25", 0, "Europe/Kyiv")).toBe(localDayStartUtc("2026-10-25", "Europe/Kyiv"));
+  });
+});
+
+describe("usableTz: збережений пояс, якого рантайм не приймає, → null", () => {
+  it.each([["Europe/Kyiv", "Europe/Kyiv"], ["UTC", "UTC"], ["Mars/Base", null], ["", null], [null, null], [undefined, null]])("%j → %j", (tz, out) => {
+    expect(usableTz(tz)).toBe(out);
   });
 });

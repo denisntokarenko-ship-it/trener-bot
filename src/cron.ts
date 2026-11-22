@@ -1,5 +1,6 @@
 // Крон `*/15 * * * *` (phase-2.md, розділ 4): прибирання Фази 1 і нагадування — два незалежні try/catch, збій одного
 // не зупиняє другого; наприкінці — cron_state (навіть коли нагадування кидали) і один лог із лічильниками без текстів.
+import { parseAllowedIds } from "./access";
 import { MEAL_PENDING_TTL_MS } from "./config";
 import { createDb } from "./db/client";
 import { createRepo, type Repo } from "./db/repo";
@@ -37,7 +38,7 @@ export async function runCron(env: Env, now: number, deps: { repo?: Repo } & Rem
     console.error("cron proposals expiry failed", { error: errorName(e) });
   }
   try {
-    counters = await runReminders(repo, env.TELEGRAM_BOT_TOKEN, now, { anthropicApiKey: env.ANTHROPIC_API_KEY || undefined, ...deps });
+    counters = await runReminders(repo, env.TELEGRAM_BOT_TOKEN, now, { anthropicApiKey: env.ANTHROPIC_API_KEY || undefined, allowedIds: parseAllowedIds(env.ALLOWED_TELEGRAM_IDS), ...deps });
   } catch (e) {
     counters.errors++;
     console.error("cron reminders failed", { error: errorName(e) });
