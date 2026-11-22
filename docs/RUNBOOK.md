@@ -29,15 +29,16 @@ npm run set-webhook -- preview
 
 Скрипт друкує `@username` бота — звір, що це бот потрібного середовища. Повторний запуск безпечний.
 
-## Профіль бота (меню, опис)
+## Профіль бота (назва, аватарка, меню, опис)
 
-Той самий `TELEGRAM_BOT_TOKEN` (потрібного бота) у середовищі терміналу:
+Два боти мають відрізнятися з першого погляду: робочий — «💪 Тренер», тестовий (`@Tokarenko_trener_preview_bot`) — «🧪 Тренер · тест». Оформлення — `BOT_PROFILES` у `src/bot/texts.ts`, аватарки — `assets/bot/` (SVG-джерело, PNG 640×640, JPG для Telegram; перегенерація — `python assets/bot/render.py`). Токен вводиш прихованим вводом, не аргументом; по одному боту за запуск:
 
-```bash
-npm run set-bot-profile
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\set-bot-profile.ps1 preview
+powershell -ExecutionPolicy Bypass -File scripts\set-bot-profile.ps1 production
 ```
 
-Скрипт читає з Telegram меню команд, опис і короткий опис (`getMyCommands`, `getMyDescription`, `getMyShortDescription`) і пише лише те, що відрізняється; тексти — `BOT_COMMANDS`, `BOT_DESCRIPTION`, `BOT_SHORT_DESCRIPTION` у `src/bot/texts.ts`. Повторний запуск безпечний («без змін»). `set-webhook` теж виставляє меню команд.
+Скрипт спершу питає `getMe` і відмовляє (нічого не змінивши), якщо токен не того бота: preview — лише `@Tokarenko_trener_preview_bot`, production — будь-який інший. Далі читає назву, меню команд, опис і короткий опис (`getMyName`, `getMyCommands`, `getMyDescription`, `getMyShortDescription`) і пише лише різницю («без змін»). Аватарку Telegram прочитати не дає, тож `setMyProfilePhoto` (Bot API, лише JPG) виконується щоразу; `-NoPhoto` пропускає. `set-webhook` теж виставляє меню команд.
 
 ## Чек-лист «міграція прода»
 
