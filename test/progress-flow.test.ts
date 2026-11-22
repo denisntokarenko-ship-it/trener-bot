@@ -60,7 +60,7 @@ async function seedWorkout(dayCode: string, startedAt: number, status: "done" | 
     }
   }
   if (status === "done") await repo.finishWorkout(OWNER, w.id, 4, startedAt + 3_000_000);
-  else await repo.abandonStale(startedAt + 5 * 3_600_000);
+  else await repo.abandonStale(OWNER, startedAt + 5 * 3_600_000);
 }
 
 describe("/progres", () => {

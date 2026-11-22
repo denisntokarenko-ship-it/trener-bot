@@ -684,12 +684,17 @@ export function createRepo(db: Db) {
       return res.meta.changes === 1;
     },
 
-    /** Закриває як abandoned усі active, початі раніше за now − 4 год (рівно 4 год — ще ні). Повертає кількість. */
-    async abandonStale(now: number): Promise<number> {
+    /** Id усіх користувачів — для службових проходів крону по користувачах (прибирання не залежить від запиту нагадувань). */
+    async getUserIds(): Promise<number[]> {
+      return (await db.select({ id: users.id }).from(users).orderBy(asc(users.id)).all()).map((r) => r.id);
+    },
+
+    /** Закриває як abandoned active користувача, початі раніше за now − 4 год (рівно 4 год — ще ні). Чужі не чіпає. Повертає кількість. */
+    async abandonStale(userId: number, now: number): Promise<number> {
       const res = await db
         .update(workouts)
         .set({ status: "abandoned", finishedAt: now, awaitInput: null })
-        .where(and(eq(workouts.status, "active"), lt(workouts.startedAt, now - STALE_AFTER_MS)))
+        .where(and(eq(workouts.userId, userId), eq(workouts.status, "active"), lt(workouts.startedAt, now - STALE_AFTER_MS)))
         .run();
       return res.meta.changes;
     },

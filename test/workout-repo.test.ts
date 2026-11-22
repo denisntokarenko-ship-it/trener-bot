@@ -194,16 +194,27 @@ describe("abandonStale", () => {
     await env.DB.prepare("UPDATE workouts SET await_input = '{}' WHERE id = ?").bind(stale).run();
     const edge = await start(B, (await repo.getProgramDay(B, "A"))!, now - STALE_AFTER_MS);
 
-    expect(await repo.abandonStale(now)).toBe(1);
+    expect(await repo.abandonStale(A, now)).toBe(1);
     expect(await workoutRow(stale)).toEqual({ status: "abandoned", finished_at: now, effort: null, await_input: null });
     expect(await workoutRow(edge)).toEqual({ status: "active", finished_at: null, effort: null, await_input: null });
     expect(await workoutRow(done)).toEqual({ status: "done", finished_at: now - 3 * STALE_AFTER_MS + 1, effort: 3, await_input: null });
-    expect(await repo.abandonStale(now)).toBe(0);
+    expect(await repo.abandonStale(A, now)).toBe(0);
+  });
+
+  it("[R-1.1] Д3: закриває лише active свого користувача — чужий старий active лишається", async () => {
+    const now = T0 + 10 * STALE_AFTER_MS;
+    const mine = await start(A, dayA, now - STALE_AFTER_MS - 1);
+    const theirs = await start(B, (await repo.getProgramDay(B, "A"))!, now - STALE_AFTER_MS - 1);
+    expect(await repo.abandonStale(A, now)).toBe(1);
+    expect((await workoutRow(mine))?.status).toBe("abandoned");
+    expect((await workoutRow(theirs))?.status).toBe("active");
+    expect(await repo.abandonStale(B, now)).toBe(1);
+    expect((await workoutRow(theirs))?.status).toBe("abandoned");
   });
 
   it("свіже active (щойно почате) не чіпає", async () => {
     const w = await start(A, dayA, T0);
-    expect(await repo.abandonStale(T0 + 1)).toBe(0);
+    expect(await repo.abandonStale(A, T0 + 1)).toBe(0);
     expect((await workoutRow(w))?.status).toBe("active");
   });
 });
@@ -219,7 +230,7 @@ describe("getExerciseHistory / getLastDoneWorkout", () => {
     const w2 = await start(A, dayA, T0 + 100);
     await repo.upsertSet(A, set(w2, dayA, 0, 1, { weightKg: 45, reps: 6 }));
     await repo.upsertSet(A, set(w2, dayA, 0, 2, { skipped: true, weightKg: null, reps: null }));
-    await repo.abandonStale(T0 + 100 + STALE_AFTER_MS + 1);
+    await repo.abandonStale(A, T0 + 100 + STALE_AFTER_MS + 1);
 
     const w3 = await start(A, dayB, T0 + STALE_AFTER_MS * 2); // день B — присідань немає
     await repo.finishWorkout(A, w3, 2, T0 + STALE_AFTER_MS * 2 + 1);
@@ -268,7 +279,7 @@ describe("getExerciseHistory / getLastDoneWorkout", () => {
 
   it("немає done → getLastDoneWorkout null (abandoned не рахується)", async () => {
     await start(A, dayA, T0);
-    await repo.abandonStale(T0 + STALE_AFTER_MS + 1);
+    await repo.abandonStale(A, T0 + STALE_AFTER_MS + 1);
     expect(await repo.getLastDoneWorkout(A)).toBeNull();
   });
 
@@ -279,7 +290,7 @@ describe("getExerciseHistory / getLastDoneWorkout", () => {
     await repo.finishWorkout(A, b, 3, T0 + 1);
     expect(nextDayCode(await repo.getLastDoneWorkout(A), days)).toBe("A");
     await start(A, dayA, T0 + 10);
-    await repo.abandonStale(T0 + 10 + STALE_AFTER_MS + 1);
+    await repo.abandonStale(A, T0 + 10 + STALE_AFTER_MS + 1);
     expect(nextDayCode(await repo.getLastDoneWorkout(A), days)).toBe("A");
   });
 });
