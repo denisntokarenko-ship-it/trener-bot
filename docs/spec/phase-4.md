@@ -36,7 +36,7 @@
 
 | Інструмент | Вхід | Вихід |
 |---|---|---|
-| `get_recent_workouts` | `n` 1–8 (типово 3) | за `getRecentWorkouts`: `[{ date, day, status, effort, exercises: [{ name, sets: [{ w, r }] }] }]` |
+| `get_recent_workouts` | `n` 1–8 (типово 3) | `{ workouts: [{ date, day, status, effort, exercises: [{ name, sets: [{ w, r } \| { skipped: true }] }] }] }` (обгортка — щоб нести `truncated`) |
 | `get_exercise_history` | `exercise_id` ≥ 1, `n` 1–10 (типово 5), `program_exercise_id` (необов'язково) | `{ name, sessions: [{ date, planned_sets, sets: [{ w, r }], effort }], slot: { program_exercise_id, day } \| null, next_prescription: { weight_kg, reps, reason } \| null }`; `next_prescription` — з `prescribeSlot` (імпорт із `src/bot/prescribe.ts`, цикл залежностей немає) для слота `program_exercise_id`, а без нього — для **першого за порядком днів** слота цієї вправи в активній програмі (вправа може стояти в кількох днях з різними діапазонами; `get_program` дає id слотів); немає в програмі → `slot`/`next_prescription` = `null`; історія — **лише власна** |
 | `get_weight_trend` | `days` 7–90 (типово 28) | `{ entries: [{ date, kg }] (≤ 30 останніх), avg7: { w0, w1, w2 }, change_kg, n }` — вікна `W0/W1/W2` Фази 2, `null` без записів |
 | `get_program` | — | `{ name, next_day, days: [{ code, title, exercises: [{ program_exercise_id, exercise_id, name, sets, rep_min, rep_max, substitutes: [{ exercise_id, name }] }] }] }` |

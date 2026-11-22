@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 // Сирі тексти файлів підтягує Vite під час збирання тесту (у workerd немає доступу до диска).
 const botFiles = import.meta.glob("../src/bot/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
+const aiFiles = import.meta.glob("../src/ai/**/*.ts", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+
 const FORBIDDEN = [/from\s+["']drizzle-orm(\/[^"']*)?["']/, /from\s+["'][./]*\/?db\/client["']/, /import\(\s*["']drizzle-orm/];
 
 describe("архітектура", () => {
@@ -13,6 +15,12 @@ describe("архітектура", () => {
 
   it("src/bot/** не імпортує drizzle-orm і src/db/client", () => {
     const offenders = Object.entries(botFiles).filter(([, src]) => FORBIDDEN.some((re) => re.test(src)));
+    expect(offenders.map(([path]) => path)).toEqual([]);
+  });
+
+  it("P4.1: src/ai/** не імпортує drizzle-orm і src/db/client — лише repo з userId", () => {
+    expect(Object.keys(aiFiles).length).toBeGreaterThan(0);
+    const offenders = Object.entries(aiFiles).filter(([, src]) => FORBIDDEN.some((re) => re.test(src)));
     expect(offenders.map(([path]) => path)).toEqual([]);
   });
 

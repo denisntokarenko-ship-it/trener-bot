@@ -64,6 +64,13 @@
       "when": 1795681835469,
       "tag": "0008_trend_reminders",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1795768235469,
+      "tag": "0009_ai_proposals",
+      "breakpoints": true
     }
   ]
 }
