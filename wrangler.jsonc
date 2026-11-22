@@ -2,8 +2,8 @@
   // Верхній рівень — лише локальна розробка (`wrangler dev`, тести). Деплой — тільки з --env.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "trener-local",
-  // Акаунт із D1 trener-preview і trener-prod (платний тариф). Не секрет; пришпилено явно, щоб wrangler не вгадував акаунт (В1 R-0).
-  "account_id": "3d91f58920a9d270ee8d634d17e164b1",
+  // Акаунт d156e789 (Workers Paid) із D1 trener-preview і trener-prod; перенесено 2026-11-22 з 3d91f589 (Free). Не секрет; пришпилено явно, щоб wrangler не вгадував акаунт (В1 R-0).
+  "account_id": "d156e789bad9b2e122115788dc94e006",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-19",
   "compatibility_flags": ["nodejs_compat"],
@@ -27,7 +27,7 @@
         {
           "binding": "DB",
           "database_name": "trener-preview",
-          "database_id": "f00d635a-d637-4d54-95e3-ee2c26370eba",
+          "database_id": "44417ee0-ea0b-4f96-9051-a6ffd963b803",
           "migrations_dir": "migrations"
         }
       ]
@@ -40,7 +40,7 @@
         {
           "binding": "DB",
           "database_name": "trener-prod",
-          "database_id": "c34e8f9c-0be8-4125-aabe-840e8ff65bb2",
+          "database_id": "cdfc2976-fb96-45ab-b356-a8889d496aa9",
           "migrations_dir": "migrations"
         }
       ]

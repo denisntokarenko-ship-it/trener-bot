@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // Репетиція відновлення (R-2 В1) на локальній D1 справжнім wrangler: міграції → дані (сид, тренування, підходи, вага,
 // заявка нагадування) → scripts/backup-prod.sh (wrangler підмінено: --remote → --local) → рецепт RUNBOOK
-// «Відкат пізніше ніж за 7 днів»: міграції в чисту БД → execute --file <дамп даних> → лічильники всіх таблиць = джерело.
+// «Відкат пізніше ніж за 7 днів»: міграції в чисту БД → scripts/import-data.mjs <дамп даних> → лічильники всіх таблиць = джерело.
+// Файл імпорту без PRAGMA defer_foreign_keys, тож локальна D1 перевіряє FK так само суворо, як remote (перенос 2026-11-22:
+// сирий дамп remote D1 відкидає — дочірні таблиці в ньому раніше батьківських).
 // Запуск: node scripts/test-restore.mjs (у npm run test:scripts). Нічого не пише в remote D1.
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
@@ -48,9 +50,10 @@ INSERT INTO workout_sets (workout_id, program_exercise_id, exercise_id, set_no, 
   SELECT w.id, pe.id, pe.exercise_id, n.n, 60, 8, 60, 8, 0 FROM workouts w JOIN program_exercises pe ON pe.program_day_id = w.program_day_id AND pe.position = (SELECT MIN(position) FROM program_exercises WHERE program_day_id = w.program_day_id)
   JOIN (SELECT 1 AS n UNION ALL SELECT 2) n;
 INSERT INTO body_weights (user_id, local_date, weight_dg, updated_at) VALUES (369, '2026-11-20', 935, 1);
-INSERT INTO reminders_sent (user_id, kind, local_date, sent_at, message_id) VALUES (369, 'weigh', '2026-11-21', 1, 42);`);
+INSERT INTO reminders_sent (user_id, kind, local_date, sent_at, message_id) VALUES (369, 'weigh', '2026-11-21', 1, 42);
+INSERT INTO chat_turns (user_id, role, text, created_at) VALUES (369, 'user', 'рядок 1;' || char(10) || 'рядок 2 ''в лапках''; "ще"', 1);`);
 const before = counts(src);
-for (const t of ['users', 'exercises', 'exercise_substitutes', 'programs', 'workouts', 'workout_sets', 'body_weights', 'reminders_sent']) {
+for (const t of ['users', 'exercises', 'exercise_substitutes', 'programs', 'workouts', 'workout_sets', 'body_weights', 'reminders_sent', 'chat_turns']) {
   if (!(before[t] > 0)) throw new Error(`фікстура: у джерелі ${t} = ${before[t]}`);
 }
 
@@ -72,11 +75,19 @@ if (b.status !== 0) throw new Error(`backup-prod.sh → ${b.status}\n${b.stdout}
 const dataFile = readdirSync(outDir).find((f) => f.endsWith('-data.sql'));
 if (!dataFile) throw new Error('немає дампу даних');
 
-// 3. Рецепт RUNBOOK: міграції в нову БД → дамп даних.
+// 3. Рецепт RUNBOOK: міграції в нову БД → крон нового Worker уже записав cron_state → import-data.mjs (звіряє й вміст).
 const dst = project('dst');
 wrangler(dst, ['d1', 'migrations', 'apply', DB, '--local']);
-wrangler(dst, ['d1', 'execute', DB, '--local', '--file', join(outDir, dataFile), '--yes']);
+sql(dst, 'INSERT INTO cron_state (id, last_tick_at, last_ok_at) VALUES (1, 1, 1)');
+const imp = spawnSync(process.execPath, [join(repo, 'scripts', 'import-data.mjs'), join(outDir, dataFile), '--local', dst], { cwd: repo, encoding: 'utf8' });
+if (imp.status !== 0) throw new Error(`import-data.mjs → ${imp.status}
+${imp.stdout}
+${imp.stderr.slice(-2000)}`);
 const after = counts(dst);
+// Охорона: у непорожню БД import-data.mjs не пише.
+const again = spawnSync(process.execPath, [join(repo, 'scripts', 'import-data.mjs'), join(outDir, dataFile), '--local', dst], { cwd: repo, encoding: 'utf8' });
+if (again.status !== 1 || !again.stderr.includes('Ціль не порожня')) throw new Error(`повторний імпорт мав відмовити: ${again.status}
+${again.stderr.slice(-500)}`);
 
 const diff = Object.keys({ ...before, ...after }).filter((t) => before[t] !== after[t]);
 console.log(`${diff.length === 0 ? 'ok  ' : 'FAIL'} відновлення дампу даних у чисту БД: ${Object.entries(before).map(([t, n]) => `${t}=${n}→${after[t]}`).join(' ')}`);

@@ -12,19 +12,25 @@ case "$env_name" in
 esac
 
 cd "$(dirname "$0")/.."
+# Інший акаунт Cloudflare (перенос 2026-11-22): WRANGLER_CONFIG — конфіг з його account_id і database_id,
+# WRANGLER_PROFILE — auth-профіль wrangler (`wrangler auth create <name>`); обидва — у кожен виклик wrangler.
+extra=()
+if [ -n "${WRANGLER_CONFIG:-}" ]; then extra+=(--config "$WRANGLER_CONFIG"); fi
+if [ -n "${WRANGLER_PROFILE:-}" ]; then extra+=(--profile "$WRANGLER_PROFILE"); fi
+wr() { "${NPX:-npx}" wrangler "$@" ${extra[@]+"${extra[@]}"}; }
 backup_dir="${BACKUP_DIR:-backups}"
 mkdir -p "$backup_dir"
 stamp="$(date -u +%Y%m%d-%H%M%S)"
 out="$backup_dir/${prefix}-${stamp}.sql"
 # Дамп лише даних — для відновлення (R-2 В1): повний дамп пише INSERT дочірньої таблиці до CREATE TABLE батьківської
-# і в чисту БД не відновлюється. Рецепт: міграції в нову БД → execute --file цього файлу (RUNBOOK).
+# і в чисту БД не відновлюється. Рецепт: міграції в нову БД → scripts/import-data.mjs цього файлу (RUNBOOK).
 data="$backup_dir/${prefix}-${stamp}-data.sql"
 
 # Будь-який вихід з помилкою — прибрати недописані файли.
 trap 'code=$?; if [ $code -ne 0 ]; then rm -f "$out" "$data" "$data.tmp"; echo "Бекап не вдався (код $code), $out і $data видалено" >&2; fi' EXIT
 
-"${NPX:-npx}" wrangler d1 export "$db" --remote --env "$env_name" --output "$out"
-"${NPX:-npx}" wrangler d1 export "$db" --remote --env "$env_name" --no-schema --output "$data.tmp"
+wr d1 export "$db" --remote --env "$env_name" --output "$out"
+wr d1 export "$db" --remote --env "$env_name" --no-schema --output "$data.tmp"
 # d1_migrations у новій БД пише сам `migrations apply` — його рядки в дампі даних дали б конфлікт PK.
 grep -v -e '^INSERT INTO "d1_migrations"' -e "^INSERT INTO \"sqlite_sequence\" (\"name\",\"seq\") VALUES('d1_migrations'" "$data.tmp" > "$data" || true
 rm -f "$data.tmp"
@@ -34,7 +40,7 @@ if [ ! -s "$out" ]; then
   exit 1
 fi
 # Таблиці беремо з самої БД, а не списком у скрипті: нові фази додають свої.
-tables=$("${NPX:-npx}" wrangler d1 execute "$db" --remote --env "$env_name" --json \
+tables=$(wr d1 execute "$db" --remote --env "$env_name" --json \
   --command "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%'" \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const r of JSON.parse(s)[0].results)console.log(r.name)})')
 if [ -z "$tables" ]; then
@@ -59,7 +65,7 @@ done
 data_tables=$(printf '%s\n' $tables | grep -vx 'd1_migrations' || true)
 if [ -n "$data_tables" ]; then
   count_sql="SELECT $(printf '%s\n' $data_tables | sed 's/.*/(SELECT count(*) FROM "&") AS "&"/' | paste -sd, -)"
-  counts=$("${NPX:-npx}" wrangler d1 execute "$db" --remote --env "$env_name" --json --command "$count_sql" \
+  counts=$(wr d1 execute "$db" --remote --env "$env_name" --json --command "$count_sql" \
     | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for(const[k,v]of Object.entries(JSON.parse(s)[0].results[0]))console.log(k+" "+v)})')
   summary=""
   while read -r table n; do

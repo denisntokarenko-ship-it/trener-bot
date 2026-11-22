@@ -13,3 +13,6 @@ coverage
 # Згенерований SQL сиду (npm run seed:sql)
 .seed.sql
 .seed-foods.sql
+
+# Конфіг старого акаунта Cloudflare для відкату й переносу (RUNBOOK, 2026-11-22) — з git show, не комітиться
+wrangler.old*.jsonc
