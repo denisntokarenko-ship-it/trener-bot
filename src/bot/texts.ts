@@ -6,7 +6,8 @@
 // Емодзі: 🏋️ тренування · 🎯 ціль · 📋 програма · 📈 прогрес · ✅ записано · ⚠️ увага · ❌ помилка · 💡 техніка ·
 //         🎥 відео · ⚖️ вага · 🔁 заміна · ⏭ пропуск · 🏆 рекорд · 🍽 їжа · 😴 сон.
 import type { Exercise, ProfileRow, ProgramDay, StartWeight } from "../db/repo";
-import { GOAL_LABELS, type Goal, type Plan } from "../domain/plan";
+// `.ts` — бо scripts/set-webhook.ts і set-bot-profile.ts запускає голий node (зняття типів не дописує розширень): значення з src — лише з розширенням.
+import { GOAL_LABELS, type Goal, type Plan } from "../domain/plan.ts";
 
 // --- Форматування ---
 

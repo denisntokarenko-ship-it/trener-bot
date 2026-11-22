@@ -96,6 +96,7 @@
 
 Короткі робочі рішення по ходу. Архітектурні й продуктові — у `docs/spec/decisions.md`.
 
+- 2026-11-22 · infra — `set-webhook`/`set-bot-profile` падали з ERR_MODULE_NOT_FOUND (голий node не дописує розширень; `texts.ts` → `../domain/plan`). Лік — `../domain/plan.ts` (не `tsx`: це лише транзитивна залежність drizzle-kit); `test-entrypoints.mjs` запускає кожен `scripts/*.ts` справжнім node.
 - 2026-11-22 · infra — перенос на `d156e789…` (Paid): D1 `trener-preview` `44417ee0-…`, `trener-prod` `cdfc2976-…`, субдомен `maistry-gromady`, міграції 0000–0009, деплой обох. Remote D1 відкидає сирий дамп даних на FK (дочірні таблиці раніше батьківських) — імпорт лише `scripts/import-data.mjs` (порядок FK + звірка вмісту); репетиція на бекапі 4.4 — 500/500, прибрано Time Travel.
 
 - 2026-11-20 · 2.5 — прод: `backup:prod` (34 217 байт, 13 таблиць, `workout_sets` 0) → bookmark → міграції 0004–0006 → `deploy:prod -- --message "main 78529d5 (2.5)"` (версія `95478ee1`; sha видно в `deployments list`) → `/health` `ok cron=0m ok=0m` → тік 19:15 `ok`, 9 мс CPU, 735 мс wall. Знімок лічильників до/після однаковий. Ліміти Paid: 1 000 тригерів/акаунт (у нас ~4), wall 15 хв, CPU крону 30 с.
