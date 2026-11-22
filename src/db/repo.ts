@@ -5,13 +5,14 @@ import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import { CHAT_HISTORY_MAX_AGE_MS, CHAT_HISTORY_TURNS, CHAT_INFLIGHT_MS, CHAT_TURN_MAX_CHARS, FOOD_MAX_ITEMS, PROPOSAL_TTL_MS, PROPOSALS_PENDING_MAX } from "../config";
 import type { Db } from "./client";
 import type { Limit, Plan, PlanCatalogItem } from "../domain/plan";
+import { FIRST_NAME_MAX } from "../constants";
 import type { ProgressSetRow } from "../domain/records";
 import { parseReminderTime, parseTrainingDays } from "../domain/reminders";
 import { parseTimezone } from "../domain/settings";
 import { normalizeAlias } from "../domain/text";
 import { bodyWeights, cronState, exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, remindersSent, startWeights, userProfiles, users, workoutSets, workouts, type FoodSource, type MealConfidence, type MealStatus, type ProposalKind, type ProposalStatus, type ReminderKind, type TargetReason } from "./schema";
 
-export const FIRST_NAME_MAX = 64;
+export { FIRST_NAME_MAX };
 /** active старше за цей вік закривається як abandoned (phase-1-flow.md). */
 export const STALE_AFTER_MS = 4 * 60 * 60 * 1000;
 
@@ -683,12 +684,17 @@ export function createRepo(db: Db) {
       return res.meta.changes === 1;
     },
 
-    /** Закриває як abandoned усі active, початі раніше за now − 4 год (рівно 4 год — ще ні). Повертає кількість. */
-    async abandonStale(now: number): Promise<number> {
+    /** Id усіх користувачів — для службових проходів крону по користувачах (прибирання не залежить від запиту нагадувань). */
+    async getUserIds(): Promise<number[]> {
+      return (await db.select({ id: users.id }).from(users).orderBy(asc(users.id)).all()).map((r) => r.id);
+    },
+
+    /** Закриває як abandoned active користувача, початі раніше за now − 4 год (рівно 4 год — ще ні). Чужі не чіпає. Повертає кількість. */
+    async abandonStale(userId: number, now: number): Promise<number> {
       const res = await db
         .update(workouts)
         .set({ status: "abandoned", finishedAt: now, awaitInput: null })
-        .where(and(eq(workouts.status, "active"), lt(workouts.startedAt, now - STALE_AFTER_MS)))
+        .where(and(eq(workouts.userId, userId), eq(workouts.status, "active"), lt(workouts.startedAt, now - STALE_AFTER_MS)))
         .run();
       return res.meta.changes;
     },
@@ -733,6 +739,20 @@ export function createRepo(db: Db) {
         last.sets.push({ setNo: r.set_no, weightKg: r.weight_kg, reps: r.reps, skipped: r.skipped === 1 });
       }
       return sessions;
+    },
+
+    /**
+     * Які з exerciseIds мають хоч одну зараховану сесію (done/abandoned з ≥ 1 непропущеним підходом) — той самий критерій,
+     * що й `getExerciseHistory(…, 1).length > 0`, але одним запитом на весь набір (екран «lifts» анкети питав по одному).
+     */
+    async getExerciseIdsWithHistory(userId: number, exerciseIds: readonly number[]): Promise<Set<number>> {
+      if (exerciseIds.length === 0) return new Set();
+      const rows = await db.all<{ exercise_id: number }>(sql`
+        SELECT DISTINCT s.exercise_id AS exercise_id
+        FROM workout_sets s JOIN workouts w ON w.id = s.workout_id
+        WHERE w.user_id = ${userId} AND w.status IN ('done', 'abandoned') AND s.skipped = 0
+          AND s.exercise_id IN (${sql.join(exerciseIds.map((id) => sql`${id}`), sql`, `)})`);
+      return new Set(rows.map((r) => r.exercise_id));
     },
 
     /** Останнє done-тренування користувача (за started_at) — для наступного дня; немає — null. */

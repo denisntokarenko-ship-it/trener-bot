@@ -194,17 +194,60 @@ describe("abandonStale", () => {
     await env.DB.prepare("UPDATE workouts SET await_input = '{}' WHERE id = ?").bind(stale).run();
     const edge = await start(B, (await repo.getProgramDay(B, "A"))!, now - STALE_AFTER_MS);
 
-    expect(await repo.abandonStale(now)).toBe(1);
+    expect(await repo.abandonStale(A, now)).toBe(1);
     expect(await workoutRow(stale)).toEqual({ status: "abandoned", finished_at: now, effort: null, await_input: null });
     expect(await workoutRow(edge)).toEqual({ status: "active", finished_at: null, effort: null, await_input: null });
     expect(await workoutRow(done)).toEqual({ status: "done", finished_at: now - 3 * STALE_AFTER_MS + 1, effort: 3, await_input: null });
-    expect(await repo.abandonStale(now)).toBe(0);
+    expect(await repo.abandonStale(A, now)).toBe(0);
+  });
+
+  it("[R-1.1] Д3: закриває лише active свого користувача — чужий старий active лишається", async () => {
+    const now = T0 + 10 * STALE_AFTER_MS;
+    const mine = await start(A, dayA, now - STALE_AFTER_MS - 1);
+    const theirs = await start(B, (await repo.getProgramDay(B, "A"))!, now - STALE_AFTER_MS - 1);
+    expect(await repo.abandonStale(A, now)).toBe(1);
+    expect((await workoutRow(mine))?.status).toBe("abandoned");
+    expect((await workoutRow(theirs))?.status).toBe("active");
+    expect(await repo.abandonStale(B, now)).toBe(1);
+    expect((await workoutRow(theirs))?.status).toBe("abandoned");
   });
 
   it("свіже active (щойно почате) не чіпає", async () => {
     const w = await start(A, dayA, T0);
-    expect(await repo.abandonStale(T0 + 1)).toBe(0);
+    expect(await repo.abandonStale(A, T0 + 1)).toBe(0);
     expect((await workoutRow(w))?.status).toBe("active");
+  });
+});
+
+describe("[R-1b.2] Д6: getExerciseIdsWithHistory — один запит замість getExerciseHistory по одній вправі", () => {
+  it("збігається з getExerciseHistory(…, 1): done і abandoned з непропущеним підходом — так; лише пропущені, active, чужий — ні", async () => {
+    const dayAIds = dayA.slots.map((s) => s.exercise.id);
+    const dayBIds = dayB.slots.map((s) => s.exercise.id);
+    // done: слот 0 дня A виконано, слот 1 — лише пропущений підхід
+    const w1 = await start(A, dayA, T0);
+    await repo.upsertSet(A, set(w1, dayA, 0, 1));
+    await repo.upsertSet(A, set(w1, dayA, 1, 1, { skipped: true, weightKg: null, reps: null }));
+    await repo.finishWorkout(A, w1, 3, T0 + 1);
+    // abandoned: слот 0 дня B виконано
+    const w2 = await start(A, dayB, T0 + 10);
+    await repo.upsertSet(A, set(w2, dayB, 0, 1));
+    await repo.abandonStale(A, T0 + 10 + STALE_AFTER_MS + 1);
+    // active: слот 2 дня A — ще не зараховується
+    const w3 = await start(A, dayA, T0 + 5 * STALE_AFTER_MS);
+    await repo.upsertSet(A, set(w3, dayA, 2, 1));
+    // чужий користувач: слот 3 дня A виконано в B
+    const dayAofB = (await repo.getProgramDay(B, "A"))!;
+    const wb = await start(B, dayAofB, T0);
+    await repo.upsertSet(B, set(wb, dayAofB, 3, 1));
+    await repo.finishWorkout(B, wb, 3, T0 + 1);
+
+    const ids = [...new Set([...dayAIds, ...dayBIds])];
+    const expected = new Set<number>();
+    for (const id of ids) if ((await repo.getExerciseHistory(A, id, 1)).length > 0) expected.add(id);
+    expect(expected).toEqual(new Set([dayAIds[0]!, dayBIds[0]!])); // самі очікування, а не лише «збігається з собою»
+    expect(await repo.getExerciseIdsWithHistory(A, ids)).toEqual(expected);
+    expect(await repo.getExerciseIdsWithHistory(A, [])).toEqual(new Set());
+    expect(await repo.getExerciseIdsWithHistory(A, [dayAIds[0]!])).toEqual(new Set([dayAIds[0]!]));
   });
 });
 
@@ -219,7 +262,7 @@ describe("getExerciseHistory / getLastDoneWorkout", () => {
     const w2 = await start(A, dayA, T0 + 100);
     await repo.upsertSet(A, set(w2, dayA, 0, 1, { weightKg: 45, reps: 6 }));
     await repo.upsertSet(A, set(w2, dayA, 0, 2, { skipped: true, weightKg: null, reps: null }));
-    await repo.abandonStale(T0 + 100 + STALE_AFTER_MS + 1);
+    await repo.abandonStale(A, T0 + 100 + STALE_AFTER_MS + 1);
 
     const w3 = await start(A, dayB, T0 + STALE_AFTER_MS * 2); // день B — присідань немає
     await repo.finishWorkout(A, w3, 2, T0 + STALE_AFTER_MS * 2 + 1);
@@ -268,7 +311,7 @@ describe("getExerciseHistory / getLastDoneWorkout", () => {
 
   it("немає done → getLastDoneWorkout null (abandoned не рахується)", async () => {
     await start(A, dayA, T0);
-    await repo.abandonStale(T0 + STALE_AFTER_MS + 1);
+    await repo.abandonStale(A, T0 + STALE_AFTER_MS + 1);
     expect(await repo.getLastDoneWorkout(A)).toBeNull();
   });
 
@@ -279,7 +322,7 @@ describe("getExerciseHistory / getLastDoneWorkout", () => {
     await repo.finishWorkout(A, b, 3, T0 + 1);
     expect(nextDayCode(await repo.getLastDoneWorkout(A), days)).toBe("A");
     await start(A, dayA, T0 + 10);
-    await repo.abandonStale(T0 + 10 + STALE_AFTER_MS + 1);
+    await repo.abandonStale(A, T0 + 10 + STALE_AFTER_MS + 1);
     expect(nextDayCode(await repo.getLastDoneWorkout(A), days)).toBe("A");
   });
 });

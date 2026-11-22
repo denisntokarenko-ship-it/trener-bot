@@ -408,7 +408,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
     /** /prohrama: обидва дні, наступний день із призначеннями й, якщо є, поточне тренування. */
     async prohrama(ctx: Context): Promise<void> {
       const userId = ctx.from!.id;
-      await repo.abandonStale(now());
+      await repo.abandonStale(userId, now());
       const program = await repo.getActiveProgram(userId);
       if (!program || program.days.length === 0) {
         await ctx.reply(NO_PROGRAM);
@@ -444,7 +444,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
     /** /trening: старт наступного дня або продовження active — завжди новим повідомленням-екраном. */
     async trening(ctx: Context): Promise<void> {
       const userId = ctx.from!.id;
-      await repo.abandonStale(now());
+      await repo.abandonStale(userId, now());
       let workout = await repo.getActiveWorkout(userId);
       if (!workout) {
         const program = await repo.getActiveProgram(userId);

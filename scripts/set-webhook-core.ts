@@ -1,5 +1,6 @@
 // Логіка scripts/set-webhook.ts без process — тестується з мокнутим fetch (phase-0.md, P2.1).
 import { BOT_COMMANDS } from "../src/bot/texts.ts";
+import { WEBHOOK_PATH } from "../src/constants.ts";
 
 export const REQUIRED_ENV = ["TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET", "WORKER_URL"] as const;
 export const TARGETS = ["preview", "production"] as const;
@@ -36,7 +37,7 @@ export async function runSetWebhook(args: string[], io: SetWebhookIo): Promise<n
 
   let workerUrl: URL;
   try {
-    workerUrl = new URL(io.env.WORKER_URL!.replace(/\/+$/, "") + "/tg/webhook");
+    workerUrl = new URL(io.env.WORKER_URL!.replace(/\/+$/, "") + WEBHOOK_PATH);
   } catch {
     io.error("WORKER_URL — не URL");
     return 1;

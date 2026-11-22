@@ -16,7 +16,8 @@ export async function runCron(env: Env, now: number, deps: { repo?: Repo } & Rem
   let counters: Counters = { sent: 0, skipped: 0, released: 0, errors: 0 };
   let cleanupErrors = 0;
   try {
-    await repo.abandonStale(now);
+    // Прибирання по користувачах (repo приймає userId): збій одного кидає виняток і зупиняє решту кроків цього try.
+    for (const id of await repo.getUserIds()) await repo.abandonStale(id, now);
     await repo.purgeProcessedUpdates(now - PROCESSED_UPDATES_TTL_MS);
   } catch (e) {
     cleanupErrors++;

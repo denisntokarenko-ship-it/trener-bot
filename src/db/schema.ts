@@ -1,5 +1,6 @@
 // Таблиці з'являються міграцією у фазі, яка ними користується. Час — UTC мс.
 import { sql } from "drizzle-orm";
+import { FIRST_NAME_MAX } from "../constants";
 import { check, index, integer, primaryKey, real, sqliteTable, text, unique, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable(
@@ -16,7 +17,7 @@ export const users = sqliteTable(
     remindTime: text("remind_time").default("08:00"),
     weighTime: text("weigh_time").default("07:30"),
   },
-  (t) => [check("users_first_name_len", sql`length(${t.firstName}) <= 64`)],
+  (t) => [check("users_first_name_len", sql`length(${t.firstName}) <= ${sql.raw(String(FIRST_NAME_MAX))}`)],
 );
 
 export const processedUpdates = sqliteTable(
@@ -45,6 +46,9 @@ export const exercises = sqliteTable(
     videoUrl: text("video_url"),
     // Фаза 1b (міграція 0002): стовпці для генератора плану. Nullable, заповнює сид; CHECK — у SQL міграції
     // (ALTER TABLE ADD COLUMN … CHECK), тут лише типи: таблицю exercises не перебудовуємо (на неї вказують FK).
+    // УВАГА: CHECK цих п'яти стовпців (і program_days.title) є лише в migrations/0002 — `drizzle-kit generate` їх не бачить
+    // і при розбіжності схеми міг би перебудувати таблицю без них. Що вони в БД є, доводить тест
+    // «CHECK-и з міграції 0002» (test/plan-repo.test.ts); нову міграцію по цих таблицях пиши вручну.
     pattern: text("pattern", { enum: ["squat", "hinge", "hpush", "vpush", "hpull", "vpull", "core", "delt", "legacc"] }),
     kind: text("kind", { enum: ["compound", "accessory"] }),
     place: text("place", { enum: ["gym", "both"] }),

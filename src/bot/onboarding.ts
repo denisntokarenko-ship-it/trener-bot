@@ -46,10 +46,11 @@ export function createOnboardingFlow(repo: Repo, now: () => number) {
     const place: Place = p?.place ?? DEFAULTS.place;
     const ids = anchorCandidates({ level, place, limits: parseLimits(p?.limits), goal: p?.goal ?? null }, catalog);
     const found = await repo.getExercises(ids);
+    const withHistory = await repo.getExerciseIdsWithHistory(userId, ids); // один запит на весь набір, не по одному на якір
     const out: Exercise[] = [];
     for (const id of ids) {
       const ex = found.find((e) => e.id === id);
-      if (ex && (await repo.getExerciseHistory(userId, id, 1)).length === 0) out.push(ex);
+      if (ex && !withHistory.has(id)) out.push(ex);
     }
     return out;
   }

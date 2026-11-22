@@ -35,6 +35,16 @@ describe("scheduled(): abandonStale", () => {
     await runScheduled(NOW);
     expect(await row(stale)).toEqual({ status: "abandoned", finished_at: NOW, await_input: null });
   });
+  it("[R-1.1] Д3: крон проходить по всіх користувачах — старий active кожного закрито", async () => {
+    const other = OWNER + 1;
+    await repo.upsertUser(other, "Інша", 0);
+    const otherDay = (await env.DB.prepare("SELECT id FROM program_days LIMIT 1").first<{ id: number }>())!.id;
+    const r = await env.DB.prepare("INSERT INTO workouts (user_id, program_day_id, status, started_at) VALUES (?, ?, 'active', ?)").bind(other, otherDay, NOW - H4 - 1).run();
+    const mine = await insertActive(NOW - H4 - 1);
+    await runScheduled(NOW);
+    expect((await row(mine))?.status).toBe("abandoned");
+    expect((await row(r.meta.last_row_id))?.status).toBe("abandoned");
+  });
   it("рівно 4 год — не чіпає", async () => {
     const edge = await insertActive(NOW - H4);
     await runScheduled(NOW);

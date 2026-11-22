@@ -247,3 +247,42 @@ describe("каталог і відео (§3, §9)", () => {
     expect(isVideoUrl("https://youtu.be/5Lm6U4zNzi0")).toBe(true);
   });
 });
+
+// Борг [1b.1]: слот `core` для lose_fat і запасний патерн `vpull→hpull` — формула спеки phase-1b.md §3 («Добір вправи»):
+// n-те входження патерну (з 0) в дні бере кандидата (n + variant + d) mod len, d — позиція дня з 0; зайнятого — наступний за колом.
+describe("[1b.1] добір core для lose_fat і запасний патерн — за формулою спеки", () => {
+  const item = (id: number, pattern: PlanCatalogItem["pattern"], kind: PlanCatalogItem["kind"] = "accessory"): PlanCatalogItem => ({
+    id, pattern, kind, place: "both", minLevel: 1, stress: [], equipment: "bodyweight",
+  });
+  const patternsOf = (p: Plan, d: number, mini: PlanCatalogItem[]) => p.days[d]!.slots.map((s) => mini.find((i) => i.id === s.exerciseId)!);
+
+  it("lose_fat: додатковий core — друге входження патерну (n = 1): кандидат (1 + variant + d) mod len", () => {
+    const cores = [10, 11, 12, 13];
+    const mini = [item(1, "squat", "compound"), item(2, "hpush", "compound"), item(3, "vpull", "compound"), item(4, "vpush", "compound"), item(5, "hinge", "compound"), item(6, "delt"), item(7, "hpull", "compound"), ...cores.map((id) => item(id, "core"))];
+    for (let v = 0; v < 3; v++) { // у buildPlan variant береться за модулем 3
+      const r = buildPlan({ goal: "lose_fat", level: "novice", daysPerWeek: 2, sessionMin: 60, place: "gym" }, mini, v);
+      if (!r.ok) throw new Error(r.error);
+      for (const d of [0, 1]) {
+        const day = patternsOf(r.plan, d, mini);
+        const coreIds = day.filter((i) => i.pattern === "core").map((i) => i.id);
+        expect(coreIds, `variant ${v}, день ${d}`).toEqual([cores[(0 + v + d) % 4]!, cores[(1 + v + d) % 4]!]);
+        expect(day[day.length - 1]!.id).toBe(coreIds[1]); // додатковий core — останній слот
+      }
+    }
+  });
+
+  it("vpull без кандидатів → hpull з n того ж слота; зайнятого беремо наступним за колом", () => {
+    const hpulls = [20, 21, 22];
+    const mini = [item(1, "squat", "compound"), item(2, "hpush", "compound"), item(4, "vpush", "compound"), item(5, "hinge", "compound"), item(6, "core"), ...hpulls.map((id) => item(id, "hpull", "compound"))];
+    for (let v = 0; v < 3; v++) {
+      const r = buildPlan({ goal: "muscle", level: "novice", daysPerWeek: 2, sessionMin: 60, place: "gym" }, mini, v);
+      if (!r.ok) throw new Error(r.error);
+      // День A (d = 0): squat, hpush, vpull→hpull, vpush, core, hinge → слот vpull бере hpull[(0 + v) mod 3].
+      const dayA = patternsOf(r.plan, 0, mini);
+      expect(dayA[2]!.id, `variant ${v}, A`).toBe(hpulls[(0 + v) % 3]);
+      // День B (d = 1): hinge, squat, hpull, hpush, core, vpull→hpull: hpull-слот — (0+v+1), vpull-слот — те саме зайняте → наступний.
+      const dayB = patternsOf(r.plan, 1, mini).filter((i) => i.pattern === "hpull").map((i) => i.id);
+      expect(dayB, `variant ${v}, B`).toEqual([hpulls[(v + 1) % 3]!, hpulls[(v + 2) % 3]!]);
+    }
+  });
+});
