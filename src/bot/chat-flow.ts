@@ -182,7 +182,14 @@ export function createChatFlow(repo: Repo, now: () => number, deps: ChatDeps) {
     // Пропозиції ходу, що не дійшов до відповіді, гасимо: без кнопок вони б 48 год блокували предмет.
     const dropCreated = () => repo.expireOwnProposals(job.userId, createdIds, now());
     // settleAiUsage — сумою всіх запитів, навіть якщо далі збій розбору; оплачена ітерація не зникає з aiSpendToday.
-    const settle = () => repo.settleAiUsage(job.userId, usageId, { inputTokens: Math.max(1, u.inputTokens), outputTokens: u.outputTokens, costMicro: u.costMicro });
+    // Збій розрахунку не губить уже оплачену відповідь: лише лог (оцінка в ai_usage лишається), далі — відправка.
+    const settle = async (): Promise<void> => {
+      try {
+        await repo.settleAiUsage(job.userId, usageId, { inputTokens: Math.max(1, u.inputTokens), outputTokens: u.outputTokens, costMicro: u.costMicro });
+      } catch (e) {
+        console.error("chat settle failed", { error: errorName(e) });
+      }
+    };
 
     if (result.kind === "failed") {
       const e = result.error;
@@ -205,10 +212,8 @@ export function createChatFlow(repo: Repo, now: () => number, deps: ChatDeps) {
       return say(reason === "refusal" ? CHAT_REFUSAL : CHAT_ITERATIONS);
     }
     const cut = reason === "max_tokens";
-    if (text === "" && result.proposals.length === 0) {
-      await dropCreated();
-      return say(CHAT_EMPTY);
-    }
+    // Порожня відповідь без пропозицій: гасити нічого (пропозицій немає). З пропозиціями порожній текст не дає CHAT_EMPTY — картки важливіші.
+    if (text === "" && result.proposals.length === 0) return say(CHAT_EMPTY);
     // Крок 6: спершу відправка відповіді й карток, потім chat_turns (збій запису історії не скасовує оплачену відповідь).
     await say(chatReplyText(text, cut, result.proposals.length > 0));
     const cards: ProposalRef[] = result.proposals.filter((p) => p.created || p.messageId === null);

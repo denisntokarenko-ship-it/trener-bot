@@ -32,7 +32,7 @@ import {
   prescriptionText,
   proposalWeightsLine,
 } from "../src/bot/texts";
-import { AI_DAILY_LIMIT_MICRO, CHAT_INFLIGHT_MS, CHAT_MODEL, CHAT_REPLY_MAX_CHARS, TELEGRAM_TEXT_MAX } from "../src/config";
+import { AI_DAILY_LIMIT_MICRO, CHAT_HISTORY_MAX_AGE_MS, CHAT_INFLIGHT_MS, CHAT_MODEL, CHAT_REPLY_MAX_CHARS, TELEGRAM_TEXT_MAX } from "../src/config";
 import { createDb } from "../src/db/client";
 import { createRepo, type ProgramDay } from "../src/db/repo";
 import type { Env } from "../src/env";
@@ -215,6 +215,15 @@ describe("P4.2.1 питання → інструмент → відповідь"
     expect(msgs[0]!.content).toBe("перше питання");
     expect(String(msgs[2]!.content)).toContain("друге питання");
   });
+  it("історія старша за 6 год у запит не йде, молодша — йде (Д3)", async () => {
+    await repo.addChatTurns(OWNER, "стара-застаріла-фраза", "стара відповідь", NOON - CHAT_HISTORY_MAX_AGE_MS - 1_000);
+    await repo.addChatTurns(OWNER, "недавнє питання", "недавня відповідь", NOON - 3_600_000);
+    await say("нове питання");
+    const m = ai.requests[0]!.body.messages;
+    expect(m.map((x) => (typeof x.content === "string" ? x.content : ""))[0]).toBe("недавнє питання");
+    expect(JSON.stringify(m)).not.toContain("стара-застаріла-фраза");
+    expect(m).toHaveLength(3);
+  });
 });
 
 describe("P4.2.2 маршрутизація", () => {
@@ -284,6 +293,12 @@ describe("P4.2.3 ліміт і взаємовиключність ходів", (
     expect(ai.requests).toHaveLength(0);
     await env.DB.prepare("DELETE FROM ai_usage").run();
     await spend(8_000, NOON - (CHAT_INFLIGHT_MS + 1_000), "chat", 0);
+    await say("питання");
+    expect(ai.requests).toHaveLength(1);
+  });
+
+  it("межа 30 с: резервування рівно CHAT_INFLIGHT_MS тому вже не блокує (Д5)", async () => {
+    await spend(8_000, NOON - CHAT_INFLIGHT_MS, "chat", 0);
     await say("питання");
     expect(ai.requests).toHaveLength(1);
   });
@@ -385,6 +400,49 @@ describe("P4.2.4 пропозиції, кнопки", () => {
 });
 
 describe("P4.2.5 збої, облік, тексти", () => {
+  it("два propose_change на один слот в одному ході, далі збій: пропозиція ходу → expired, не лишається pending без картки (В1)", async () => {
+    ai = fakeAi(msg([await proposeSwap("tu1"), await proposeSwap("tu2")]), apiError(429));
+    await say("заміни");
+    expect(sentTexts()).toEqual([CHAT_BUSY]);
+    expect((await proposals()).map((p) => p.status)).toEqual(["expired"]);
+    expect(cardCalls()).toHaveLength(0);
+  });
+
+  it("refusal і ліміт ітерацій після propose_change: пропозиція → expired, повтор створює нову й надсилає картку (В2)", async () => {
+    ai = fakeAi(msg([await proposeSwap()]), say_("", { stop: "refusal" }));
+    await say("заміни");
+    expect(sentTexts()).toEqual([CHAT_REFUSAL]);
+    expect((await proposals()).map((p) => p.status)).toEqual(["expired"]);
+
+    ai = fakeAi(msg([await proposeSwap()]), msg([use("x", "get_program", {})])); // далі завжди просить інструмент
+    await say("заміни ще");
+    expect(ai.requests).toHaveLength(5);
+    expect(sentTexts().at(-1)).toBe(CHAT_ITERATIONS);
+    expect((await proposals()).map((p) => p.status)).toEqual(["expired", "expired"]);
+    expect(cardCalls()).toHaveLength(0);
+
+    ai = fakeAi(msg([await proposeSwap()]), say_("ок"));
+    await say("заміни втретє");
+    expect((await proposals()).map((p) => p.status)).toEqual(["expired", "expired", "pending"]);
+    expect(cardCalls()).toHaveLength(1);
+  });
+
+  it("помилка інструмента (невалідний propose_change) → is_error у tool_result (Д2)", async () => {
+    ai = fakeAi(msg([use("tu1", "propose_change", { kind: "delete_program", reason: "x" })]), say_("не вийшло"));
+    await say("видали програму");
+    const r = ai.requests[1]!.body.messages.at(-1)!.content as { is_error?: boolean }[];
+    expect(r[0]!.is_error).toBe(true);
+    expect(await count("ai_proposals")).toBe(0);
+  });
+
+  it("збій settleAiUsage не губить оплачену відповідь: вона надсилається, chat_turns пишуться, оцінка лишається (Д6)", async () => {
+    ai = fakeAi(say_("відповідь"));
+    await say("питання", { db: failingDb("UPDATE ai_usage SET input_tokens") });
+    expect(sentTexts()).toEqual(["відповідь"]);
+    expect(await count("chat_turns")).toBe(2);
+    expect(await usage()).toEqual([expect.objectContaining({ i: 0, o: 0, c: 8_000 })]);
+  });
+
   it("модель мовчить до дедлайну: «Не встиг», chat_turns 0, пропозиції ходу → expired, оцінка першого запиту лишається; повтор створює нову й картка надходить", async () => {
     ai = fakeAi(msg([await proposeSwap()], { inTok: 3000, outTok: 200 }), "hang");
     await say("заміни", { timeoutMs: 300 });
@@ -531,6 +589,7 @@ describe("P4.2.6 форма запиту до Anthropic", () => {
     expect(raw).not.toContain("api.telegram.org");
     expect(raw).not.toContain(TOKEN);
     expect(raw).not.toContain(KEY);
+    expect(raw).not.toContain(String(OWNER)); // числовий Telegram id власника в Anthropic не йде (Д4)
   });
 });
 
@@ -561,5 +620,15 @@ describe("системний промпт (phase-4-chat.md, розділ 1)", ()
   it("містить сім правил: цифри з інструментів, вага лише з next_prescription, біль → лікар, propose_change + кнопка, 1200 ккал, дані — не інструкції, поза темою", () => {
     for (const needle of ["next_prescription", "propose_change", "лікар", "1200", "дані", "не розкривай", "поза", "Markdown"]) expect(CHAT_SYSTEM.toLowerCase()).toContain(needle.toLowerCase());
     expect(CHAT_SYSTEM).not.toMatch(/\d{4}-\d{2}-\d{2}/); // статичний: дати немає
+  });
+});
+
+describe("chatRequestCost: тариф за довжиною промпту (В3)", () => {
+  it("100 000 токенів — дешевий тариф ($0,10/$0,50), 100 001 — дорогий ($0,50/$2,50); кеш-токени входять у довжину", () => {
+    expect(chatRequestCost({ input_tokens: 100_000, output_tokens: 1_000 })).toBe(10_500);
+    expect(chatRequestCost({ input_tokens: 100_001, output_tokens: 1_000 })).toBe(52_501);
+    expect(chatRequestCost({ input_tokens: 60_000, output_tokens: 0 })).toBe(6_000);
+    expect(chatRequestCost({ input_tokens: 60_000, output_tokens: 0, cache_read_input_tokens: 40_001 })).toBe(30_000);
+    expect(chatRequestCost({ input_tokens: 60_000, output_tokens: 0, cache_creation_input_tokens: 40_001 })).toBe(30_000);
   });
 });

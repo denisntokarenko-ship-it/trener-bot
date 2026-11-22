@@ -146,3 +146,78 @@ old = '''userMessage: chatUserMessage(job.text, today, isoWeekday(today)),'''
 new = '''userMessage: job.text,'''
 why = "дата й день тижня не додаються до повідомлення користувача"
 match = "форма запиту"
+
+# --- Мутанти рев'ю 4.2 (виправлення В1–В3, Д2–Д6) ---
+
+[[mutant]]
+id = "R-B1"
+file = "src/ai/chat-loop.ts"
+old = '''created: r.proposal.created || (proposals.get(r.proposal.id)?.created ?? false) });'''
+new = '''created: r.proposal.created });'''
+why = "повторний propose_change на той самий слот у ході перезаписує created: true на false"
+match = "В1"
+
+[[mutant]]
+id = "R-B2"
+file = "src/bot/chat-flow.ts"
+old = '''    if (reason === "refusal" || reason === "iterations") {
+      await dropCreated();'''
+new = '''    if (reason === "refusal" || reason === "iterations") {'''
+why = "refusal і ліміт ітерацій не гасять пропозиції ходу"
+match = "В2"
+
+[[mutant]]
+id = "R-B3a"
+file = "src/ai/chat-loop.ts"
+old = '''const long = prompt > CHAT_LONG_PROMPT_TOKENS;'''
+new = '''const long = false;'''
+why = "дорогий тариф довгого промпту ніколи не застосовується"
+match = "В3"
+
+[[mutant]]
+id = "R-B3b"
+file = "src/ai/chat-loop.ts"
+old = '''const prompt = u.input_tokens + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);'''
+new = '''const prompt = u.input_tokens;'''
+why = "кеш-токени не входять у довжину промпту для тарифу"
+match = "В3"
+
+[[mutant]]
+id = "R-D2"
+file = "src/ai/chat-loop.ts"
+old = '''is_error: r.isError,'''
+new = '''is_error: false,'''
+why = "помилка інструмента не позначається is_error"
+match = "Д2"
+
+[[mutant]]
+id = "R-D3"
+file = "src/bot/chat-flow.ts"
+old = '''const history = await repo.getChatTurns(job.userId, now());'''
+new = '''const history = await repo.getChatTurns(job.userId, 0);'''
+why = "вік історії (6 год) не перевіряється в потоці чату"
+match = "Д3"
+
+[[mutant]]
+id = "R-D4"
+file = "src/bot/chat-flow.ts"
+old = '''userMessage: chatUserMessage(job.text, today, isoWeekday(today)),'''
+new = '''userMessage: chatUserMessage(`${job.text} (id ${job.userId})`, today, isoWeekday(today)),'''
+why = "числовий Telegram id власника потрапляє в запит до Anthropic"
+match = "форма запиту"
+
+[[mutant]]
+id = "R-D5"
+file = "src/db/repo.ts"
+old = '''AND x.input_tokens = 0 AND x.output_tokens = 0 AND x.created_at > ?)'''
+new = '''AND x.input_tokens = 0 AND x.output_tokens = 0 AND x.created_at >= ?)'''
+why = "межа «молодше 30 с»: резервування рівно 30 с тому ще блокує"
+match = "Д5"
+
+[[mutant]]
+id = "R-D6"
+file = "src/bot/chat-flow.ts"
+old = '''console.error("chat settle failed", { error: errorName(e) });'''
+new = '''throw e;'''
+why = "збій settleAiUsage губить оплачену відповідь (виняток замість логу)"
+match = "Д6"

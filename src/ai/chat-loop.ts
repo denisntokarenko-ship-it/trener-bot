@@ -98,7 +98,8 @@ export async function runChatLoop(i: LoopInput): Promise<LoopResult> {
           }
           try {
             const r = await runTool(i.tool, use.name, use.input);
-            if (r.proposal) proposals.set(r.proposal.id, r.proposal);
+            // Повторний propose_change на той самий предмет у цьому ж ході повертає `already_pending` (created: false) — прапорець «створено цим ходом» не губимо.
+            if (r.proposal) proposals.set(r.proposal.id, { ...r.proposal, created: r.proposal.created || (proposals.get(r.proposal.id)?.created ?? false) });
             results.push({ type: "tool_result", tool_use_id: use.id, is_error: r.isError, content: r.content });
           } catch (e) {
             console.error("chat tool failed", { tool: use.name, error: errorName(e) });
