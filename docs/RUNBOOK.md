@@ -7,7 +7,32 @@
 | preview | `trener-preview` | `trener-preview` |
 | production | `trener-prod` | `trener-prod` |
 
-Акаунт Cloudflare пришпилений у `wrangler.jsonc` (`account_id` = `3d91f589…`, платний тариф). Перенесено 2026-11-20 зі старого акаунта `286f73de…` (free): нові порожні D1 `trener-preview` і `trener-prod`, дані зі старих баз не переносились (були лише тестові). Workers.dev-субдомен нового акаунта — `adhd-bot`: `https://trener-preview.adhd-bot.workers.dev`, `https://trener-prod.adhd-bot.workers.dev` (старі `*.koxbe.workers.dev` більше не діють).
+Акаунт Cloudflare пришпилений у `wrangler.jsonc`: `account_id` = `d156e789bad9b2e122115788dc94e006` (користувач `denis.n…`, **Workers Paid**). D1: `trener-preview` = `44417ee0-ea0b-4f96-9051-a6ffd963b803`, `trener-prod` = `cdfc2976-fb96-45ab-b356-a8889d496aa9`. Workers.dev-субдомен — `maistry-gromady`: `https://trener-preview.maistry-gromady.workers.dev`, `https://trener-prod.maistry-gromady.workers.dev`. Time Travel D1 — **30 днів** (Paid).
+
+Історія акаунтів: `286f73de…` (free, до 2026-11-20, `*.koxbe.workers.dev`) → `3d91f589…` (користувач `den.n…`, Workers **Free** — RUNBOOK помилково писав «платний», банер Observability казав Free; `*.adhd-bot.workers.dev`, D1 `trener-preview` `f00d635a-…`, `trener-prod` `c34e8f9c-…`, Time Travel 7 днів) → `d156e789…` (2026-11-22, розділ нижче). Старі Worker і D1 у `3d91f589…` не видаляються — це план відкату. wrangler пріоритезує `account_id` з конфігу над `CLOUDFLARE_ACCOUNT_ID`: команда до іншого акаунта — лише з `--config` (конфіг із його id) і логіном того акаунта.
+
+## Перенос акаунта 2026-11-22 (`3d91f589…` → `d156e789…`)
+
+**Зроблено до людини** (гілка `infra/migrate-cf-paid`, код `main 643ccee`): D1 створено, міграції 0000–0009 на обох; `deploy` preview (`1d651825…`) і prod (`97524778…`), крон `*/15 * * * *`; `/health` → `ok cron=? ok=?` 200 без секретів, POST `/tg/webhook` без секретів → 401 (fail-closed). Preview — порожня БД із сидами (`exercises` 30, `exercise_substitutes` 40, `foods` 106, `food_aliases` 253); дані preview не переносяться (тестові), бекап старого preview лишається в `backups/`.
+
+**Знахідка репетиції: сирий дамп даних у remote D1 не відновлюється.** `wrangler d1 export` пише таблиці в порядку `sqlite_master` (дочірні `exercise_substitutes`, `program_days`, `program_exercises` раніше за батьківські), а remote `execute --file` не тримає `PRAGMA defer_foreign_keys` на весь файл → `FOREIGN KEY constraint failed`, файл відкочується цілком (атомарно — база лишається як до імпорту). Локальна D1 той самий файл приймає, тому `test-restore.mjs` цього не бачив. Лікування — `scripts/import-data.mjs`: INSERT у порядку FK, без PRAGMA (тоді й локальна D1 перевіряє FK суворо), `DELETE FROM cron_state` (рядок, який уже записав крон нового Worker), рядки `sqlite_sequence` без дублів; охорона — ціль порожня (дані лише в `d1_migrations`/`cron_state`); після імпорту — лічильники всіх таблиць і export бази = ті самі оператори INSERT, що в дампі.
+
+**Репетиція** на бекапі 4.4 `prod-20261122-150618-data.sql` (sha256 `c1807077…`): чиста локальна D1 → remote `trener-prod` → 23 таблиці 1:1, 500/500 операторів; `sqlite_sequence` = `ai_usage` 1, `d1_migrations` 10, `meals` 1. Прибрано `time-travel restore trener-prod --env production --bookmark=00000001-00000000-0000512b-2009a8a3065bdb858f85eb9b20004f36` (знятий до імпорту) → `users` 0, `d1_migrations` 10.
+
+**Вимкнення крону без зміни коду** (відпрацьовано на новому preview): `npx wrangler triggers deploy --env <env> --config <конфіг із "crons": []>` — нової версії Worker не створює; свідок — `GET /accounts/<id>/workers/scripts/<name>/schedules` → `[]`. Увімкнення — той самий `triggers deploy` зі звичайним конфігом.
+
+**Переключення** — людина й агент по черзі, строго в такому порядку (дані старого прода заморожені між кроками 2 і 5):
+
+1. *Людина:* `npx wrangler auth create trener-old` (іменований профіль, experimental) → у браузері увійти як `den.n…` (якщо браузер уже в Cloudflare як `denis.n…` — вийти там або `--browser=false` і відкрити посилання в приватному вікні). Логін нового акаунта (`default`) лишається. Запасний варіант без профілів — `wrangler logout` / `login` у старий і назад.
+2. *Людина:* `powershell -ExecutionPolicy Bypass -File scripts\setup-secrets.ps1 -Step pause-webhook` — токен prod-бота → `deleteWebhook` **без** `drop_pending_updates`; Telegram тримає нові повідомлення до 24 год.
+3. *Агент, профіль `trener-old`, конфіг старого акаунта* (`git show 643ccee:wrangler.jsonc > wrangler.old.jsonc`, у git не комітиться): крон старих `trener-prod` і `trener-preview` → `[]` (спершу крон, потім бекап — інакше тік між бекапом і вимкненням пише в базу, якої вже немає в дампі) → `WRANGLER_CONFIG=wrangler.old.jsonc WRANGLER_PROFILE=trener-old BACKUP_DIR="D:/01CLOud CODE/Тренер/backups" bash scripts/backup-prod.sh production` (і `preview`) → sha256 → bookmark старого прода. Worker і D1 старого акаунта **не видаляються**.
+4. *Агент:* `node scripts/import-data.mjs "<prod-…-data.sql>" --env production` → `Рядки (дамп = БД)` = рядок, який надрукував бекап зі старої БД.
+5. *Людина:* `powershell -ExecutionPolicy Bypass -File scripts\setup-secrets.ps1 -Only production` — секрети + вебхук на `trener-prod.maistry-gromady.workers.dev` (`drop_pending_updates: false` → накопичене доходить). Скрипт відмовляє, поки в `users` нової БД 0 рядків.
+6. *Агент:* `/health`; Observability нового акаунта — перший `POST /tg/webhook` `ok` і тік крону; `SELECT max(created_at) FROM processed_updates` — новий час.
+
+**Відкат на старий акаунт** (`3d91f589…`; його Time Travel — 7 днів, Free):
+- *До кроку 5* (вебхук ще не на новому): база старого прода не змінювалась. Крон назад — `triggers deploy --env production --config wrangler.old.jsonc --profile trener-old`; секрет вебхука ніде не записаний, тож вебхук — заново: `git worktree add ../trener-old 643ccee`, `npm ci`, wrangler залогінений у старий акаунт, `powershell -ExecutionPolicy Bypass -File scripts\setup-secrets.ps1 -Only production` зі **старого** checkout (його скрипт за замовчуванням ставить `trener-prod.adhd-bot.workers.dev`; `ANTHROPIC_API_KEY` у старому Worker уже є).
+- *Після кроку 5*, коли в новому вже є нові записи: спершу `npm run backup:prod` нового прода, далі те саме, що вище, а нові дані — `import-data.mjs` у **порожню** D1 старого акаунта (`d1 create`, міграції, `database_id` у старому конфігу, `deploy`), бо в непорожню базу скрипт не пише.
 
 ## Секрети (одноразово на середовище)
 
@@ -17,7 +42,7 @@ npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --env preview
 npx wrangler secret put ALLOWED_TELEGRAM_IDS --env preview
 ```
 
-Для прода — те саме з `--env production` і токеном prod-бота. `TELEGRAM_WEBHOOK_SECRET` — випадковий рядок `A-Z a-z 0-9 _ -`, 1–256 символів (обмеження Telegram), наприклад `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. `ALLOWED_TELEGRAM_IDS` — ID через кому; порожній = доступу немає нікому.
+Зазвичай — одним скриптом (з 2026-11-22 він кладе й `ANTHROPIC_API_KEY`, питає його раз на обидва середовища, і ставить вебхук): `powershell -ExecutionPolicy Bypass -File scriptssetup-secrets.ps1 [-Only preview|production]`; prod він не чіпає, поки в `users` нової БД немає рядків (`-AllowEmptyProd` — свідомо). Вручну — команди вище. Для прода — те саме з `--env production` і токеном prod-бота. `TELEGRAM_WEBHOOK_SECRET` — випадковий рядок `A-Z a-z 0-9 _ -`, 1–256 символів (обмеження Telegram), наприклад `node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`. `ALLOWED_TELEGRAM_IDS` — ID через кому; порожній = доступу немає нікому.
 
 ## Вебхук
 
@@ -64,11 +89,11 @@ Time Travel уже не дістає (на Paid — 30 днів) — лише ф
 1. Код — на коміті, міграції якого збігаються з `INSERT INTO "d1_migrations"` у повному дампі (новіші міграції, що перейменовують/видаляють, дамп даних не прийме).
 2. `npx wrangler d1 create trener-prod-restore` → у `wrangler.jsonc` `env.production.d1_databases[0].database_id` = id нової БД (поки не деплоїти).
 3. `npm run db:migrate:prod` — схема в новій БД.
-4. `npx wrangler d1 execute trener-prod-restore --remote --env production --file=backups/prod-<дата>-data.sql --yes`.
+4. `node scripts/import-data.mjs backups/prod-<дата>-data.sql --env production` (не `d1 execute --file` сирого дампу: remote D1 відкидає його на FK — розділ «Перенос акаунта 2026-11-22»; скрипт сам звіряє лічильники й вміст).
 5. Звірка: лічильники таблиць (одним `SELECT (SELECT count(*) FROM …) …`) = рядок `Рядки (дамп = БД): …`, який надрукував `backup:prod`.
 6. `npm run deploy:prod -- --message …`; smoke `/start`. Стару БД не видаляти, поки нова не пропрацює тиждень.
 
-Рецепт репетирується в CI на локальній D1: `scripts/test-restore.mjs` (у `npm run test:scripts`) — дані з FK у різні боки → справжній `backup-prod.sh` → кроки 3–4 у чисту БД → ті самі лічильники всіх таблиць. Remote-відновлення в нову D1 не репетирувалось (створює БД в акаунті — живий крок людини).
+Рецепт репетирується в CI на локальній D1: `scripts/test-restore.mjs` (у `npm run test:scripts`) — дані з FK у різні боки → справжній `backup-prod.sh` → кроки 3–4 у чисту БД → ті самі лічильники всіх таблиць. Імпорт іде без `PRAGMA defer_foreign_keys`, тож локальна D1 перевіряє порядок FK так само суворо, як remote. Remote-відновлення відрепетирувано 2026-11-22 у порожній `trener-prod` нового акаунта (500/500 операторів), репетицію прибрано Time Travel.
 
 ## Відкат міграції 0000 (users, processed_updates)
 

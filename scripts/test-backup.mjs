@@ -13,6 +13,7 @@ const stub = join(tmp, 'fake-npx.sh');
 writeFileSync(
   stub,
   `#!/usr/bin/env bash
+if [ -n "$STUB_LOG" ]; then printf '%s\\n' "$*" >> "$STUB_LOG"; fi
 if [ "$3" = export ]; then
   body="$STUB_EXPORT"
   while [ $# -gt 0 ]; do [ "$1" = --output ] && out="$2"; [ "$1" = --no-schema ] && body="$STUB_DATA"; shift; done
@@ -39,19 +40,27 @@ const cases = [
   { name: 'дані: рядки дампу = COUNT(*) → exit 0, у дампі даних немає d1_migrations', exp: schema, data, tables, counts: { users: 1, exercises: 2 }, code: 0, files: 2, noMigrations: true },
   { name: 'дані: у БД більше рядків, ніж у дампі → exit 1, обидва файли видалено', exp: schema, data, tables, counts: { users: 1, exercises: 3 }, code: 1, files: 0 },
   { name: 'дані: дамп даних порожній, а в БД є рядки → exit 1', exp: schema, data: 'PRAGMA defer_foreign_keys=TRUE;\n', tables, counts: { users: 1, exercises: 2 }, code: 1, files: 0 },
+  // Перенос акаунта 2026-11-22: старий акаунт — свій конфіг і auth-профіль у кожному виклику wrangler.
+  { name: 'WRANGLER_CONFIG і WRANGLER_PROFILE → у всіх 4 викликах wrangler', exp: schema, data, tables, counts: { users: 1, exercises: 2 }, code: 0, files: 2, other: { WRANGLER_CONFIG: 'D:/old cfg/wrangler.jsonc', WRANGLER_PROFILE: 'trener-old' } },
 ];
 
 let failed = 0;
 cases.forEach((c, i) => {
   const dir = join(tmp, `out${i}`);
+  const log = join(tmp, `calls${i}.log`);
   const r = spawnSync('bash', ['scripts/backup-prod.sh', 'preview'], {
-    env: { ...process.env, NPX: stub, BACKUP_DIR: dir, STUB_EXPORT: c.exp, STUB_DATA: c.data ?? c.exp, STUB_TABLES: c.tables, STUB_COUNTS: JSON.stringify(c.counts ?? {}) },
+    env: { ...process.env, NPX: stub, BACKUP_DIR: dir, STUB_EXPORT: c.exp, STUB_DATA: c.data ?? c.exp, STUB_TABLES: c.tables, STUB_COUNTS: JSON.stringify(c.counts ?? {}), STUB_LOG: log, ...c.other },
     encoding: 'utf8',
   });
+  // Без WRANGLER_* — жодного --config/--profile; з ними — у кожному з 4 викликів.
+  const calls = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : [];
+  const argsOk = c.other
+    ? calls.length === 4 && calls.every((l) => l.endsWith(` --config ${c.other.WRANGLER_CONFIG} --profile ${c.other.WRANGLER_PROFILE}`))
+    : calls.every((l) => !l.includes('--config') && !l.includes('--profile'));
   const files = existsSync(dir) ? readdirSync(dir) : [];
   const dataFile = files.find((f) => f.endsWith('-data.sql'));
   const migrationsGone = !c.noMigrations || (dataFile !== undefined && !readFileSync(join(dir, dataFile), 'utf8').includes('d1_migrations'));
-  const ok = r.status === c.code && files.length === c.files && migrationsGone;
+  const ok = r.status === c.code && files.length === c.files && migrationsGone && argsOk;
   if (!ok) failed++;
   console.log(`${ok ? 'ok  ' : 'FAIL'} ${c.name} (exit ${r.status}, файлів ${files.length})${ok ? '' : '\n' + r.stderr}`);
 });
