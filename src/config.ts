@@ -68,3 +68,20 @@ export const GOAL_BANDS: Record<GoalKey, { add: number; cut: number }> = {
   health: { add: -45, cut: 45 },
   other: { add: -45, cut: 45 },
 };
+
+// --- Фаза 4: ШІ-тренер (docs/spec/phase-4.md, розділи 1–2; ціни й ліміти виклику чату додає 4.2). ---
+
+/** Пропозиція ШІ живе стільки від створення, потім `expired` (ледаче й кроном). */
+export const PROPOSAL_TTL_MS = 48 * 60 * 60 * 1000;
+/** Найбільше відкритих (непрострочених) пропозицій на користувача. */
+export const PROPOSALS_PENDING_MAX = 3;
+/** Рядків `chat_turns` на користувача (= 5 пар). */
+export const CHAT_HISTORY_TURNS = 10;
+/** У контекст чату беруться лише рядки не старші за це. */
+export const CHAT_HISTORY_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+/** Резервування `purpose = 'chat'` без токенів молодше за це — чат ще відповідає. */
+export const CHAT_INFLIGHT_MS = 30_000;
+/** Найдовший текст рядка `chat_turns` (CHECK); довше — обрізається перед записом. */
+export const CHAT_TURN_MAX_CHARS = 3500;
+/** Вихід інструмента ШІ ≤ стільки символів; переповнення — відкидаємо хвіст списку й ставимо `truncated`. */
+export const TOOL_RESULT_MAX_CHARS = 4000;

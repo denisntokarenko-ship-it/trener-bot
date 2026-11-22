@@ -489,3 +489,59 @@ export const aiUsage = sqliteTable(
     index("ai_usage_user_date").on(t.userId, t.localDate),
   ],
 );
+
+// --- Фаза 4: пропозиції ШІ й контекст чату (docs/spec/phase-4.md, розділ 1) ---
+
+export const PROPOSAL_KINDS = ["swap_exercise", "change_sets_reps", "adjust_target"] as const;
+export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
+export const PROPOSAL_STATUSES = ["pending", "accepted", "rejected", "expired"] as const;
+export type ProposalStatus = (typeof PROPOSAL_STATUSES)[number];
+
+/**
+ * Пропозиція ШІ: рядок `pending`, який застосовує лише код після кнопки. `payload_json` будує код (не модель).
+ * Інваріант (тест, не CHECK — у batch стан проміжний): `accepted` ⇒ `applied_at IS NOT NULL`.
+ */
+export const aiProposals = sqliteTable(
+  "ai_proposals",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull().references(() => users.id),
+    kind: text("kind", { enum: PROPOSAL_KINDS }).notNull(),
+    /** `pe:<program_exercise_id>` для двох перших видів, `target` для норми: одна відкрита пропозиція на предмет. */
+    subjectKey: text("subject_key").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    reason: text("reason").notNull(),
+    status: text("status", { enum: PROPOSAL_STATUSES }).notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    decidedAt: integer("decided_at"),
+    appliedAt: integer("applied_at"),
+    messageId: integer("message_id"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    check("ai_proposals_kind", sql`${t.kind} IN ('swap_exercise', 'change_sets_reps', 'adjust_target')`),
+    check("ai_proposals_status", sql`${t.status} IN ('pending', 'accepted', 'rejected', 'expired')`),
+    check("ai_proposals_subject", sql`length(${t.subjectKey}) BETWEEN 1 AND 32`),
+    check("ai_proposals_payload", sql`length(${t.payloadJson}) <= 1024 AND json_valid(${t.payloadJson})`),
+    check("ai_proposals_reason", sql`length(${t.reason}) BETWEEN 1 AND 200`),
+    uniqueIndex("ai_proposals_pending_uq").on(t.userId, t.subjectKey).where(sql`${t.status} = 'pending'`),
+    index("ai_proposals_user_status").on(t.userId, t.status),
+  ],
+);
+
+/** Лише текст користувача й фінальної відповіді (без викликів інструментів і блоків мислення). */
+export const chatTurns = sqliteTable(
+  "chat_turns",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id").notNull().references(() => users.id),
+    role: text("role", { enum: ["user", "assistant"] }).notNull(),
+    text: text("text").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    check("chat_turns_role", sql`${t.role} IN ('user', 'assistant')`),
+    check("chat_turns_text", sql`length(${t.text}) BETWEEN 1 AND 3500`),
+    index("chat_turns_user_id").on(t.userId, t.id),
+  ],
+);

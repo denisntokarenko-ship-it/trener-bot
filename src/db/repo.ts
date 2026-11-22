@@ -1,15 +1,15 @@
 // Єдиний вхід у D1. Функції над даними користувача приймають userId (N8): чужий рядок для них не існує —
 // читання дає null / [], запис — false без змін (phase-1.md, «Ізоляція»). Винятки без userId:
-// processed_updates (службова, ключ — update_id), foods і food_aliases (спільний каталог, як exercises), expirePendingMeals, abandonStale і getReminderUsers (крон по всіх користувачах) та cron_state (один рядок).
+// processed_updates (службова, ключ — update_id), foods і food_aliases (спільний каталог, як exercises), expirePendingMeals, expireProposals, abandonStale і getReminderUsers (крон по всіх користувачах) та cron_state (один рядок).
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
-import { FOOD_MAX_ITEMS } from "../config";
+import { CHAT_HISTORY_MAX_AGE_MS, CHAT_HISTORY_TURNS, CHAT_INFLIGHT_MS, CHAT_TURN_MAX_CHARS, FOOD_MAX_ITEMS, PROPOSAL_TTL_MS, PROPOSALS_PENDING_MAX } from "../config";
 import type { Db } from "./client";
 import type { Limit, Plan, PlanCatalogItem } from "../domain/plan";
 import type { ProgressSetRow } from "../domain/records";
 import { parseReminderTime, parseTrainingDays } from "../domain/reminders";
 import { parseTimezone } from "../domain/settings";
 import { normalizeAlias } from "../domain/text";
-import { bodyWeights, cronState, exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, remindersSent, startWeights, userProfiles, users, workoutSets, workouts, type FoodSource, type MealConfidence, type MealStatus, type ReminderKind, type TargetReason } from "./schema";
+import { bodyWeights, cronState, exerciseSubstitutes, exercises, onboardingState, processedUpdates, programDays, programExercises, programs, remindersSent, startWeights, userProfiles, users, workoutSets, workouts, type FoodSource, type MealConfidence, type MealStatus, type ProposalKind, type ProposalStatus, type ReminderKind, type TargetReason } from "./schema";
 
 export const FIRST_NAME_MAX = 64;
 /** active старше за цей вік закривається як abandoned (phase-1-flow.md). */
@@ -235,7 +235,7 @@ export interface DayMeal {
   eatenAt: number;
   /** Сума знімків позицій. */
   kcal: number;
-  items: { nameUk: string; grams: number }[];
+  items: { nameUk: string; grams: number; kcal: number }[];
 }
 export interface AiUsageReservation {
   model: string;
@@ -296,6 +296,80 @@ function toExercise(row: typeof exercises.$inferSelect): Exercise {
   const { cuesUk, ...rest } = row;
   return { ...rest, cues: cuesUk.split("\n") };
 }
+
+/** Пропозиція ШІ (phase-4.md, розділ 1): `payload` — розібраний `payload_json`, який будує код. */
+export interface ProposalView {
+  id: number;
+  kind: ProposalKind;
+  subjectKey: string;
+  payload: Record<string, unknown>;
+  reason: string;
+  status: ProposalStatus;
+  expiresAt: number;
+  decidedAt: number | null;
+  appliedAt: number | null;
+  messageId: number | null;
+  createdAt: number;
+}
+export interface NewProposal {
+  kind: ProposalKind;
+  subjectKey: string;
+  /** Нормалізований кодом JSON ≤ 1024 символів. */
+  payloadJson: string;
+  /** 1–200 символів, лише показ. */
+  reason: string;
+}
+/** `existing` — на цей предмет уже є відкрита пропозиція (повертається вона); `limit` — відкритих уже `PROPOSALS_PENDING_MAX`. */
+export type CreateProposalResult = { result: "created" | "existing"; proposal: ProposalView } | { result: "limit" };
+export type ApplyOutcome = "applied" | "already" | "rejected" | "expired" | "busy" | "target_today" | "duplicate" | "stale" | "missing";
+/** Слот активної програми користувача з назвами (для валідації й підсумку пропозицій). */
+export interface OwnSlot {
+  id: number;
+  programDayId: number;
+  dayCode: string;
+  dayTitle: string | null;
+  exerciseId: number;
+  exerciseName: string;
+  sets: number;
+  repMin: number;
+  repMax: number;
+}
+export interface ChatTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+interface ProposalRow {
+  id: number;
+  kind: ProposalKind;
+  subject_key: string;
+  payload_json: string;
+  reason: string;
+  status: ProposalStatus;
+  expires_at: number;
+  decided_at: number | null;
+  applied_at: number | null;
+  message_id: number | null;
+  created_at: number;
+}
+const PROPOSAL_COLUMNS = "id, kind, subject_key, payload_json, reason, status, expires_at, decided_at, applied_at, message_id, created_at";
+function toProposal(r: ProposalRow): ProposalView {
+  let payload: Record<string, unknown> = {};
+  try {
+    const v: unknown = JSON.parse(r.payload_json);
+    if (v && typeof v === "object" && !Array.isArray(v)) payload = v as Record<string, unknown>;
+  } catch {
+    // payload_json — json_valid (CHECK); сюди не потрапляємо
+  }
+  return { id: r.id, kind: r.kind, subjectKey: r.subject_key, payload, reason: r.reason, status: r.status, expiresAt: r.expires_at, decidedAt: r.decided_at, appliedAt: r.applied_at, messageId: r.message_id, createdAt: r.created_at };
+}
+const intOf = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) ? v : null);
+/** Умова-страж: слот `?peId` належить активній програмі користувача `?user` (і має вправу `?exId`, якщо задано). */
+const slotOwned = (peId: string, user: string, extra = ""): string =>
+  `EXISTS (SELECT 1 FROM program_exercises pe JOIN program_days d ON d.id = pe.program_day_id JOIN programs pr ON pr.id = d.program_id WHERE pe.id = ${peId} AND pr.user_id = ${user} AND pr.active = 1${extra})`;
+const NO_ACTIVE_WORKOUT = (user: string): string => `NOT EXISTS (SELECT 1 FROM workouts w WHERE w.user_id = ${user} AND w.status = 'active')`;
+/** Умова-страж для кроків 2–3 batch: пропозиція щойно прийнята й ще не застосована. */
+const ACCEPTED_UNAPPLIED = "EXISTS (SELECT 1 FROM ai_proposals p WHERE p.id = ? AND p.user_id = ? AND p.status = 'accepted' AND p.applied_at IS NULL)";
 
 export function createRepo(db: Db) {
   const repo = {
@@ -1287,7 +1361,7 @@ export function createRepo(db: Db) {
           meal = { id: r.id, eatenAt: r.eaten_at, kcal: 0, items: [] };
           out.push(meal);
         }
-        meal.items.push({ nameUk: r.name_uk, grams: r.grams });
+        meal.items.push({ nameUk: r.name_uk, grams: r.grams, kcal: r.kcal });
         meal.kcal += r.kcal;
       }
       return out;
@@ -1345,6 +1419,231 @@ export function createRepo(db: Db) {
         ORDER BY f.source != 'seed', CASE WHEN f.source = 'seed' THEN 0 ELSE -COALESCE(u.n, 0) END, f.id
         LIMIT ${limit}`);
       return rows.map((r) => r.name_uk);
+    },
+
+    // --- Фаза 4: пропозиції ШІ й контекст чату (docs/spec/phase-4.md, розділи 1 і 3) ---
+
+    /** Слот активної програми користувача з назвою вправи й дня; чужий чи неактивної програми — null. */
+    async getOwnSlot(userId: number, programExerciseId: number): Promise<OwnSlot | null> {
+      const rows = await db.all<{ id: number; program_day_id: number; code: string; title: string | null; exercise_id: number; name_uk: string; sets: number; rep_min: number; rep_max: number }>(sql`
+        SELECT pe.id AS id, pe.program_day_id AS program_day_id, d.code AS code, d.title AS title, pe.exercise_id AS exercise_id,
+               e.name_uk AS name_uk, pe.sets AS sets, pe.rep_min AS rep_min, pe.rep_max AS rep_max
+        FROM program_exercises pe JOIN program_days d ON d.id = pe.program_day_id JOIN programs pr ON pr.id = d.program_id
+        JOIN exercises e ON e.id = pe.exercise_id
+        WHERE pe.id = ${programExerciseId} AND pr.user_id = ${userId} AND pr.active = 1`);
+      const r = rows[0];
+      return r ? { id: r.id, programDayId: r.program_day_id, dayCode: r.code, dayTitle: r.title, exerciseId: r.exercise_id, exerciseName: r.name_uk, sets: r.sets, repMin: r.rep_min, repMax: r.rep_max } : null;
+    },
+
+    /** Є слот дня `programDayId` із вправою `exerciseId` (для `UNIQUE (program_day_id, exercise_id)`). */
+    async dayHasExercise(programDayId: number, exerciseId: number): Promise<boolean> {
+      const rows = await db.all<{ n: number }>(sql`SELECT COUNT(*) AS n FROM program_exercises WHERE program_day_id = ${programDayId} AND exercise_id = ${exerciseId}`);
+      return (rows[0]?.n ?? 0) > 0;
+    },
+
+    async getProposal(userId: number, id: number): Promise<ProposalView | null> {
+      const row = await db.$client.prepare(`SELECT ${PROPOSAL_COLUMNS} FROM ai_proposals WHERE id = ? AND user_id = ?`).bind(id, userId).first<ProposalRow>();
+      return row ? toProposal(row) : null;
+    },
+
+    /**
+     * Створити пропозицію одним batch: спершу гасить власні `pending` з `expires_at <= now` (прострочена, що чекає крону, не блокує
+     * ні ліміт, ні предмет), потім умовний INSERT (ліміт відкритих — у самому операторі). Конфлікт `subject_key` → `existing`
+     * (наявна відкрита); ліміт → `limit`; невідомий користувач → null.
+     */
+    async createProposal(userId: number, p: NewProposal, now: number): Promise<CreateProposalResult | null> {
+      const d1 = db.$client;
+      const res = await d1.batch([
+        d1.prepare("UPDATE ai_proposals SET status = 'expired', decided_at = ? WHERE user_id = ? AND status = 'pending' AND expires_at <= ?").bind(now, userId, now),
+        d1
+          .prepare(
+            `INSERT INTO ai_proposals (user_id, kind, subject_key, payload_json, reason, status, expires_at, created_at)
+             SELECT u.id, ?, ?, ?, ?, 'pending', ?, ? FROM users u
+             WHERE u.id = ? AND (SELECT COUNT(*) FROM ai_proposals WHERE user_id = u.id AND status = 'pending') < ?
+             ON CONFLICT DO NOTHING`,
+          )
+          .bind(p.kind, p.subjectKey, p.payloadJson, p.reason, now + PROPOSAL_TTL_MS, now, userId, PROPOSALS_PENDING_MAX),
+      ]);
+      if (res[1]!.meta.changes === 1) {
+        const made = await repo.getProposal(userId, res[1]!.meta.last_row_id);
+        return made ? { result: "created", proposal: made } : null;
+      }
+      const row = await d1
+        .prepare(`SELECT ${PROPOSAL_COLUMNS} FROM ai_proposals WHERE user_id = ? AND subject_key = ? AND status = 'pending'`)
+        .bind(userId, p.subjectKey)
+        .first<ProposalRow>();
+      if (row) return { result: "existing", proposal: toProposal(row) };
+      const known = await d1.prepare("SELECT 1 AS x FROM users WHERE id = ?").bind(userId).first();
+      return known ? { result: "limit" } : null;
+    },
+
+    /**
+     * Застосувати пропозицію після кнопки: один batch із трьох операторів (docs/spec/phase-4.md, розділ 3):
+     * (1) `pending → accepted` за умов (не прострочена, передумови виду, немає активного тренування), (2) зміна, (3) `applied_at`.
+     * Повторне натискання й гонка двох натискань — усі три оператори по 0 змін. Якщо (1) змінив 0 рядків — з'ясовуємо причину.
+     */
+    async applyProposal(userId: number, id: number, now: number, today: string, retried = false): Promise<{ outcome: ApplyOutcome; proposal: ProposalView | null }> {
+      const p0 = await repo.getProposal(userId, id);
+      if (!p0) return { outcome: "missing", proposal: null };
+      const d1 = db.$client;
+      const pl = p0.payload;
+      const accept = "UPDATE ai_proposals SET status = 'accepted', decided_at = ?1 WHERE id = ?2 AND user_id = ?3 AND status = 'pending' AND expires_at > ?1";
+      const mark = d1.prepare("UPDATE ai_proposals SET applied_at = ?1 WHERE id = ?2 AND user_id = ?3 AND status = 'accepted' AND applied_at IS NULL").bind(now, id, userId);
+      const peId = intOf(pl.program_exercise_id);
+      let statements: D1PreparedStatement[] | null = null;
+      if (p0.kind === "swap_exercise") {
+        const from = intOf(pl.from_exercise_id);
+        const to = intOf(pl.to_exercise_id);
+        if (peId !== null && from !== null && to !== null) {
+          statements = [
+            d1
+              .prepare(
+                `${accept} AND ${slotOwned("?4", "?3", " AND pe.exercise_id = ?5")}
+                 AND NOT EXISTS (SELECT 1 FROM program_exercises pe2 WHERE pe2.exercise_id = ?6 AND pe2.program_day_id = (SELECT program_day_id FROM program_exercises WHERE id = ?4))
+                 AND ${NO_ACTIVE_WORKOUT("?3")}`,
+              )
+              .bind(now, id, userId, peId, from, to),
+            d1.prepare(`UPDATE program_exercises SET exercise_id = ? WHERE id = ? AND ${ACCEPTED_UNAPPLIED}`).bind(to, peId, id, userId),
+            mark,
+          ];
+        }
+      } else if (p0.kind === "change_sets_reps") {
+        const [sets, repMin, repMax, fs, fmin, fmax] = ["sets", "rep_min", "rep_max", "from_sets", "from_rep_min", "from_rep_max"].map((k) => intOf(pl[k]));
+        if (peId !== null && [sets, repMin, repMax, fs, fmin, fmax].every((v) => v !== null && v !== undefined)) {
+          statements = [
+            d1
+              .prepare(`${accept} AND ${slotOwned("?4", "?3", " AND pe.sets = ?5 AND pe.rep_min = ?6 AND pe.rep_max = ?7")} AND ${NO_ACTIVE_WORKOUT("?3")}`)
+              .bind(now, id, userId, peId, fs, fmin, fmax),
+            d1.prepare(`UPDATE program_exercises SET sets = ?, rep_min = ?, rep_max = ? WHERE id = ? AND ${ACCEPTED_UNAPPLIED}`).bind(sets, repMin, repMax, peId, id, userId),
+            mark,
+          ];
+        }
+      } else {
+        const [kcal, prot, fat, carbs] = ["kcal", "protein_g", "fat_g", "carbs_g"].map((k) => intOf(pl[k]));
+        const base = typeof pl.base_valid_from === "string" ? pl.base_valid_from : null;
+        if (base !== null && [kcal, prot, fat, carbs].every((v) => v !== null && v !== undefined)) {
+          statements = [
+            d1
+              .prepare(
+                `${accept} AND (SELECT valid_from FROM nutrition_targets WHERE user_id = ?3 AND valid_from <= ?4 ORDER BY valid_from DESC LIMIT 1) = ?5
+                 AND NOT EXISTS (SELECT 1 FROM nutrition_targets WHERE user_id = ?3 AND valid_from = ?4)`,
+              )
+              .bind(now, id, userId, today, base),
+            d1
+              .prepare(
+                `INSERT INTO nutrition_targets (user_id, valid_from, kcal, protein_g, fat_g, carbs_g, reason, source_date, created_at)
+                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'manual', NULL, ?7 FROM ai_proposals p WHERE p.id = ?8 AND p.user_id = ?1 AND p.status = 'accepted' AND p.applied_at IS NULL`,
+              )
+              .bind(userId, today, kcal, prot, fat, carbs, now, id),
+            mark,
+          ];
+        }
+      }
+      if (statements) {
+        const res = await d1.batch(statements);
+        if (res[0]!.meta.changes === 1) return { outcome: "applied", proposal: await repo.getProposal(userId, id) };
+      }
+
+      // 0 змін: з'ясовуємо причину за свіжим станом. Постійні причини гасять пропозицію, тимчасові (busy, target_today) лишають pending.
+      const p1 = await repo.getProposal(userId, id);
+      if (!p1) return { outcome: "missing", proposal: null };
+      if (p1.status === "accepted") return { outcome: "already", proposal: p1 };
+      if (p1.status === "rejected") return { outcome: "rejected", proposal: p1 };
+      if (p1.status === "expired") return { outcome: "expired", proposal: p1 };
+      const expire = async (outcome: ApplyOutcome): Promise<{ outcome: ApplyOutcome; proposal: ProposalView | null }> => {
+        await d1.prepare("UPDATE ai_proposals SET status = 'expired', decided_at = ? WHERE id = ? AND user_id = ? AND status = 'pending'").bind(now, id, userId).run();
+        return { outcome, proposal: await repo.getProposal(userId, id) };
+      };
+      if (p1.expiresAt <= now) return expire("expired");
+      if (p1.kind === "adjust_target") {
+        const cur = await repo.getTargetOn(userId, today);
+        const base = typeof pl.base_valid_from === "string" ? pl.base_valid_from : null;
+        if (!cur || base === null || cur.validFrom !== base) return expire("stale");
+        if (cur.validFrom === today) return { outcome: "target_today", proposal: p1 };
+        return expire("stale");
+      }
+      const slot = peId === null ? null : await repo.getOwnSlot(userId, peId);
+      if (!slot) return expire("stale");
+      if (p1.kind === "swap_exercise") {
+        const from = intOf(pl.from_exercise_id);
+        const to = intOf(pl.to_exercise_id);
+        if (from === null || to === null || slot.exerciseId !== from) return expire("stale");
+        if (await repo.dayHasExercise(slot.programDayId, to)) return expire("duplicate");
+      } else if (slot.sets !== intOf(pl.from_sets) || slot.repMin !== intOf(pl.from_rep_min) || slot.repMax !== intOf(pl.from_rep_max)) {
+        return expire("stale");
+      }
+      if (await repo.getActiveWorkout(userId)) return { outcome: "busy", proposal: p1 };
+      // Причину не знайдено: стан змінився між batch і читанням (напр., тренування щойно завершилось). Один повтор замість
+      // того, щоб загасити дійсну пропозицію (рев'ю 4.1, Д1).
+      if (!retried) return repo.applyProposal(userId, id, now, today, true);
+      return expire("stale");
+    },
+
+    /** `pending → rejected`; чужа, не `pending` — false без змін. */
+    async rejectProposal(userId: number, id: number, now: number): Promise<boolean> {
+      const res = await db.$client
+        .prepare("UPDATE ai_proposals SET status = 'rejected', decided_at = ? WHERE id = ? AND user_id = ? AND status = 'pending'")
+        .bind(now, id, userId)
+        .run();
+      return res.meta.changes === 1;
+    },
+
+    /** Хід чату не вдався: власні нові пропозиції `pending` → `expired` (без кнопок вони б блокували предмет). */
+    async expireOwnProposals(userId: number, ids: readonly number[], now: number): Promise<number> {
+      if (ids.length === 0) return 0;
+      const marks = ids.map(() => "?").join(", ");
+      const res = await db.$client
+        .prepare(`UPDATE ai_proposals SET status = 'expired', decided_at = ? WHERE user_id = ? AND status = 'pending' AND id IN (${marks})`)
+        .bind(now, userId, ...ids)
+        .run();
+      return res.meta.changes;
+    },
+
+    async setProposalMessageId(userId: number, id: number, messageId: number): Promise<boolean> {
+      const res = await db.$client.prepare("UPDATE ai_proposals SET message_id = ? WHERE id = ? AND user_id = ?").bind(messageId, id, userId).run();
+      return res.meta.changes === 1;
+    },
+
+    /** Крон: усі `pending` з `expires_at <= now` → `expired` (службова, без userId). Повертає кількість. */
+    async expireProposals(now: number): Promise<number> {
+      const res = await db.$client.prepare("UPDATE ai_proposals SET status = 'expired', decided_at = ? WHERE status = 'pending' AND expires_at <= ?").bind(now, now).run();
+      return res.meta.changes;
+    },
+
+    /**
+     * Пара «запитання користувача + відповідь» одним batch; лишається `CHAT_HISTORY_TURNS` останніх рядків цього користувача
+     * (`user_id` і в DELETE, і в підзапиті — чужі рядки не чіпаємо). Текст обрізається до `CHAT_TURN_MAX_CHARS`; порожній — false.
+     */
+    async addChatTurns(userId: number, userText: string, assistantText: string, now: number): Promise<boolean> {
+      const clip = (t: string): string => Array.from(t).slice(0, CHAT_TURN_MAX_CHARS).join("");
+      const u = clip(userText);
+      const a = clip(assistantText);
+      if (u.length === 0 || a.length === 0) return false;
+      const d1 = db.$client;
+      const ins = "INSERT INTO chat_turns (user_id, role, text, created_at) SELECT u.id, ?, ?, ? FROM users u WHERE u.id = ?";
+      const res = await d1.batch([
+        d1.prepare(ins).bind("user", u, now, userId),
+        d1.prepare(ins).bind("assistant", a, now, userId),
+        d1
+          .prepare("DELETE FROM chat_turns WHERE user_id = ?1 AND id NOT IN (SELECT id FROM chat_turns WHERE user_id = ?1 ORDER BY id DESC LIMIT ?2)")
+          .bind(userId, CHAT_HISTORY_TURNS),
+      ]);
+      return res[0]!.meta.changes === 1 && res[1]!.meta.changes === 1;
+    },
+
+    /** Контекст чату: рядки не старші `CHAT_HISTORY_MAX_AGE_MS`, від старих до нових (пара має однаковий `created_at`, тож не рветься). */
+    async getChatTurns(userId: number, now: number): Promise<ChatTurn[]> {
+      const rows = await db.all<{ role: "user" | "assistant"; text: string }>(sql`
+        SELECT role, text FROM chat_turns WHERE user_id = ${userId} AND created_at >= ${now - CHAT_HISTORY_MAX_AGE_MS} ORDER BY id`);
+      return rows.map((r) => ({ role: r.role, text: r.text }));
+    },
+
+    /** Є незавершене резервування чату (токени 0/0), молодше `CHAT_INFLIGHT_MS`: чат ще відповідає (лише з'ясування причини відмови). */
+    async chatInFlight(userId: number, now: number): Promise<boolean> {
+      const rows = await db.all<{ n: number }>(sql`
+        SELECT COUNT(*) AS n FROM ai_usage
+        WHERE user_id = ${userId} AND purpose = 'chat' AND input_tokens = 0 AND output_tokens = 0 AND created_at > ${now - CHAT_INFLIGHT_MS}`);
+      return (rows[0]?.n ?? 0) > 0;
     },
   };
   return repo;

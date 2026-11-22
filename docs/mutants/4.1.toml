@@ -1,0 +1,164 @@
+# Мутанти завдання 4.1 (пропозиції ШІ, інструменти). M1–M3 — обов'язкові з промпту; решта — додаткові.
+test = "npx vitest run --reporter=dot test/ai-tools.test.ts test/ai-chat-turns.test.ts"
+timeout = 300
+
+[[mutant]]
+id = "M1"
+file = "src/db/repo.ts"
+old = '''WHERE id = ?2 AND user_id = ?3 AND status = 'pending' AND expires_at > ?1";'''
+new = '''WHERE id = ?2 AND user_id = ?3 AND expires_at > ?1";'''
+why = "applyProposal без перевірки status = pending"
+match = "P4[.]1[.]5|паралельні натискання"
+
+[[mutant]]
+id = "M2"
+file = "src/ai/tools.ts"
+old = '''  const created = res.result === "created";'''
+new = '''  if (res.result === "created") await c.repo.applyProposal(c.userId, res.proposal.id, c.now, localDate(c.now, c.tz));
+  const created = res.result === "created";'''
+why = "propose_change одразу застосовує зміну (пише в program_exercises) замість лише pending"
+match = "валідна пропозиція|двічі"
+
+[[mutant]]
+id = "M3"
+file = "src/db/repo.ts"
+old = '''.prepare(`SELECT ${PROPOSAL_COLUMNS} FROM ai_proposals WHERE id = ? AND user_id = ?`).bind(id, userId)'''
+new = '''.prepare(`SELECT ${PROPOSAL_COLUMNS} FROM ai_proposals WHERE id = ? AND ? IS NOT NULL`).bind(id, userId)'''
+why = "прибрати перевірку userId у getProposal (чужа пропозиція видима)"
+match = "чужий userId"
+
+[[mutant]]
+id = "M4"
+file = "src/db/repo.ts"
+old = '''WHERE user_id = ? AND status = 'pending' AND expires_at <= ?").bind(now, userId, now),'''
+new = '''WHERE user_id = ? AND status = 'pending' AND expires_at <= ? AND 0").bind(now, userId, now),'''
+why = "createProposal не гасить прострочені pending — предмет заблоковано до крону"
+match = "прострочений pending"
+
+[[mutant]]
+id = "M5"
+file = "src/db/repo.ts"
+old = '''id NOT IN (SELECT id FROM chat_turns WHERE user_id = ?1 ORDER BY id DESC LIMIT ?2)")'''
+new = '''id NOT IN (SELECT id FROM chat_turns WHERE ?1 IS NOT NULL ORDER BY id DESC LIMIT ?2)")'''
+why = "підзапит обрізання chat_turns без user_id — хвіст власних рядків вважається зайвим через чужі новіші"
+match = "P4[.]1[.]7|12 пар"
+
+[[mutant]]
+id = "M6"
+file = "src/ai/proposals.ts"
+old = '''if (Math.abs(kcal - formula.kcal) > TREND_MAX_DEVIATION_KCAL)'''
+new = '''if (Math.abs(kcal - formula.kcal) > 100000)'''
+why = "запобіжник ±300 ккал від формули знято"
+match = "невалідні входи"
+
+[[mutant]]
+id = "M7"
+file = "src/ai/proposals.ts"
+old = '''if (await repo.dayHasExercise(slot.programDayId, to)) return fail("така вправа вже є в цьому дні");'''
+new = '''if (false) return fail("така вправа вже є в цьому дні");'''
+why = "не перевіряти дубль вправи в дні при створенні"
+match = "невалідні входи"
+
+[[mutant]]
+id = "M8"
+file = "src/db/repo.ts"
+old = '''w.user_id = ${user} AND w.status = 'active')`;'''
+new = '''w.user_id = ${user} AND w.status = 'nonexistent')`;'''
+why = "застосування не бачить активного тренування (swap/sets під час заняття)"
+match = "активне тренування"
+
+[[mutant]]
+id = "M9"
+file = "src/db/repo.ts"
+old = '''if (cur.validFrom === today) return { outcome: "target_today", proposal: p1 };'''
+new = '''if (cur.validFrom === today) return expire("stale");'''
+why = "target_today гасить пропозицію замість очікування завтрашнього дня"
+match = "норма вже створена сьогодні"
+
+[[mutant]]
+id = "M10"
+file = "src/db/repo.ts"
+old = '''AND status = 'pending') < ?
+             ON CONFLICT DO NOTHING`,'''
+new = '''AND status = 'pending') < ? + 100
+             ON CONFLICT DO NOTHING`,'''
+why = "ліміт відкритих пропозицій знято"
+match = "четверта відкрита"
+
+[[mutant]]
+id = "M11"
+file = "src/ai/tools.ts"
+old = '''      if (s.length <= max) return s;
+    }'''
+new = '''      return s;
+    }'''
+why = "fitJson не перевіряє довжину після відкидання хвоста"
+match = "вихід > 4000"
+
+[[mutant]]
+id = "M12"
+file = "src/ai/tools.ts"
+old = '''  return extra.length > 0 ? `невідомі поля: ${extra.join(", ")}` : (input as Record<string, unknown>);'''
+new = '''  return input as Record<string, unknown>;'''
+why = "зайві поля (зокрема user_id) мовчки приймаються"
+match = "невідомий інструмент і чужі поля"
+
+# --- Мутанти рев'ю 4.1 (виправлення В1, В2, Д1, Д3) ---
+
+[[mutant]]
+id = "R-B1a"
+file = "src/db/repo.ts"
+old = '''WHERE pe.id = ${programExerciseId} AND pr.user_id = ${userId} AND pr.active = 1`);'''
+new = '''WHERE pe.id = ${programExerciseId} AND pr.user_id = ${userId}`);'''
+why = "getOwnSlot не вимагає активної програми (створення пропозиції на слот старого плану)"
+match = "В1"
+
+[[mutant]]
+id = "R-B1b"
+file = "src/db/repo.ts"
+old = '''AND pr.user_id = ${user} AND pr.active = 1${extra})`;'''
+new = '''AND pr.user_id = ${user}${extra})`;'''
+why = "застосування не вимагає активної програми — [Так] міняє слот неактивного плану"
+match = "В1"
+
+[[mutant]]
+id = "R-B2"
+file = "src/db/repo.ts"
+old = '''FROM ai_proposals WHERE user_id = ? AND subject_key = ? AND status = 'pending'`)
+        .bind(userId, p.subjectKey)'''
+new = '''FROM ai_proposals WHERE ? IS NOT NULL AND subject_key = ? AND status = 'pending'`)
+        .bind(userId, p.subjectKey)'''
+why = "пошук наявної відкритої пропозиції без user_id: subject_key 'target' спільний — повертається чужа"
+match = "В2"
+
+[[mutant]]
+id = "R-D1"
+file = "src/db/repo.ts"
+old = '''      if (!retried) return repo.applyProposal(userId, id, now, today, true);'''
+new = '''      if (!retried) return expire("stale");'''
+why = "без повтору: нез'ясована причина гасить дійсну пропозицію (стара поведінка)"
+match = "Д1"
+
+[[mutant]]
+id = "R-D3a"
+file = "src/db/repo.ts"
+old = '''WHERE user_id = ? AND status = 'pending' AND expires_at <= ?").bind(now, userId, now),'''
+new = '''WHERE user_id = ? AND status = 'pending' AND expires_at < ?").bind(now, userId, now),'''
+why = "межа expires_at == now у createProposal"
+match = "Д3"
+
+[[mutant]]
+id = "R-D3b"
+file = "src/db/repo.ts"
+old = '''AND created_at >= ${now - CHAT_HISTORY_MAX_AGE_MS} ORDER BY id`);'''
+new = '''AND created_at > ${now - CHAT_HISTORY_MAX_AGE_MS} ORDER BY id`);'''
+why = "межа 6 год у getChatTurns"
+match = "Д3"
+
+[[mutant]]
+id = "R-D3c"
+file = "src/ai/tools.ts"
+old = '''inPeriod.slice(-30).map('''
+new = '''inPeriod.map('''
+why = "get_weight_trend без обмеження 30 останніх записів"
+match = "Д3"
