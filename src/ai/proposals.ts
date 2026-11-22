@@ -2,7 +2,7 @@
 // застосування. Payload будує КОД (поля `from_*` і база для перевірки застарілості беруться з БД, а не від моделі); модель дає лише
 // вид, ідентифікатори й `reason`. Доступ до даних — лише через `repo` з `userId`; SQL застосування живе в `repo.applyProposal`.
 import { TREND_MAX_DEVIATION_KCAL, TREND_MIN_KCAL } from "../config";
-import type { ApplyOutcome, NewProposal, ProposalView, Repo } from "../db/repo";
+import type { NewProposal, Repo } from "../db/repo";
 import { PROPOSAL_KINDS, type ProposalKind } from "../db/schema";
 
 export const REASON_MAX = 200;
@@ -94,14 +94,4 @@ export function proposalSummary(kind: ProposalKind, p: Record<string, unknown>):
   if (kind === "swap_exercise") return `Замінити «${p.from_name}» на «${p.to_name}» у дні «${p.day}»`;
   if (kind === "change_sets_reps") return `«${p.name}»: ${p.from_sets} × ${p.from_rep_min}–${p.from_rep_max} → ${p.sets} × ${p.rep_min}–${p.rep_max}`;
   return `Норма ${p.from_kcal} → ${p.kcal} ккал (Б ${p.protein_g} · Ж ${p.fat_g} · В ${p.carbs_g})`;
-}
-
-/** Застосувати пропозицію після кнопки: лише `pending`, не прострочена, власна; решта — за `ApplyOutcome` (розділ 3 спеки). */
-export function applyProposal(repo: Repo, userId: number, id: number, now: number, today: string): Promise<{ outcome: ApplyOutcome; proposal: ProposalView | null }> {
-  return repo.applyProposal(userId, id, now, today);
-}
-
-/** `[Ні]`: `pending → rejected`; інакше false без змін. */
-export function rejectProposal(repo: Repo, userId: number, id: number, now: number): Promise<boolean> {
-  return repo.rejectProposal(userId, id, now);
 }

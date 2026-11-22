@@ -255,3 +255,38 @@ old = '''OR (status IN ('accepted', 'rejected') AND decided_at >= ?3))'''
 new = '''OR (status IN ('rejected') AND decided_at >= ?3))'''
 why = "рішення «прийнято кнопкою» не повертається в контекст чату"
 match = "Д-Б"
+
+# --- Мутанти рев'ю Фази 4 (R-4: Y1, Y2; fix/phase-4-review: Д1) ---
+
+[[mutant]]
+id = "Y1"
+file = "src/bot/chat-flow.ts"
+old = '''purpose: "chat", localDate: today,'''
+new = '''purpose: "chat", localDate: localDate(t0, "UTC"),'''
+why = "резервування чату за UTC-датою замість локальної: ліміт чату й фото розходиться на дві доби (шов R-3 В2)"
+match = "В1"
+
+[[mutant]]
+id = "Y2"
+file = "src/bot/texts.ts"
+old = '''Чому (від ШІ): ${esc(reason)}'''
+new = '''Чому (від ШІ): ${reason}'''
+why = "пояснення ШІ в картці пропозиції без esc(): HTML від моделі ламає картку"
+match = "В2"
+
+[[mutant]]
+id = "Y3"
+file = "src/ai/prompts.ts"
+old = '''`<user_message>${asData(text)}</user_message>`'''
+new = '''`<user_message>${text}</user_message>`'''
+why = "текст людини без asData: може закрити тег і підробити службовий рядок «Стан пропозицій»"
+match = "Д1"
+
+[[mutant]]
+id = "Y4"
+file = "src/ai/chat-loop.ts"
+old = '''t.role === "user" ? chatHistoryUserText(t.text) : t.text'''
+new = '''t.text'''
+why = "старі репліки людини в історії не обгорнуті в <user_message>"
+match = "Д1|історія попередніх ходів"
+

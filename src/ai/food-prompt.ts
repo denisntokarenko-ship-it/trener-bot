@@ -43,7 +43,7 @@ export const FOOD_SCHEMA = {
 } as const;
 
 /** Підпис як дані: кутові дужки замінено, щоб текст не закрив тег `<user_caption>`. */
-const asData = (s: string): string => s.replace(/</g, "‹").replace(/>/g, "›");
+export const asData = (s: string): string => s.replace(/</g, "‹").replace(/>/g, "›");
 
 /**
  * Тіло `messages.create`: картинка — base64 (URL файлу Telegram сюди не потрапляє ніколи), далі підпис і відомі назви.
