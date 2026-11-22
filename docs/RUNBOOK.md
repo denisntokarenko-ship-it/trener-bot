@@ -56,6 +56,7 @@ npm run set-bot-profile
 - ⚠️ Restore відкочує **всі** дані, записані після bookmark, — не лише зміни міграції. Тренування, записані між міграцією й відкатом, зникнуть: перед restore зроби ще один `npm run backup:prod`, щоб їх можна було дістати вручну.
 - Без записаного bookmark: `npx wrangler d1 time-travel restore trener-prod --env production --timestamp=2026-10-23T12:00:00Z`.
 - Перевірка після restore: `npx wrangler d1 execute trener-prod --remote --env production --command "SELECT name FROM d1_migrations"`.
+- **Репетиція на preview (4.4, 2026-11-22 15:09 UTC):** `time-travel info trener-preview --env preview` → bookmark; `INSERT` тестового `processed_updates` (update_id 999000044) → рядок є, усього 63; `time-travel restore trener-preview --env preview --bookmark=<записаний>` → рядка немає, усього 62. Прапорця `--yes` у `restore` немає (`Unknown argument: yes`); у неінтерактивному запуску (`CI=1`, stdin не термінал) wrangler сам відповідає «yes» на «OK to proceed» — restore у скрипті не має запобіжника, перевір `--env` і ім'я БД до запуску. Результат дає bookmark для скасування («To undo … restore to the previous bookmark»).
 
 ## Відкат пізніше ніж за 7 днів
 
@@ -211,6 +212,14 @@ Worker `https://trener-prod.adhd-bot.workers.dev` (до переносу 2026-11
 2. **Збій коду після деплою** (`/health` не `ok`, помилки в Observability/tail, бот мовчить на текст): `npx wrangler rollback 9c67e31b-cc89-4c17-bfc2-9ef550c6cdb9 --env production`. Базу не чіпати (крок «Сумісність»). Пропозиції `pending` код Фази 3 ігнорує; кнопки [Так]/[Ні] у старих повідомленнях після відкату не мають обробника.
 3. **ШІ дає шкоду** (хибна пропозиція застосувалась, перевитрата) при живій решті: витрати на день обмежує `AI_DAILY_LIMIT_MICRO` (300 000 мкр = $0,30) — спільний для фото, чату й коментаря; негайно — крок 2. Застосовану пропозицію відкочує людина в боті (зміна підходів/вправи — звичайні дані програми), не restore.
 4. **Зіпсовано дані:** ще один `npm run backup:prod` → відкат коду → `time-travel restore --bookmark=<до міграції>` (стирає все після bookmark). Пізніше 30 днів — дамп даних `…-data.sql` зі стабільної теки за рецептом «Відкат пізніше ніж за 7 днів» на коміті з міграціями 0000–0008.
+
+### Що сталося (2026-11-22, UTC)
+
+- **15:06 бекап:** `npm run backup:prod` → `prod-20261122-150618.sql` (93 920 Б) і `…-data.sql` (73 608 Б); «Рядки (дамп = БД)» для 21 таблиці, серед них `workout_sets` 0, `body_weights` 3, `meals` 1, `nutrition_targets` 1. Обидва файли скопійовано в стабільну `D:\01CLOud CODE\Тренер\backups\` (gitignored): sha256 повного `25d510c0…`, даних `c1807077…` — копія = оригінал.
+- **Репетиція на дампі прода** (локальна D1, кроки розділу «Генеральна репетиція»): дамп даних → чиста БД з 0000–0008 → 22 лічильники = прод; `0009` застосовано → `ai_proposals`, `chat_turns` порожні, рядки `meals`, `meal_items`, `nutrition_targets`, `ai_usage`, `reminders_sent`, `body_weights`, `program_exercises` байт у байт до/після, CHECK `kind` відхиляє невалідний рядок на прод-даних.
+- **15:06:47 bookmark** до 0009 і знімок «до» — у коментарі PR #47 (не в git).
+- **15:08 міграція:** `npm run db:migrate:prod` → `0009_ai_proposals.sql ✅`.
+- **15:08 деплой:** `npm run deploy:prod -- --message "main 643ccee (4.4)"` → версія `c7ffa35f`; `git diff origin/main` — лише `docs/`; `/health` → `ok cron=8m ok=8m`, у tail `scriptVersion` = `c7ffa35f`. Секрети (імена): ті самі чотири, нових не треба.
 
 ## Генеральна репетиція міграцій на дампі прода
 
