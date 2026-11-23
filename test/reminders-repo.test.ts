@@ -1,3 +1,4 @@
+import { NO_UNITS } from "../src/domain/units";
 import { beforeEach, describe, expect, it } from "vitest";
 import { seedStatements } from "../scripts/seed-core";
 import { TELEGRAM_TEXT_MAX, trainReminderText, weekRangeLabel, weeklyReportText, type TrainReminderLine } from "../src/bot/texts";
@@ -154,10 +155,10 @@ describe("P2.3.12 nextDayCode після активації нового пла�
 });
 
 describe("тексти нагадувань", () => {
-  const line = (i: number): TrainReminderLine => ({ nameUk: `Вправа ${i} з дуже довгою назвою для перевірки ліміту повідомлення`, bodyweight: false, weightKg: 60, targetReps: 8, calibration: false });
+  const line = (i: number): TrainReminderLine => ({ nameUk: `Вправа ${i} з дуже довгою назвою для перевірки ліміту повідомлення`, bodyweight: false, units: NO_UNITS, weightKg: 60, targetReps: 8, calibration: false });
 
   it("нагадування про тренування: заголовок, рядки, «Почати»; HTML валідний", () => {
-    const t = trainReminderText({ dayLabel: "Все тіло A (ноги, груди, спина)", lines: [{ nameUk: "Присідання зі штангою", bodyweight: false, weightKg: 60, targetReps: 8, calibration: false }, { nameUk: "Віджимання", bodyweight: true, weightKg: 0, targetReps: 10, calibration: false }] });
+    const t = trainReminderText({ dayLabel: "Все тіло A (ноги, груди, спина)", lines: [{ nameUk: "Присідання зі штангою", bodyweight: false, units: NO_UNITS, weightKg: 60, targetReps: 8, calibration: false }, { nameUk: "Віджимання", bodyweight: true, units: NO_UNITS, weightKg: 0, targetReps: 10, calibration: false }] });
     expect(t).toBe("🏋️ <b>Сьогодні тренування — Все тіло A (ноги, груди, спина)</b>\nПрисідання зі штангою — 60 кг × 8\nВіджимання — власна вага × 10\nПочати: /trening");
     expect(htmlProblems(t)).toEqual([]);
   });
@@ -172,7 +173,7 @@ describe("тексти нагадувань", () => {
   });
 
   it("назви екрануються (HTML)", () => {
-    const t = trainReminderText({ dayLabel: "A<B", lines: [{ nameUk: "x & y", bodyweight: false, weightKg: 1, targetReps: 1, calibration: false }] });
+    const t = trainReminderText({ dayLabel: "A<B", lines: [{ nameUk: "x & y", bodyweight: false, units: NO_UNITS, weightKg: 1, targetReps: 1, calibration: false }] });
     expect(htmlProblems(t)).toEqual([]);
     expect(t).toContain("A&lt;B");
     expect(t).toContain("x &amp; y");

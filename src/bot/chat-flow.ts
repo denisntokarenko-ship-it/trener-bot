@@ -20,6 +20,7 @@ import {
 } from "../config";
 import type { ApplyOutcome, ProposalView, Repo } from "../db/repo";
 import { isoWeekday, localDate } from "../domain/time";
+import { unitsOf } from "../domain/units";
 import { prescribeSlot } from "./prescribe";
 import {
   CHAT_BUSY,
@@ -128,7 +129,8 @@ export function createChatFlow(repo: Repo, now: () => number, deps: ChatDeps) {
     const bodyweight = slot.exercise.equipment === "bodyweight";
     const was = await prescribeSlot(repo, userId, slot.exercise, slot);
     const will = await prescribeSlot(repo, userId, slot.exercise, { ...slot, sets, repMin, repMax });
-    return proposalWeightsLine(prescriptionText(was, bodyweight), prescriptionText(will, bodyweight));
+    const units = unitsOf(slot.exercise);
+    return proposalWeightsLine(prescriptionText(was, bodyweight, units), prescriptionText(will, bodyweight, units));
   }
 
   async function sendCard(api: Api, job: ChatJob, id: number): Promise<void> {

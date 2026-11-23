@@ -390,7 +390,7 @@ describe("P2.1 заміна вправи", () => {
     await press("Гоблет-присідання");
     expect(await setCount()).toBe(history + 3); // заміна нічого не пише
     expect(view().text).toContain("Гоблет-присідання");
-    expect(view().text).toContain("Підхід 1/3 · ціль <b>14 кг × 8</b>"); // з історії заміни, а не калібрування жиму ногами
+    expect(view().text).toContain("Підхід 1/3 · ціль <b>14 кг на гантель × 8</b>"); // гоблет — гантельна вправа: вага однієї гантелі // з історії заміни, а не калібрування жиму ногами
     await press("✅");
     const rows = await sets();
     const slot2 = (await repo.getProgramDay(OWNER, "B"))!.slots[1]!;

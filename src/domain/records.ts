@@ -1,4 +1,5 @@
 // Рекорди й e1RM (docs/spec/phase-2.md, розділ 3). Чисті функції: без I/O, без Date.now.
+import type { ExerciseUnits } from "./units";
 
 /** Підходи з більшою кількістю повторів у e1RM не беруться: формула Еплі стає ненадійною. */
 export const E1RM_MAX_REPS = 10;
@@ -9,6 +10,8 @@ export interface ProgressSetRow {
   nameUk: string;
   /** Вага тіла: e1RM немає, рахуються повтори. */
   bodyweight: boolean;
+  /** Одиниці для підписів: гантель / повтори на сторону. */
+  units: ExerciseUnits;
   workoutId: number;
   startedAt: number;
   weightKg: number;
@@ -24,6 +27,7 @@ export interface ExerciseProgress {
   exerciseId: number;
   nameUk: string;
   bodyweight: boolean;
+  units: ExerciseUnits;
   start: BestSet;
   now: BestSet;
   /** Дата рекорду — момент початку тренування, де його вперше поставлено. */
@@ -107,6 +111,7 @@ export function buildProgress(rows: readonly ProgressSetRow[]): ExerciseProgress
       exerciseId: head.exerciseId,
       nameUk: head.nameUk,
       bodyweight: bw,
+      units: head.units,
       start: bestOf(first),
       now,
       record: record!,

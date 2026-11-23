@@ -140,6 +140,7 @@ export function fullProgressText(exercises: readonly ExerciseProgress[], weight:
     exerciseBlock({
       name: e.nameUk,
       bodyweight: e.bodyweight,
+      units: e.units,
       start: e.start,
       now: e.now,
       record: { ...e.record, date: shortDate(e.record.at, tz) },

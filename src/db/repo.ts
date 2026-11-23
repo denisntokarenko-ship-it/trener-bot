@@ -7,6 +7,7 @@ import type { Db } from "./client";
 import type { Limit, Plan, PlanCatalogItem } from "../domain/plan";
 import { FIRST_NAME_MAX } from "../constants";
 import type { ProgressSetRow } from "../domain/records";
+import { unitsOf } from "../domain/units";
 import { parseReminderTime, parseTrainingDays } from "../domain/reminders";
 import { parseTimezone } from "../domain/settings";
 import { usableTz } from "../domain/time";
@@ -31,6 +32,8 @@ export interface Exercise {
   muscleGroup: MuscleGroup;
   cues: string[];
   videoUrl: string | null;
+  /** Повтори рахуються на кожну сторону (випади, тяга однією рукою): див. `domain/units.ts`. */
+  unilateral: boolean;
 }
 
 export interface ActiveProgram {
@@ -611,8 +614,8 @@ export function createRepo(db: Db) {
 
     /** Усі зараховані підходи (непропущені, з вагою й повторами ≥ 1) done/abandoned тренувань — вся історія, без вікна (агрегат /progres). */
     async getProgressSets(userId: number): Promise<ProgressSetRow[]> {
-      const rows = await db.all<{ exercise_id: number; name_uk: string; equipment: string; workout_id: number; started_at: number; weight_kg: number; reps: number }>(sql`
-        SELECT s.exercise_id, e.name_uk, e.equipment, s.workout_id, w.started_at, s.weight_kg, s.reps
+      const rows = await db.all<{ exercise_id: number; name_uk: string; equipment: string; muscle_group: string; unilateral: number; workout_id: number; started_at: number; weight_kg: number; reps: number }>(sql`
+        SELECT s.exercise_id, e.name_uk, e.equipment, e.muscle_group, e.unilateral, s.workout_id, w.started_at, s.weight_kg, s.reps
         FROM workout_sets s
         JOIN workouts w ON w.id = s.workout_id
         JOIN exercises e ON e.id = s.exercise_id
@@ -623,6 +626,7 @@ export function createRepo(db: Db) {
         exerciseId: r.exercise_id,
         nameUk: r.name_uk,
         bodyweight: r.equipment === "bodyweight",
+        units: unitsOf({ equipment: r.equipment, muscleGroup: r.muscle_group, unilateral: r.unilateral === 1 }),
         workoutId: r.workout_id,
         startedAt: r.started_at,
         weightKg: r.weight_kg,

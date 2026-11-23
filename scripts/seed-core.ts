@@ -30,9 +30,14 @@ export interface CatalogEntry {
   stress: Limit[];
   /** Посилання на відео техніки (§9) або null — тоді рядок у «Борг» PROGRESS.md. */
   videoUrl: string | null;
+  /** Повтори на кожну сторону (decisions.md, «Одиниці»): джерело — `UNILATERAL_SLUGS`, не рядок каталогу. */
+  unilateral: boolean;
 }
 
-type BaseEntry = Omit<CatalogEntry, "pattern" | "kind" | "place" | "minLevel" | "stress" | "videoUrl">;
+type BaseEntry = Omit<CatalogEntry, "pattern" | "kind" | "place" | "minLevel" | "stress" | "videoUrl" | "unilateral">;
+
+/** Односторонні вправи каталогу (міграція 0011 заповнює ті самі слаги). «Мертвий жук» — чергування, не одностороння. */
+export const UNILATERAL_SLUGS: ReadonlySet<string> = new Set(["dumbbell-lunge", "dumbbell-row"]);
 
 // Таблиця «Каталог і програма» в docs/spec/phase-1.md. Кроки блоків і тренажерів — припущення (open-questions.md).
 /** Метадані існуючих 18 вправ (phase-1b.md §3): pattern, place, min_level, stress; kind = accessory для 5, 10, 18. */
@@ -116,7 +121,7 @@ const BASE: BaseEntry[] = [
 ];
 
 /** Нові вправи 19–30 (phase-1b.md §3): кроки за правилом спеки, підказки — безпека спершу. */
-const NEW: Omit<CatalogEntry, "videoUrl">[] = [
+const NEW: Omit<CatalogEntry, "videoUrl" | "unilateral">[] = [
   { id: 19, slug: "push-up", nameUk: "Віджимання від підлоги", equipment: "bodyweight", stepKg: 0, minKg: 0, group: "chest", pattern: "hpush", kind: "accessory", place: "both", minLevel: 1, stress: ["wrist", "shoulder"],
     cues: ["Тіло рівне, прес і сідниці напружені", "Лікті під кутом близько 45°, не розводь їх убік", "Опускайся до грудей, відштовхуйся без ривка"],
     substitutes: ["dumbbell-bench-press", "machine-chest-press"] },
@@ -157,7 +162,7 @@ const NEW: Omit<CatalogEntry, "videoUrl">[] = [
 
 /** Каталог 1–30: старі 18 (BASE + META) і нові 12 (NEW). videoUrl — зі scripts/seed-videos.ts; хибний формат — виняток. */
 export const CATALOG: CatalogEntry[] = [
-  ...BASE.map((e): Omit<CatalogEntry, "videoUrl"> => {
+  ...BASE.map((e): Omit<CatalogEntry, "videoUrl" | "unilateral"> => {
     const [pattern, place, minLevel, stress] = META[e.id]!;
     return { ...e, pattern, kind: ACCESSORY_IDS.has(e.id) ? "accessory" : "compound", place, minLevel, stress };
   }),
@@ -165,7 +170,7 @@ export const CATALOG: CatalogEntry[] = [
 ].map((e) => {
   const videoUrl = VIDEOS[e.slug] ?? null;
   if (videoUrl !== null && !isVideoUrl(videoUrl)) throw new Error(`Хибне video_url для ${e.slug}`);
-  return { ...e, videoUrl };
+  return { ...e, videoUrl, unilateral: UNILATERAL_SLUGS.has(e.slug) };
 });
 
 export interface SlotSeed {
@@ -221,12 +226,12 @@ export function seedStatements(now: number): string[] {
 
   for (const e of CATALOG) {
     out.push(
-      "INSERT INTO exercises (id, slug, name_uk, equipment, weight_step_kg, min_weight_kg, muscle_group, cues_uk, video_url, pattern, kind, place, min_level, stress) " +
-        `VALUES (${num(e.id)}, ${q(e.slug)}, ${q(e.nameUk)}, ${q(e.equipment)}, ${num(e.stepKg)}, ${num(e.minKg)}, ${q(e.group)}, ${q(e.cues.join("\n"))}, ${e.videoUrl === null ? "NULL" : q(e.videoUrl)}, ${q(e.pattern)}, ${q(e.kind)}, ${q(e.place)}, ${num(e.minLevel)}, ${q(e.stress.join(","))}) ` +
+      "INSERT INTO exercises (id, slug, name_uk, equipment, weight_step_kg, min_weight_kg, muscle_group, cues_uk, video_url, pattern, kind, place, min_level, stress, unilateral) " +
+        `VALUES (${num(e.id)}, ${q(e.slug)}, ${q(e.nameUk)}, ${q(e.equipment)}, ${num(e.stepKg)}, ${num(e.minKg)}, ${q(e.group)}, ${q(e.cues.join("\n"))}, ${e.videoUrl === null ? "NULL" : q(e.videoUrl)}, ${q(e.pattern)}, ${q(e.kind)}, ${q(e.place)}, ${num(e.minLevel)}, ${q(e.stress.join(","))}, ${e.unilateral ? 1 : 0}) ` +
         "ON CONFLICT (slug) DO UPDATE SET name_uk = excluded.name_uk, equipment = excluded.equipment, " +
         "weight_step_kg = excluded.weight_step_kg, min_weight_kg = excluded.min_weight_kg, " +
         "muscle_group = excluded.muscle_group, cues_uk = excluded.cues_uk, video_url = excluded.video_url, " +
-        "pattern = excluded.pattern, kind = excluded.kind, place = excluded.place, min_level = excluded.min_level, stress = excluded.stress",
+        "pattern = excluded.pattern, kind = excluded.kind, place = excluded.place, min_level = excluded.min_level, stress = excluded.stress, unilateral = excluded.unilateral",
     );
   }
 
