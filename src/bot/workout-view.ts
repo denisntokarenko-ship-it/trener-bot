@@ -33,7 +33,6 @@ export interface ScreenModel {
   done: ScreenSet[];
   canSwap: boolean;
   showCues: boolean;
-  warmup?: ReadonlyArray<{ weightKg: number; reps: number }>;
 }
 
 const isBodyweight = (e: Exercise): boolean => e.equipment === "bodyweight";

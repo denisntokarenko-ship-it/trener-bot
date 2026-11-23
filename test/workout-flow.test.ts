@@ -653,13 +653,7 @@ describe("1b.3: назви тренувань (P3.2, P3.3)", () => {
 });
 
 describe("Розминка (phase-1-flow.md, «Розминка»)", () => {
-  const WARMUP_LINE = /Розминка: [^<\n]+/;
   const warmupButtons = () => view().buttons.filter((b) => (b.callback_data ?? "").startsWith("u:"));
-  /** Історія дня A: присідання 50 × 8 ×3 — наступне тренування без калібрування, робоча вага 50 × 9. */
-  const seedHistoryA = async () => {
-    await seedDone("A", T0 - 86_400_000 * 2, [0, 1, 2].map(() => ({ slot: 0, weight: 50, reps: 8 })));
-    await seedDone("B", T0 - 86_400_000, [{ slot: 0, weight: 40, reps: 8 }]); // після B наступним стає A
-  };
 
   it("W1 нове тренування: екран розминки перед першою вправою, дві кнопки ≤ 24 символи, у БД порожньо", async () => {
     await say("/trening");
@@ -668,7 +662,6 @@ describe("Розминка (phase-1-flow.md, «Розминка»)", () => {
     expect(text).toContain("🔥 <b>Розминка</b> · <i>Все тіло A</i>");
     expect(text).toContain("Кардіо, 5–7 хв:</b> доріжка, велосипед або скакалка");
     expect(text).toContain("Суглоби, 2–3 хв:</b> кола плечима й тазом, 10 присідань без ваги, 10 ягідичних містків");
-    expect(text).toContain("лише підказка, вони не записуються");
     expect(text).not.toContain("вправа 1/5");
     expect(view().buttons.map((b) => b.text)).toEqual(["✅ Розминку зроблено", "⏭ Пропустити"]);
     for (const b of view().buttons) expect([...b.text].length).toBeLessThanOrEqual(24);
@@ -748,82 +741,5 @@ describe("Розминка (phase-1-flow.md, «Розминка»)", () => {
     await say("/trening");
     expect(view().text).toContain("доріжка, велосипед або скакалка");
     expect(view().text).not.toContain("стрибки на місці");
-  });
-
-  it("W8 база з робочою вагою: «Розминка: 25 кг × 8 · 35 кг × 4» до першого підходу, після запису зникає", async () => {
-    await seedHistoryA();
-    await say("/trening");
-    await press("⏭ Пропустити");
-    expect(view().text).toContain("Підхід 1/3 · ціль <b>50 кг × 9</b>");
-    expect(view().text).toContain("<i>Розминка: 25 кг × 8 · 35 кг × 4</i>");
-    await press("✅");
-    expect(view().text).toContain("Підхід 2/3");
-    expect(view().text).not.toMatch(WARMUP_LINE);
-    // У БД лише робочі підходи: розминка не записана.
-    const weights = (await sets()).map((r) => r.weight_kg);
-    expect(weights).not.toContain(25);
-    expect(weights).not.toContain(35);
-    expect((await sets()).at(-1)).toMatchObject({ weight_kg: 50, reps: 9, prescribed_weight_kg: 50 });
-  });
-
-  it("W9 рядок розминки йде за вагою, яку людина ввела кнопкою ⚖️", async () => {
-    await seedHistoryA();
-    await say("/trening");
-    await press("⏭ Пропустити");
-    await press("⚖️");
-    await say("60");
-    expect(view().text).toContain("<b>60 кг × 9</b>");
-    expect(view().text).toContain("Розминка: 30 кг × 8 · 45 кг × 4");
-  });
-
-  it("W10 калібрування без стартової ваги (вага = мінімум) — рядка розминки немає", async () => {
-    await say("/trening");
-    await press("⏭ Пропустити");
-    expect(view().text).toContain("Калібрування");
-    expect(view().text).not.toMatch(WARMUP_LINE);
-  });
-
-  it("W10b калібрування з вагою, введеною кнопкою ⚖️ — це робоча вага, рядок є", async () => {
-    await say("/trening");
-    await press("⏭ Пропустити");
-    await press("⚖️");
-    await say("60");
-    expect(view().text).toContain("Калібрування");
-    expect(view().text).toContain("<b>60 кг × 6</b>");
-    expect(view().text).toContain("Розминка: 30 кг × 8 · 45 кг × 4");
-  });
-
-  it("W11 ізоляція (core: скручування на блоці) з призначеною вагою — рядка немає", async () => {
-    // Слот 5 дня A — скручування на блоці (pattern core): історія є, тож це не калібрування.
-    await seedDone("A", T0 - 86_400_000 * 2, [0, 1, 2].map(() => ({ slot: 4, weight: 30, reps: 12 })));
-    await seedDone("B", T0 - 86_400_000, [{ slot: 0, weight: 40, reps: 8 }]);
-    await say("/trening");
-    await press("⏭ Пропустити");
-    for (let i = 0; i < 4; i++) await press("⏭"); // пропуск вправ 1–4 підряд
-    expect(view().text).toContain("вправа 5/5");
-    expect(view().text).toContain("Підхід 1/3 · ціль <b>30 кг");
-    expect(view().text).not.toMatch(WARMUP_LINE);
-  });
-
-  it("W12 каталог: базою вважаються рівно ці вправи (критерій з exercises, не з назв)", async () => {
-    const { isWarmupExercise } = await import("../src/domain/warmup");
-    const base: number[] = [];
-    for (let id = 1; id <= 30; id++) {
-      const ex = (await repo.getExercise(id))!;
-      if (isWarmupExercise(ex)) base.push(id);
-    }
-    // Присіди, тяги/хінж, жими й тяги з вагою. Без підтягувань/брусів (вага тіла), core, delt, legacc і випадів (допоміжна).
-    expect(base).toEqual([1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 14, 15, 16, 22, 24, 28]);
-  });
-
-  it("W13 розминка не впливає на прогресію: усі три підходи записані з призначеною вагою й повторами", async () => {
-    await seedHistoryA();
-    await say("/trening");
-    await press("⏭ Пропустити");
-    for (let i = 0; i < 3; i++) await press("✅");
-    // Три нові рядки (поверх чотирьох з історії A і B) — лише робочі 50 × 9; розминкових (25/35) немає.
-    const all = await sets();
-    expect(all).toHaveLength(7);
-    expect(all.slice(-3).map((r) => [r.weight_kg, r.reps])).toEqual([[50, 9], [50, 9], [50, 9]]);
   });
 });

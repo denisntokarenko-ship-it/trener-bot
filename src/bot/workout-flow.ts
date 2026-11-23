@@ -6,7 +6,6 @@ import { nextDayCode, type Prescription } from "../domain/progression";
 import { MAX_WEIGHT_KG, parseCb, type Cb } from "./callbacks";
 import { prescribeSlot } from "./prescribe";
 import { buildProgress } from "../domain/records";
-import { isWarmupExercise, warmupSets } from "../domain/warmup";
 import { addDays, localDate } from "../domain/time";
 import { PROGRESS_BACK_CB, PROGRESS_RECENT_CB, fullProgressText, programText, progressKeyboard, progressText, recentKeyboard, weightModel } from "./progress-view";
 import { PROGRESS_EMPTY, recordReps, recordWeight, weightEcho } from "./texts";
@@ -132,13 +131,6 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       : (o.exercise ?? slot.exercise);
     const pres = await prescribe(userId, exercise, slot, o.memo);
     const lastWorked = rows.filter((r) => !r.skipped).at(-1);
-    const weightKg = o.g !== undefined ? o.g / 10 : (lastWorked?.weightKg ?? pres.weightKg);
-    // Розминкові підходи — підказка до першого підходу слота, лише база з вагою; нічого не пишемо. Калібрування без
-    // стартової ваги показує мінімум, а він ≥ будь-якого розминкового підходу (warmupSets → порожньо) — рядка немає само.
-    const warmup =
-      rows.length === 0 && isWarmupExercise(exercise)
-        ? warmupSets({ workingKg: weightKg, stepKg: exercise.weightStepKg, minKg: exercise.minWeightKg })
-        : [];
     return {
       workoutId: w.id,
       dayName: dayName(day),
@@ -148,13 +140,12 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       sets: slot.sets,
       exercise,
       setNo: rows.length + 1,
-      weightKg,
+      weightKg: o.g !== undefined ? o.g / 10 : (lastWorked?.weightKg ?? pres.weightKg),
       reps: o.r ?? pres.targetReps,
       calibration: pres.reason === "calibration",
       done: [...rows].sort((a, b) => a.setNo - b.setNo),
       canSwap: rows.length === 0 && (await available(day, sets, slot)).length > 0,
       showCues: o.cues ?? false,
-      warmup,
     };
   }
 

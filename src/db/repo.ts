@@ -31,9 +31,6 @@ export interface Exercise {
   muscleGroup: MuscleGroup;
   cues: string[];
   videoUrl: string | null;
-  /** Метадані генератора плану (0002); NULL — вправа без них (для розминки це «не база»). */
-  pattern: (typeof exercises.pattern.enumValues)[number] | null;
-  kind: (typeof exercises.kind.enumValues)[number] | null;
 }
 
 export interface ActiveProgram {
