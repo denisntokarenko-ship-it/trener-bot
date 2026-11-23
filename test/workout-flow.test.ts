@@ -118,6 +118,13 @@ async function seedDone(dayCode: string, startedAt: number, rows: { slot: number
   await repo.finishWorkout(OWNER, w.id, effort, startedAt + 3_000_000);
 }
 
+/** /trening; новий день спершу показує екран розминки — проходимо його кнопкою [⏭ Пропустити] (нові тести розминки — без цього). */
+const trening = async (): Promise<void> => {
+  await say("/trening");
+  const skip = view().buttons.find((b) => (b.callback_data ?? "").startsWith("u:") && b.text.includes("Пропустити"));
+  if (skip) await tap(skip.callback_data);
+};
+
 describe("callback_data: кодек", () => {
   it("round-trip і межа 64 байти", () => {
     const data = encodeCb("t", { w: 4294967295, p: 4294967295, e: 4294967295, n: 10, r: 50, g: 5000, t: 1 });
@@ -132,10 +139,10 @@ describe("callback_data: кодек", () => {
 
 describe("P1.3 записати тренування", () => {
   it("P1.3.1 /trening без active → тренування A, екран вправи 1/5 з призначенням", async () => {
-    await say("/trening");
+    await trening();
     const w = await workoutRow();
     expect(w?.status).toBe("active");
-    expect(view().method).toBe("sendMessage");
+    expect(view().method).toBe("editMessageText"); // екран розминки (sendMessage) уже замінено першою вправою
     expect(view().text).toContain("Все тіло A · вправа 1/5");
     expect(view().text).toContain("Присідання зі штангою");
     expect(view().text).toContain("Підхід 1/3 · ціль <b>20 кг × 6</b>");
@@ -144,7 +151,7 @@ describe("P1.3 записати тренування", () => {
   });
 
   it("P1.3.5 повний прохід дня A: рівно одне натискання на підхід + /trening + оцінка; рядки як очікувано", async () => {
-    await say("/trening");
+    await trening();
     const presses = await playThrough();
     expect(presses).toBe(14); // 3+3+3+2+3 підходів
     const rows = await sets();
@@ -170,11 +177,11 @@ describe("P1.3 записати тренування", () => {
     expect(text).toContain("Наступне тренування: <b>Все тіло B (ноги, спина, груди)</b>");
     expect(view().buttons).toHaveLength(0);
     // P1.5.6: кожне натискання — рівно один answerCallbackQuery.
-    expect(answers()).toHaveLength(presses + 1);
+    expect(answers()).toHaveLength(presses + 2); // + натискання [⏭ Пропустити] на екрані розминки
   });
 
   it("P1.3.3 [−1] нічого не пише; [✅ 7] пише reps = 7", async () => {
-    await say("/trening");
+    await trening();
     await press("−1");
     expect(await setCount()).toBe(0);
     expect(view().buttons[0]!.text).toBe("✅ 5");
@@ -189,7 +196,7 @@ describe("P1.3 записати тренування", () => {
   });
 
   it("P1.3.2 вага на екрані — з останнього записаного підходу", async () => {
-    await say("/trening");
+    await trening();
     await press("⚖️");
     await say("45");
     await press("✅");
@@ -201,7 +208,7 @@ describe("P1.3 записати тренування", () => {
 
 describe("P1.4 введення ваги", () => {
   it("підказка, відмова на неправильну вагу, прийняття 45", async () => {
-    await say("/trening");
+    await trening();
     await press("⚖️");
     const w1 = await workoutRow();
     expect(JSON.parse(w1!.await_input!)).toMatchObject({ n: 1, r: 6, m: 7 });
@@ -221,7 +228,7 @@ describe("P1.4 введення ваги", () => {
   });
 
   it("команда при очікуванні знімає його; текст без очікування — не вага, іде в чат (тут ключа немає)", async () => {
-    await say("/trening");
+    await trening();
     await press("⚖️");
     await say("/start");
     expect((await workoutRow())!.await_input).toBeNull();
@@ -230,7 +237,7 @@ describe("P1.4 введення ваги", () => {
   });
 
   it("[↩️ Скасувати] знімає очікування й повертає екран", async () => {
-    await say("/trening");
+    await trening();
     await press("⚖️");
     await press("↩️");
     expect((await workoutRow())!.await_input).toBeNull();
@@ -242,7 +249,7 @@ describe("P1.4 введення ваги", () => {
       ...[0, 1, 2].map(() => ({ slot: 0, weight: 50, reps: 8 })),
     ]);
     await seedDone("B", T0 - 86_400_000, [{ slot: 0, weight: 40, reps: 8 }]);
-    await say("/trening");
+    await trening();
     expect(view().text).toContain("Все тіло A · вправа 1/5");
     expect(view().text).toContain("Підхід 1/3 · ціль <b>50 кг × 9</b>");
   });
@@ -250,7 +257,7 @@ describe("P1.4 введення ваги", () => {
 
 describe("P1.5 повтори, застарілі кнопки й продовження", () => {
   it("P1.5.1 подвійне натискання ✅ того самого підходу → 1 рядок, друге — «Записано»", async () => {
-    await say("/trening");
+    await trening();
     await press("✅"); // підхід 1
     const set2 = button("✅").callback_data;
     await tap(set2);
@@ -259,11 +266,11 @@ describe("P1.5 повтори, застарілі кнопки й продовж
     expect(rows.filter((r) => r.set_no === 2)).toHaveLength(1);
     expect(rows.map((r) => r.set_no)).toEqual([1, 2]);
     expect(lastAnswer()).toBe("Записано");
-    expect(answers()).toHaveLength(3);
+    expect(answers()).toHaveLength(4); // розминка + 3 натискання
   });
 
   it("P1.5.3 стара кнопка з іншими повторами → «Кнопка застаріла», рядок не змінено", async () => {
-    await say("/trening");
+    await trening();
     await press("✅");
     const set2 = button("✅").callback_data;
     await tap(set2);
@@ -276,7 +283,7 @@ describe("P1.5 повтори, застарілі кнопки й продовж
   });
 
   it("P1.5.2 натискання на завершеному тренуванні → «вже завершене», 0 нових рядків, клавіатуру прибрано", async () => {
-    await say("/trening");
+    await trening();
     const first = button("✅").callback_data;
     await playThrough();
     await press("5");
@@ -292,7 +299,7 @@ describe("P1.5 повтори, застарілі кнопки й продовж
   });
 
   it("P2.3.4 повторна оцінка → «Оцінку вже записано», effort не змінено", async () => {
-    await say("/trening");
+    await trening();
     await playThrough();
     const five = button("5").callback_data;
     await press("3");
@@ -303,14 +310,14 @@ describe("P1.5 повтори, застарілі кнопки й продовж
   });
 
   it("P1.5.4 продовження після «перезапуску»: нове повідомлення-екран слота 3, нового тренування немає", async () => {
-    await say("/trening");
+    await trening();
     for (let i = 0; i < 6; i++) await press("✅"); // слоти 1 і 2
     expect(view().text).toContain("вправа 3/5");
     const old = view();
     await press("⚖️");
     expect((await workoutRow())!.await_input).not.toBeNull();
     tg.calls.length = 0;
-    await say("/trening");
+    await trening();
     expect(view().method).toBe("sendMessage");
     expect(view().text).toContain("Все тіло A · вправа 3/5");
     expect(view().text).toContain("Підхід 1/3");
@@ -320,17 +327,17 @@ describe("P1.5 повтори, застарілі кнопки й продовж
   });
 
   it("P1.5.5 active старше 4 год → abandoned, нове на той самий день", async () => {
-    await say("/trening");
+    await trening();
     await press("✅");
     nowMs = T0 + 5 * 3_600_000;
-    await say("/trening");
+    await trening();
     const rows = (await env.DB.prepare("SELECT status FROM workouts ORDER BY id").all()).results.map((r) => r.status);
     expect(rows).toEqual(["abandoned", "active"]);
     expect(view().text).toContain("Все тіло A · вправа 1/5");
   });
 
   it("чужий чи неіснуючий workout → «вже завершене»", async () => {
-    await say("/trening");
+    await trening();
     await tap(encodeCb("s", { w: 9999, p: 1, e: 1, n: 1, r: 6, g: 200 }));
     expect(lastAnswer()).toBe("Тренування вже завершене. /trening — нове");
     await tap("garbage");
@@ -339,7 +346,7 @@ describe("P1.5 повтори, застарілі кнопки й продовж
   });
 
   it("p з іншого дня й e не з слота → «Кнопка застаріла», без запису", async () => {
-    await say("/trening");
+    await trening();
     const w = (await workoutRow())!.id;
     const dayB = (await repo.getProgramDay(OWNER, "B"))!;
     await tap(encodeCb("s", { w, p: dayB.slots[0]!.id, e: dayB.slots[0]!.exercise.id, n: 1, r: 6, g: 200 }));
@@ -351,7 +358,7 @@ describe("P1.5 повтори, застарілі кнопки й продовж
   });
 
   it("[✅] на передчасній оцінці (не всі слоти) → «Кнопка застаріла»", async () => {
-    await say("/trening");
+    await trening();
     const w = (await workoutRow())!.id;
     await tap(encodeCb("f", { w, q: 4 }));
     expect(lastAnswer()).toBe("Кнопка застаріла");
@@ -363,14 +370,14 @@ describe("P2.1 заміна вправи", () => {
   /** B-тренування: зробити останнім done день A, щоб /trening стартував B. */
   async function startDayB(history: Parameters<typeof seedDone>[2] = [{ slot: 0, weight: 40, reps: 8 }]): Promise<void> {
     await seedDone("A", T0 - 86_400_000, history);
-    await say("/trening");
+    await trening();
     expect(view().text).toContain("Все тіло B");
   }
 
   it("P2.1.1–3 меню замін, екран заміни, закріплення першим підходом і продовження", async () => {
     // Історія гоблет-присідань (заміна присідань у дні A): 12 × 12 ×3 — rep_max слота жиму ногами (8–12), тож прогресія дасть підвищення.
     await seedDone("A", T0 - 86_400_000, [0, 1, 2].map(() => ({ slot: 0, exerciseId: 11, weight: 12, reps: 12 })));
-    await say("/trening");
+    await trening();
     const history = await setCount(); // 3 підходи гоблета з історії
     for (let i = 0; i < 3; i++) await press("✅"); // слот 1 (румунська тяга)
     expect(view().text).toContain("вправа 2/5");
@@ -392,7 +399,7 @@ describe("P2.1 заміна вправи", () => {
     expect(view().text).toContain("Підхід 2/3");
     expect(view().buttons.some((b) => b.text.startsWith("🔁"))).toBe(false);
     // «Перезапуск»: слот 2 і далі — заміна.
-    await say("/trening");
+    await trening();
     expect(view().text).toContain("Гоблет-присідання");
     expect(view().text).toContain("Підхід 2/3");
     await press("✅");
@@ -426,7 +433,7 @@ describe("P2.1 заміна вправи", () => {
     await playThrough();
     await press("3");
     await seedDone("A", T0 + 86_400_000, [{ slot: 0, weight: 40, reps: 8 }]);
-    await say("/trening");
+    await trening();
     expect(view().text).toContain("Все тіло B · вправа 1/5");
     for (let i = 0; i < 3; i++) await press("✅");
     expect(view().text).toContain("Жим ногами");
@@ -435,7 +442,7 @@ describe("P2.1 заміна вправи", () => {
 
 describe("P2.2 пропуск", () => {
   it("P2.2.1–2 пропуск пише n…sets, повтор — без змін", async () => {
-    await say("/trening");
+    await trening();
     await press("✅");
     const skip = button("⏭").callback_data;
     await tap(skip);
@@ -452,7 +459,7 @@ describe("P2.2 пропуск", () => {
   });
 
   it("P2.2.3 пропуск останнього слота → екран оцінки; підсумок: підходи й обсяг", async () => {
-    await say("/trening");
+    await trening();
     for (let i = 0; i < 11; i++) await press("✅"); // слоти 1–4: 3+3+3+2
     expect(view().text).toContain("вправа 5/5");
     await press("⏭");
@@ -469,7 +476,7 @@ describe("P2.3 рекорди", () => {
     // Присідання: попередній максимум 55 кг, і ще одна вправа без історії.
     await seedDone("A", T0 - 86_400_000 * 3, [0, 1, 2].map(() => ({ slot: 0, weight: 55, reps: 8 })));
     await seedDone("B", T0 - 86_400_000 * 2, [{ slot: 0, weight: 40, reps: 8 }]);
-    await say("/trening");
+    await trening();
     await press("⚖️");
     await say("60");
     await press("✅");
@@ -492,7 +499,7 @@ describe("P2.3 рекорди", () => {
     await seedDone("A", T0 - day * 41, [{ slot: 0, weight: 70, reps: 5 }]);
     for (let i = 40; i >= 2; i--) await seedDone("A", T0 - day * i, [{ slot: 0, weight: 50, reps: 8 }]);
     await seedDone("B", T0 - day, [{ slot: 0, weight: 40, reps: 8 }]);
-    await say("/trening");
+    await trening();
     await press("⚖️");
     await say("60");
     await press("✅");
@@ -505,7 +512,7 @@ describe("P2.3 рекорди", () => {
 
 describe("P2.4 техніка", () => {
   it("[💡 Техніка] показує 3 рядки cues; наступне редагування ховає", async () => {
-    await say("/trening");
+    await trening();
     await press("💡");
     const t = view().text;
     const cues = (await repo.getExercise(1))!.cues;
@@ -519,7 +526,7 @@ describe("P2.4 техніка", () => {
 
 describe("N6/N9", () => {
   it("помилка обробника під час натискання все одно відповідає на callback", async () => {
-    await say("/trening");
+    await trening();
     // Битий JSON у стані очікування не валить текстовий обробник.
     await env.DB.prepare("UPDATE workouts SET await_input = 'не json'").run();
     await say("45");
@@ -529,7 +536,7 @@ describe("N6/N9", () => {
 
   it("немає програми → підказка про сид", async () => {
     await env.DB.batch(["workout_sets", "workouts", "program_exercises", "program_days", "programs"].map((t) => env.DB.prepare(`DELETE FROM ${t}`)));
-    await say("/trening");
+    await trening();
     expect(view().text).toBe(NO_PROGRAM);
   });
 });
@@ -557,7 +564,7 @@ describe("F-1 В1: призначення через БД на ≥ 2 сесія�
     await seedSkipped("A", T0 - DAY * 4);
     await seedDone("A", T0 - DAY * 2, [{ slot: 0, weight: 60, reps: 6 }, { slot: 0, weight: 60, reps: 5 }, { slot: 0, weight: 60, reps: 5 }], 4);
     await seedDone("B", T0 - DAY, [{ slot: 0, weight: 40, reps: 8 }]);
-    await say("/trening");
+    await trening();
     expect(view().text).toContain("Все тіло A · вправа 1/5");
     expect(view().text).toContain("Підхід 1/3 · ціль <b>50 кг × 6</b>");
   });
@@ -569,14 +576,14 @@ describe("F-1 В1: призначення через БД на ≥ 2 сесія�
     await seedSkipped("A", T0 - DAY * 4);
     await seedDone("A", T0 - DAY * 2, full, 5);
     await seedDone("B", T0 - DAY, [{ slot: 0, weight: 40, reps: 8 }]);
-    await say("/trening");
+    await trening();
     expect(view().text).toContain("Підхід 1/3 · ціль <b>45 кг × 6</b>");
   });
 });
 
 describe("F-1 В2: кількість запитів D1 на натискання", () => {
   it("✅ другого підходу того самого слота: ≤ 8 запитів D1 (було 9; +1 читання start_weights, лише без історії вправи — 1b.2)", async () => {
-    await say("/trening");
+    await trening();
     await press("✅"); // підхід 1
     const next = button("✅").callback_data;
     let queries = 0;
@@ -599,7 +606,7 @@ describe("F-1 В2: кількість запитів D1 на натисканн�
 
 describe("F-1 В3: дві вимоги спеки", () => {
   it("«s» з n ≠ рядків + 1 (розрив нумерації) → «Кнопка застаріла — показую поточний підхід», рядка немає", async () => {
-    await say("/trening");
+    await trening();
     const cb = parseCb(button("✅").callback_data)!;
     expect(cb.n).toBe(1);
     await tap(encodeCb("s", { ...cb, n: 3 }));
@@ -616,7 +623,7 @@ describe("1b.3: назви тренувань (P3.2, P3.3)", () => {
     await say("/prohrama");
     expect(view().text).toContain("<b>День A</b> · ноги, груди, спина\n1.");
     expect(view().text).toContain("➡️ <b>Наступне тренування: День A (ноги, груди, спина)</b>");
-    await say("/trening");
+    await trening();
     expect(view().text).toContain("День A · вправа 1/5");
     await say("/prohrama");
     expect(view().text).toContain("Зараз триває: <b>День A</b>");
@@ -624,7 +631,7 @@ describe("1b.3: назви тренувань (P3.2, P3.3)", () => {
 
   it("довга назва: екран, /prohrama, підсумок і /progres показують її; callback_data ≤ 64 байти і без назви", async () => {
     await env.DB.prepare("UPDATE program_days SET title = ? WHERE code = 'A'").bind(LONG).run();
-    await say("/trening");
+    await trening();
     expect(view().text).toContain(`${LONG} · вправа 1/5`);
     expect(view().text.length).toBeLessThanOrEqual(4096);
     for (const b of view().buttons) {
@@ -642,5 +649,171 @@ describe("1b.3: назви тренувань (P3.2, P3.3)", () => {
     await tap("p:r"); // у закритого без підходів тренування екран /progres порожній, тож кнопку кличемо напряму
     expect(view().text).toContain(`· ${LONG}</b> · 3/5`);
     expect(view().text.length).toBeLessThanOrEqual(4096);
+  });
+});
+
+describe("Розминка (phase-1-flow.md, «Розминка»)", () => {
+  const WARMUP_LINE = /Розминка: [^<\n]+/;
+  const warmupButtons = () => view().buttons.filter((b) => (b.callback_data ?? "").startsWith("u:"));
+  /** Історія дня A: присідання 50 × 8 ×3 — наступне тренування без калібрування, робоча вага 50 × 9. */
+  const seedHistoryA = async () => {
+    await seedDone("A", T0 - 86_400_000 * 2, [0, 1, 2].map(() => ({ slot: 0, weight: 50, reps: 8 })));
+    await seedDone("B", T0 - 86_400_000, [{ slot: 0, weight: 40, reps: 8 }]); // після B наступним стає A
+  };
+
+  it("W1 нове тренування: екран розминки перед першою вправою, дві кнопки ≤ 24 символи, у БД порожньо", async () => {
+    await say("/trening");
+    expect(view().method).toBe("sendMessage");
+    const text = view().text;
+    expect(text).toContain("🔥 <b>Розминка</b> · <i>Все тіло A</i>");
+    expect(text).toContain("Кардіо, 5–7 хв:</b> доріжка, велосипед або скакалка");
+    expect(text).toContain("Суглоби, 2–3 хв:</b> кола плечима й тазом, 10 присідань без ваги, 10 ягідичних містків");
+    expect(text).toContain("лише підказка, вони не записуються");
+    expect(text).not.toContain("вправа 1/5");
+    expect(view().buttons.map((b) => b.text)).toEqual(["✅ Розминку зроблено", "⏭ Пропустити"]);
+    for (const b of view().buttons) expect([...b.text].length).toBeLessThanOrEqual(24);
+    expect(await setCount()).toBe(0);
+    expect((await workoutRow())?.status).toBe("active");
+  });
+
+  it.each([["✅ Розминку зроблено"], ["⏭ Пропустити"]])("W2 [%s] веде до першої вправи й нічого не пише", async (label) => {
+    await say("/trening");
+    const before = await env.DB.prepare("SELECT COUNT(*) AS n FROM workouts").first("n");
+    await press(label);
+    expect(view().method).toBe("editMessageText");
+    expect(view().text).toContain("Все тіло A · вправа 1/5");
+    expect(view().text).toContain("Присідання зі штангою");
+    expect(view().text).toContain("Підхід 1/3");
+    expect(view().buttons.some((b) => b.text.startsWith("✅ 6"))).toBe(true);
+    expect(await setCount()).toBe(0);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS n FROM workouts").first("n")).toBe(before);
+    expect(answers()).toHaveLength(1);
+  });
+
+  it("W3 подвійне натискання: без помилки, екран вправи не змінився, 0 рядків, відповідь на кожне", async () => {
+    await say("/trening");
+    const data = warmupButtons()[0]!.callback_data;
+    await tap(data);
+    const first = view().text;
+    await tap(data);
+    expect(view().text).toBe(first);
+    expect(view().text).toContain("вправа 1/5");
+    expect(await setCount()).toBe(0);
+    expect(answers()).toHaveLength(2);
+  });
+
+  it("W4 стара кнопка розминки після підходів: поточний екран, нічого не записано", async () => {
+    await say("/trening");
+    const data = warmupButtons()[1]!.callback_data;
+    await tap(data);
+    await press("✅");
+    expect(await setCount()).toBe(1);
+    await tap(data);
+    expect(view().text).toContain("Підхід 2/3");
+    expect(await setCount()).toBe(1);
+  });
+
+  it("W5 продовження active розминку не показує: ні без підходів, ні після них", async () => {
+    await say("/trening"); // екран розминки, кнопку не тиснуть
+    await say("/trening");
+    expect(view().method).toBe("sendMessage");
+    expect(view().text).toContain("Все тіло A · вправа 1/5");
+    expect(view().text).not.toContain("🔥");
+    expect(warmupButtons()).toHaveLength(0);
+    await press("✅");
+    await say("/trening");
+    expect(view().text).toContain("Підхід 2/3");
+    expect(view().text).not.toContain("🔥");
+    expect(warmupButtons()).toHaveLength(0);
+  });
+
+  it("W6 після завершення нове тренування знову починається з розминки", async () => {
+    await say("/trening");
+    await press("⏭ Пропустити");
+    await playThrough();
+    await press("4");
+    await say("/trening");
+    expect(view().text).toContain("🔥 <b>Розминка</b> · <i>Все тіло B");
+    expect(warmupButtons()).toHaveLength(2);
+  });
+
+  it("W7 «дім»: замість доріжки — швидка ходьба або стрибки на місці; зал — доріжка", async () => {
+    await repo.upsertProfile(OWNER, { place: "home" }, 1);
+    await say("/trening");
+    expect(view().text).toContain("швидка ходьба або стрибки на місці");
+    expect(view().text).not.toMatch(/доріжка|велосипед|скакалка/);
+    expect(view().text).toContain("кола плечима й тазом");
+    await repo.finishWorkout(OWNER, (await workoutRow())!.id, 3, T0 + 1);
+    await repo.upsertProfile(OWNER, { place: "gym" }, 2);
+    await say("/trening");
+    expect(view().text).toContain("доріжка, велосипед або скакалка");
+    expect(view().text).not.toContain("стрибки на місці");
+  });
+
+  it("W8 база з робочою вагою: «Розминка: 25 кг × 8 · 35 кг × 4» до першого підходу, після запису зникає", async () => {
+    await seedHistoryA();
+    await say("/trening");
+    await press("⏭ Пропустити");
+    expect(view().text).toContain("Підхід 1/3 · ціль <b>50 кг × 9</b>");
+    expect(view().text).toContain("<i>Розминка: 25 кг × 8 · 35 кг × 4</i>");
+    await press("✅");
+    expect(view().text).toContain("Підхід 2/3");
+    expect(view().text).not.toMatch(WARMUP_LINE);
+    // У БД лише робочі підходи: розминка не записана.
+    const weights = (await sets()).map((r) => r.weight_kg);
+    expect(weights).not.toContain(25);
+    expect(weights).not.toContain(35);
+    expect((await sets()).at(-1)).toMatchObject({ weight_kg: 50, reps: 9, prescribed_weight_kg: 50 });
+  });
+
+  it("W9 рядок розминки йде за вагою, яку людина ввела кнопкою ⚖️", async () => {
+    await seedHistoryA();
+    await say("/trening");
+    await press("⏭ Пропустити");
+    await press("⚖️");
+    await say("60");
+    expect(view().text).toContain("<b>60 кг × 9</b>");
+    expect(view().text).toContain("Розминка: 30 кг × 8 · 45 кг × 4");
+  });
+
+  it("W10 калібрування (немає історії) — рядка розминки немає", async () => {
+    await say("/trening");
+    await press("⏭ Пропустити");
+    expect(view().text).toContain("Калібрування");
+    expect(view().text).not.toMatch(WARMUP_LINE);
+  });
+
+  it("W11 ізоляція (core: скручування на блоці) з призначеною вагою — рядка немає", async () => {
+    // Слот 5 дня A — скручування на блоці (pattern core): історія є, тож це не калібрування.
+    await seedDone("A", T0 - 86_400_000 * 2, [0, 1, 2].map(() => ({ slot: 4, weight: 30, reps: 12 })));
+    await seedDone("B", T0 - 86_400_000, [{ slot: 0, weight: 40, reps: 8 }]);
+    await say("/trening");
+    await press("⏭ Пропустити");
+    for (let i = 0; i < 4; i++) await press("⏭"); // пропуск вправ 1–4 підряд
+    expect(view().text).toContain("вправа 5/5");
+    expect(view().text).toContain("Підхід 1/3 · ціль <b>30 кг");
+    expect(view().text).not.toMatch(WARMUP_LINE);
+  });
+
+  it("W12 каталог: базою вважаються рівно ці вправи (критерій з exercises, не з назв)", async () => {
+    const { isWarmupExercise } = await import("../src/domain/warmup");
+    const base: number[] = [];
+    for (let id = 1; id <= 30; id++) {
+      const ex = (await repo.getExercise(id))!;
+      if (isWarmupExercise(ex)) base.push(id);
+    }
+    // Присіди, тяги/хінж, жими й тяги з вагою. Без підтягувань/брусів (вага тіла), core, delt, legacc і випадів (допоміжна).
+    expect(base).toEqual([1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 14, 15, 16, 22, 24, 28]);
+  });
+
+  it("W13 розминка не впливає на прогресію: усі три підходи записані з призначеною вагою й повторами", async () => {
+    await seedHistoryA();
+    await say("/trening");
+    await press("⏭ Пропустити");
+    for (let i = 0; i < 3; i++) await press("✅");
+    // Три нові рядки (поверх чотирьох з історії A і B) — лише робочі 50 × 9; розминкових (25/35) немає.
+    const all = await sets();
+    expect(all).toHaveLength(7);
+    expect(all.slice(-3).map((r) => [r.weight_kg, r.reps])).toEqual([[50, 9], [50, 9], [50, 9]]);
   });
 });

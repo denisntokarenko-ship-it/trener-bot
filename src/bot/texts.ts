@@ -157,6 +157,7 @@ export const BTN = {
   video: "🎥 Відео",
   cancel: "↩️ Скасувати",
   backToSet: "↩️ Назад",
+  warmupDone: "✅ Розминку зроблено",
 } as const;
 
 // --- Тренування: екран вправи ---
@@ -173,6 +174,8 @@ export interface ScreenTextModel {
   calibration: boolean;
   done: ReadonlyArray<{ setNo: number; weightKg: number | null; reps: number | null; skipped: boolean }>;
   showCues: boolean;
+  /** Розминкові підходи-підказка (`warmupSets`); порожньо чи немає → рядка нема. */
+  warmup?: ReadonlyArray<{ weightKg: number; reps: number }>;
 }
 
 const isBodyweight = (e: Pick<Exercise, "equipment">): boolean => e.equipment === "bodyweight";
@@ -187,11 +190,33 @@ export function screenText(m: ScreenTextModel): string {
   if (m.calibration && m.setNo === 1 && !isBodyweight(m.exercise)) {
     lines.push("<i>Калібрування: підбери робочу вагу кнопкою ⚖️</i>");
   }
+  if (m.warmup && m.warmup.length > 0) lines.push(warmupLine(m.warmup));
   for (const s of m.done) {
     lines.push(s.skipped ? `⏭ ${s.setNo}: пропущено` : `✅ ${s.setNo}: ${fmtKg(s.weightKg ?? 0)} × ${s.reps}`);
   }
   if (m.showCues) lines.push("", "💡 <b>Техніка</b>", ...m.exercise.cues.map((c) => `• <i>${esc(c)}</i>`));
   return clip(lines.join("\n"));
+}
+
+/** «Розминка: 20 кг × 8 · 30 кг × 4» — підказка, не запис. */
+export const warmupLine = (sets: ReadonlyArray<{ weightKg: number; reps: number }>): string =>
+  `<i>Розминка: ${sets.map((s) => `${fmtKg(s.weightKg)} кг × ${s.reps}`).join(" · ")}</i>`;
+
+// --- Тренування: екран розминки (перед першою вправою нового тренування) ---
+
+/** Одне коротке пояснення, що розминкові підходи на екранах вправ — лише підказка. */
+const WARMUP_NOTE = "Розминкові підходи на екранах вправ — лише підказка, вони не записуються.";
+
+export function warmupText(dayName: string, home: boolean): string {
+  const cardio = home
+    ? "швидка ходьба або стрибки на місці"
+    : "доріжка, велосипед або скакалка";
+  return [
+    `🔥 <b>Розминка</b> · <i>${esc(dayName)}</i>`,
+    `<b>Кардіо, 5–7 хв:</b> ${cardio}.`,
+    "<b>Суглоби, 2–3 хв:</b> кола плечима й тазом, 10 присідань без ваги, 10 ягідичних містків.",
+    `<i>${WARMUP_NOTE}</i>`,
+  ].join("\n");
 }
 
 export const swapTitle = (name: string): string => `🔁 Чим замінити <b>${esc(name)}</b>?`;

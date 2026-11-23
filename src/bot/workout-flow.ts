@@ -6,6 +6,7 @@ import { nextDayCode, type Prescription } from "../domain/progression";
 import { MAX_WEIGHT_KG, parseCb, type Cb } from "./callbacks";
 import { prescribeSlot } from "./prescribe";
 import { buildProgress } from "../domain/records";
+import { isWarmupExercise, warmupSets } from "../domain/warmup";
 import { addDays, localDate } from "../domain/time";
 import { PROGRESS_BACK_CB, PROGRESS_RECENT_CB, fullProgressText, programText, progressKeyboard, progressText, recentKeyboard, weightModel } from "./progress-view";
 import { PROGRESS_EMPTY, recordReps, recordWeight, weightEcho } from "./texts";
@@ -22,6 +23,7 @@ import {
   screenText,
   summaryText,
   swapMenu,
+  warmupScreen,
   weightPrompt,
   type ScreenModel,
   type SummaryModel,
@@ -130,6 +132,12 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       : (o.exercise ?? slot.exercise);
     const pres = await prescribe(userId, exercise, slot, o.memo);
     const lastWorked = rows.filter((r) => !r.skipped).at(-1);
+    const weightKg = o.g !== undefined ? o.g / 10 : (lastWorked?.weightKg ?? pres.weightKg);
+    // Розминкові підходи — підказка до першого підходу слота: не калібрування, лише база з вагою; нічого не пишемо.
+    const warmup =
+      rows.length === 0 && pres.reason !== "calibration" && isWarmupExercise(exercise)
+        ? warmupSets({ workingKg: weightKg, stepKg: exercise.weightStepKg, minKg: exercise.minWeightKg })
+        : [];
     return {
       workoutId: w.id,
       dayName: dayName(day),
@@ -139,12 +147,13 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       sets: slot.sets,
       exercise,
       setNo: rows.length + 1,
-      weightKg: o.g !== undefined ? o.g / 10 : (lastWorked?.weightKg ?? pres.weightKg),
+      weightKg,
       reps: o.r ?? pres.targetReps,
       calibration: pres.reason === "calibration",
       done: [...rows].sort((a, b) => a.setNo - b.setNo),
       canSwap: rows.length === 0 && (await available(day, sets, slot)).length > 0,
       showCues: o.cues ?? false,
+      warmup,
     };
   }
 
@@ -317,6 +326,10 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
         await edit(ctx, await screen(userId, workout, day, sets, { exercise: v.exercise, g: cb.g, r: cb.r, cues: cb.a === "t" && cb.t === 1 }));
         return undefined;
       }
+      case "u":
+        // Розминка нічого не пише: перемальовуємо поточну позицію, тож повтор і стара кнопка безпечні.
+        await edit(ctx, await screen(userId, workout, day, sets, { memo }));
+        return undefined;
       case "f": {
         if (position(day, sets)) return current(ANSWER.stale);
         if (!(await repo.finishWorkout(userId, workout.id, cb.q, now()))) return ANSWER.ratedAlready;
@@ -446,6 +459,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       const userId = ctx.from!.id;
       await repo.abandonStale(userId, now());
       let workout = await repo.getActiveWorkout(userId);
+      let fresh = false;
       if (!workout) {
         const program = await repo.getActiveProgram(userId);
         if (!program || program.days.length === 0) {
@@ -461,11 +475,19 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
           return;
         }
         workout = started.workout;
+        // Розминка — лише для щойно створеного тренування; конфлікт workouts_one_active — продовження.
+        fresh = started.created;
       }
       if (workout.awaitInput) await repo.setAwaitInput(userId, workout.id, null);
       const day = await repo.getProgramDay(userId, workout.dayCode);
       if (!day) {
         await ctx.reply(NO_PROGRAM);
+        return;
+      }
+      if (fresh) {
+        const home = (await repo.getProfile(userId))?.place === "home";
+        const w = warmupScreen(dayName(day), home, workout.id);
+        await ctx.reply(w.text, { reply_markup: w.keyboard });
         return;
       }
       const r = await screen(userId, workout, day, await repo.getWorkoutSets(userId, workout.id));

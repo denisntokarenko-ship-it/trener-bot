@@ -30,6 +30,8 @@ const exercise = (over: Partial<Exercise> = {}): Exercise => ({
   muscleGroup: "legs",
   cues: ["Тримай спину рівно", "Коліна — за носками", "Опускайся контрольовано"],
   videoUrl: VIDEO,
+  pattern: "squat",
+  kind: "compound",
   ...over,
 });
 

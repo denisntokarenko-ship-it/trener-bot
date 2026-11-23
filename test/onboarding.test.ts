@@ -112,6 +112,13 @@ async function walkToPlan(goal = "💪 Набрати", opts: { lift?: string } 
   await press("Помірна");
 }
 
+/** /trening; новий день спершу показує екран розминки — проходимо його кнопкою [⏭ Пропустити] (нові тести розминки — без цього). */
+const trening = async (): Promise<void> => {
+  await say("/trening");
+  const skip = view().buttons.find((b) => b.callback_data.startsWith("u:") && b.text.includes("Пропустити"));
+  if (skip) await tap(skip.callback_data);
+};
+
 describe("P1.1 перше питання — ціль", () => {
   it("новий користувач: /start → привітання, [▶️ Почати] → ціль: 6 кнопок, без «Пропустити» і «Назад»", async () => {
     await say("/start");
@@ -431,7 +438,7 @@ describe("P1.8 подвійне натискання й ізоляція", () =>
     await ownerWithProgram();
     await repo.upsertUser(OTHER, "Інший", 0);
     await repo.setStartWeight(OTHER, 1, 100, 8, 1);
-    await say("/trening");
+    await trening();
     // присідання зі штангою: без start_weights власника — калібрування від мінімуму грифа (20 кг)
     expect(lastText()).toContain("20 кг × 6");
   });
@@ -461,7 +468,7 @@ describe("P1.11 текст за станом", () => {
     await ownerWithProgram();
     await repo.upsertOnboarding(OWNER, { status: "active", step: "height" }, 1);
     await repo.upsertProfile(OWNER, { goal: "muscle" }, 1);
-    await say("/trening");
+    await trening();
     await press("⚖️ Вага");
     const before = await state();
     await say("40");
@@ -474,7 +481,7 @@ describe("P1.11 текст за станом", () => {
     await ownerWithProgram();
     await repo.upsertOnboarding(OWNER, { status: "active", step: "height" }, 1);
     await repo.upsertProfile(OWNER, { goal: "muscle" }, 1);
-    await say("/trening");
+    await trening();
     await press("⚖️ Вага");
     await say("/progres");
     await say("178");
@@ -624,7 +631,7 @@ describe("P2.8–P2.10 підтвердження плану", () => {
     await say("/start");
     await press("▶️ Продовжити");
     await press("⏭");
-    await say("/trening");
+    await trening();
     const before = await programsCount();
     // екран плану — попереднє повідомлення; кнопка з нього
     await tap("o:pl:ok0");
@@ -640,7 +647,7 @@ describe("P2.8–P2.10 підтвердження плану", () => {
     await press("Пройти");
     await press("▶️");
     await press("🏋️ Сила");
-    await say("/trening"); // життя триває; анкета лишилась на кроці
+    await trening(); // життя триває; анкета лишилась на кроці
     expect(await repo.getActiveProgram(OWNER)).toEqual(before);
     expect((await profile())?.goal).toBe("strength");
     await say("/profil");
@@ -689,14 +696,14 @@ describe("повний прохід", () => {
   it("/trening після прийняття: вправа з робочою вагою — призначення 60 кг × repMin", async () => {
     await ownerWithProgram();
     await repo.setStartWeight(OWNER, 1, 60, 8, 1);
-    await say("/trening");
+    await trening();
     expect(lastText()).toContain("60 кг × 6");
   });
 
   it("робоча вага з повторами < repMin → × 0,9 до кроку; без запису — мінімум", async () => {
     await ownerWithProgram();
     await repo.setStartWeight(OWNER, 1, 60, 4, 1);
-    await say("/trening");
+    await trening();
     expect(lastText()).toContain("50 кг × 6"); // 60 × 0,9 = 54 → 50
   });
 });
