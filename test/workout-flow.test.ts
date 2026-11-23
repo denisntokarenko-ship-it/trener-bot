@@ -776,11 +776,21 @@ describe("Розминка (phase-1-flow.md, «Розминка»)", () => {
     expect(view().text).toContain("Розминка: 30 кг × 8 · 45 кг × 4");
   });
 
-  it("W10 калібрування (немає історії) — рядка розминки немає", async () => {
+  it("W10 калібрування без стартової ваги (вага = мінімум) — рядка розминки немає", async () => {
     await say("/trening");
     await press("⏭ Пропустити");
     expect(view().text).toContain("Калібрування");
     expect(view().text).not.toMatch(WARMUP_LINE);
+  });
+
+  it("W10b калібрування з вагою, введеною кнопкою ⚖️ — це робоча вага, рядок є", async () => {
+    await say("/trening");
+    await press("⏭ Пропустити");
+    await press("⚖️");
+    await say("60");
+    expect(view().text).toContain("Калібрування");
+    expect(view().text).toContain("<b>60 кг × 6</b>");
+    expect(view().text).toContain("Розминка: 30 кг × 8 · 45 кг × 4");
   });
 
   it("W11 ізоляція (core: скручування на блоці) з призначеною вагою — рядка немає", async () => {

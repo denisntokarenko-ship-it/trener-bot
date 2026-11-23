@@ -133,9 +133,10 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
     const pres = await prescribe(userId, exercise, slot, o.memo);
     const lastWorked = rows.filter((r) => !r.skipped).at(-1);
     const weightKg = o.g !== undefined ? o.g / 10 : (lastWorked?.weightKg ?? pres.weightKg);
-    // Розминкові підходи — підказка до першого підходу слота: не калібрування, лише база з вагою; нічого не пишемо.
+    // Розминкові підходи — підказка до першого підходу слота, лише база з вагою; нічого не пишемо. Калібрування без
+    // стартової ваги показує мінімум, а він ≥ будь-якого розминкового підходу (warmupSets → порожньо) — рядка немає само.
     const warmup =
-      rows.length === 0 && pres.reason !== "calibration" && isWarmupExercise(exercise)
+      rows.length === 0 && isWarmupExercise(exercise)
         ? warmupSets({ workingKg: weightKg, stepKg: exercise.weightStepKg, minKg: exercise.minWeightKg })
         : [];
     return {
