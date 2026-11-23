@@ -3,7 +3,7 @@ import { InlineKeyboard } from "grammy";
 import type { Exercise } from "../db/repo";
 import { isVideoUrl } from "../domain/video";
 import { MAX_REPS, encodeCb } from "./callbacks";
-import { BTN, ANSWER, NOT_UNDERSTOOD, NO_PROGRAM, RATING_TEXT, screenText as renderScreen, summaryText, swapTitle, weightPromptText, badWeightText } from "./texts";
+import { BTN, ANSWER, NOT_UNDERSTOOD, NO_PROGRAM, RATING_TEXT, screenText as renderScreen, summaryText, swapTitle, warmupText, weightPromptText, badWeightText } from "./texts";
 
 // Повторний експорт: решта коду й тести імпортують ці імена звідси.
 export { ANSWER, NOT_UNDERSTOOD, NO_PROGRAM, RATING_TEXT, summaryText };
@@ -70,6 +70,12 @@ export function ratingKeyboard(workoutId: number): InlineKeyboard {
 
 export function weightPrompt(e: Exercise, workoutId: number): { text: string; keyboard: InlineKeyboard } {
   return { text: weightPromptText(e), keyboard: new InlineKeyboard().text(BTN.cancel, encodeCb("c", { w: workoutId })) };
+}
+
+/** Екран розминки перед першою вправою нового тренування: обидві кнопки однаково ведуть до вправи. */
+export function warmupScreen(dayName: string, home: boolean, workoutId: number): { text: string; keyboard: InlineKeyboard } {
+  const keyboard = new InlineKeyboard().text(BTN.warmupDone, encodeCb("u", { w: workoutId, t: 1 })).text(BTN.skip, encodeCb("u", { w: workoutId, t: 0 }));
+  return { text: warmupText(dayName, home), keyboard };
 }
 
 export const badWeight = (e: Exercise): string => badWeightText(e);

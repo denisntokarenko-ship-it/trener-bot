@@ -1,7 +1,7 @@
 // callback_data кнопок потоку /trening (phase-1-flow.md, «callback_data»): поля через «:», лише ASCII, ≤ 64 байти.
 // Чиста функція без I/O: кодер і розбірник — одне місце, де живе формат.
 
-export type Action = "s" | "a" | "v" | "c" | "x" | "y" | "k" | "t" | "f";
+export type Action = "s" | "a" | "v" | "c" | "x" | "y" | "k" | "t" | "f" | "u";
 
 /**
  * w — workout_id, p — program_exercise_id, e — exercise_id, n — set_no, r — повтори на кнопці,
@@ -21,6 +21,8 @@ const FIELDS: Record<Action, readonly Field[]> = {
   k: ["w", "p", "e", "n"],
   t: ["w", "p", "e", "n", "r", "g", "t"],
   f: ["w", "q"],
+  /** Розминка: `t` — 1 «зроблено», 0 «пропустити»; обидві кнопки ведуть до першої вправи. */
+  u: ["w", "t"],
 };
 
 export const CALLBACK_DATA_MAX_BYTES = 64;

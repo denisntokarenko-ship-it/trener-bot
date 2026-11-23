@@ -215,7 +215,21 @@ describe("P2.1.5 і крок 5: число без команди", () => {
   it("await_input ≠ NULL і число → це вага вправи, body_weights порожня", async () => {
     await env.DB.batch(seedStatements(0).map((s) => env.DB.prepare(s)));
     await say("/trening");
-    const markup = [...tg.calls].reverse().find((c) => c.method === "sendMessage")!.payload.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] };
+    const cbFrom = (data: string): Update =>
+      ({
+        update_id: updateId++,
+        callback_query: {
+          id: "c0",
+          from: { id: OWNER, is_bot: false, first_name: "Д" },
+          chat_instance: "ci",
+          data,
+          message: { message_id: 7, date: 0, chat: { id: OWNER, type: "private", first_name: "Д" }, text: "екран" },
+        },
+      }) as Update;
+    // Новий день починається з екрана розминки: [⏭ Пропустити] веде до першої вправи.
+    const warmupKb = [...tg.calls].reverse().find((c) => c.method === "sendMessage")!.payload.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] };
+    await send(cbFrom(warmupKb.inline_keyboard.flat().find((b) => b.text.includes("Пропустити"))!.callback_data));
+    const markup = [...tg.calls].reverse().find((c) => c.method === "editMessageText")!.payload.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] };
     const data = markup.inline_keyboard.flat().find((b) => b.text.startsWith("⚖️"))!.callback_data;
     await send({
       update_id: updateId++,

@@ -157,6 +157,7 @@ export const BTN = {
   video: "🎥 Відео",
   cancel: "↩️ Скасувати",
   backToSet: "↩️ Назад",
+  warmupDone: "✅ Розминку зроблено",
 } as const;
 
 // --- Тренування: екран вправи ---
@@ -192,6 +193,19 @@ export function screenText(m: ScreenTextModel): string {
   }
   if (m.showCues) lines.push("", "💡 <b>Техніка</b>", ...m.exercise.cues.map((c) => `• <i>${esc(c)}</i>`));
   return clip(lines.join("\n"));
+}
+
+// --- Тренування: екран розминки (перед першою вправою нового тренування) ---
+
+export function warmupText(dayName: string, home: boolean): string {
+  const cardio = home
+    ? "швидка ходьба або стрибки на місці"
+    : "доріжка, велосипед або скакалка";
+  return [
+    `🔥 <b>Розминка</b> · <i>${esc(dayName)}</i>`,
+    `<b>Кардіо, 5–7 хв:</b> ${cardio}.`,
+    "<b>Суглоби, 2–3 хв:</b> кола плечима й тазом, 10 присідань без ваги, 10 ягідичних містків.",
+  ].join("\n");
 }
 
 export const swapTitle = (name: string): string => `🔁 Чим замінити <b>${esc(name)}</b>?`;
