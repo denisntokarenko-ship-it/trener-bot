@@ -1,5 +1,6 @@
 // Завдання 1b.4: оформлення бота й текстів (docs/spec/phase-1b.md, §6 і історії P3.4–P3.6).
 // Екрани — чисті функції, тож перевіряємо їх напряму: ліміти, екранування HTML, знімки, відео-кнопка, мова.
+import { NO_UNITS } from "../src/domain/units";
 import { describe, expect, it } from "vitest";
 import { AVATAR_FILES, runSetBotProfile, type SetBotProfileIo } from "../scripts/set-bot-profile-core.ts";
 import { ENUMS, LIMIT_OPTS, emptyDayScreen, enumScreen, goalNoteScreen, limitsScreen, liftScreen, noteScreen, numberScreen, planScreen, profileScreen, resumeScreen, welcomeScreen, type Screen } from "../src/bot/onboarding-view";
@@ -30,6 +31,7 @@ const exercise = (over: Partial<Exercise> = {}): Exercise => ({
   muscleGroup: "legs",
   cues: ["Тримай спину рівно", "Коліна — за носками", "Опускайся контрольовано"],
   videoUrl: VIDEO,
+  unilateral: false,
   ...over,
 });
 
@@ -105,7 +107,7 @@ describe("P3.5 екранування користувацьких рядків"
   it("програма, /progres, план, профіль", () => {
     const e = exercise({ nameUk: EVIL });
     const day = { id: 1, programId: 1, code: "A", position: 1, title: EVIL, slots: [{ id: 1, position: 1, sets: 3, repMin: 6, repMax: 10, exercise: e }] };
-    expectValid(programText({ name: EVIL, days: [day], next: { dayName: EVIL, lines: [{ nameUk: EVIL, bodyweight: false, weightKg: 20, targetReps: 6 }] }, activeDayName: EVIL }), "програма");
+    expectValid(programText({ name: EVIL, days: [day], next: { dayName: EVIL, lines: [{ nameUk: EVIL, bodyweight: false, units: NO_UNITS, weightKg: 20, targetReps: 6 }] }, activeDayName: EVIL }), "програма");
     const w: WorkoutSummaryRow = {
       id: 1, startedAt: 1_700_000_000_000, status: "done", effort: 3, dayCode: "A", dayTitle: EVIL,
       exercises: [{ nameUk: EVIL, sets: [{ weightKg: 20, reps: 8, skipped: false }] }],
@@ -263,7 +265,7 @@ describe("знімки ключових екранів", () => {
       id: 1, programId: 1, code, position: 1, title,
       slots: names.map((n, i) => ({ id: i + 1, position: i + 1, sets: 3, repMin: 6, repMax: 10, exercise: exercise({ nameUk: n }) })),
     });
-    expect(programText({ name: "План: сила", days: [day("FA", "Все тіло A", ["Присідання зі штангою", "Жим лежачи"]), day("FB", "Все тіло B", ["Румунська тяга"])], next: { dayName: "Все тіло A", lines: [{ nameUk: "Присідання зі штангою", bodyweight: false, weightKg: 60, targetReps: 6 }] }, activeDayName: null })).toMatchInlineSnapshot(`
+    expect(programText({ name: "План: сила", days: [day("FA", "Все тіло A", ["Присідання зі штангою", "Жим лежачи"]), day("FB", "Все тіло B", ["Румунська тяга"])], next: { dayName: "Все тіло A", lines: [{ nameUk: "Присідання зі штангою", bodyweight: false, units: NO_UNITS, weightKg: 60, targetReps: 6 }] }, activeDayName: null })).toMatchInlineSnapshot(`
       "📋 <b>План: сила</b>
 
       <b>Все тіло A</b> · ноги

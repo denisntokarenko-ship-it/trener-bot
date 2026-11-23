@@ -1,3 +1,4 @@
+import { NO_UNITS } from "../src/domain/units";
 import { describe, expect, it } from "vitest";
 import { buildProgress, epley, roundHalfKg, type ProgressSetRow } from "../src/domain/records";
 import { fullProgressText, weightModel } from "../src/bot/progress-view";
@@ -7,6 +8,7 @@ const row = (o: Partial<ProgressSetRow> & { weightKg: number; reps: number }): P
   exerciseId: 1,
   nameUk: "Присідання зі штангою",
   bodyweight: false,
+  units: NO_UNITS,
   workoutId: 1,
   startedAt: 1_000,
   ...o,

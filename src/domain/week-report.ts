@@ -1,6 +1,7 @@
 // Недільний звіт (docs/spec/phase-2.md, розділ 4): структура, яку потім рендерить texts.ts. Чисті функції без I/O.
 // Фаза 4 додасть у `WeeklyReport` поле коментаря — рендер лишається окремо.
 import type { ProgressSetRow } from "./records";
+import type { ExerciseUnits } from "./units";
 import { addDays } from "./time";
 import { avg7, weekChange, type WeightEntry } from "./weight";
 
@@ -9,6 +10,7 @@ export const MAX_REPORT_RECORDS = 3;
 export interface WeekRecord {
   nameUk: string;
   bodyweight: boolean;
+  units: ExerciseUnits;
   /** Вага тіла: 0 — показуються повтори. */
   weightKg: number;
   reps: number;
@@ -49,7 +51,7 @@ export function weekRecords(rows: readonly ProgressSetRow[], fromUtc: number, to
     const top = Math.max(...inWeek.map(metric));
     if (top <= base) continue;
     const reps = Math.max(...inWeek.filter((r) => metric(r) === top).map((r) => r.reps));
-    out.push({ nameUk: list[0]!.nameUk, bodyweight: bw, weightKg: bw ? 0 : top, reps, gain: top - base });
+    out.push({ nameUk: list[0]!.nameUk, bodyweight: bw, units: list[0]!.units, weightKg: bw ? 0 : top, reps, gain: top - base });
   }
   return out.sort((a, b) => b.gain - a.gain || a.nameUk.localeCompare(b.nameUk, "uk")).slice(0, MAX_REPORT_RECORDS);
 }

@@ -149,6 +149,17 @@ describe("читальні інструменти (P4.1.1)", () => {
     expect(t.entries[29]!.date).toBe(TODAY);
   });
 
+  it("get_exercise_history: weight_unit/reps_unit — одиниці чисел (гантель = вага однієї, одностороння = повтори на сторону)", async () => {
+    const unit = async (slug: string): Promise<unknown> => {
+      const id = (await env.DB.prepare("SELECT id FROM exercises WHERE slug = ?").bind(slug).first<{ id: number }>())!.id;
+      const r = json(await call("get_exercise_history", { exercise_id: id })) as { weight_unit: string; reps_unit: string };
+      return [r.weight_unit, r.reps_unit];
+    };
+    expect(await unit("dumbbell-lunge")).toEqual(["kg_per_dumbbell", "per_side"]);
+    expect(await unit("dumbbell-bench-press")).toEqual(["kg_per_dumbbell", "total"]);
+    expect(await unit("barbell-squat")).toEqual(["kg", "total"]);
+  });
+
   it("get_exercise_history: next_prescription збігається з prescribeSlot; нема в програмі — null; чужої історії немає (P4.1.3)", async () => {
     await seedWorkout(A, dayA, NOW - 3 * 86_400_000, 60);
     const slot = dayA.slots[0]!;

@@ -54,8 +54,11 @@ export const exercises = sqliteTable(
     place: text("place", { enum: ["gym", "both"] }),
     minLevel: integer("min_level"),
     stress: text("stress"),
+    // Міграція 0011: одностороння вправа — повтори рахуються на кожну сторону (decisions.md, «Одиниці»). CHECK — і в SQL міграції.
+    unilateral: integer("unilateral", { mode: "boolean" }).notNull().default(false),
   },
   (t) => [
+    check("exercises_unilateral", sql`${t.unilateral} IN (0, 1)`),
     check("exercises_slug_kebab", sql`${t.slug} <> '' AND ${t.slug} NOT GLOB '*[^a-z0-9-]*'`),
     check("exercises_equipment", sql`${t.equipment} IN ('barbell', 'dumbbell', 'machine', 'cable', 'bodyweight')`),
     check("exercises_muscle_group", sql`${t.muscleGroup} IN ('legs', 'chest', 'back', 'shoulders', 'core')`),

@@ -4,6 +4,7 @@
 import { TOOL_RESULT_MAX_CHARS } from "../config";
 import type { Repo, Slot } from "../db/repo";
 import { nextDayCode } from "../domain/progression";
+import { unitsOf } from "../domain/units";
 import { addDays, localDate, localParts } from "../domain/time";
 import { avg7, weekChange } from "../domain/weight";
 import { prescribeSlot } from "../bot/prescribe";
@@ -41,7 +42,7 @@ export const TOOL_DEFS: readonly ToolDef[] = [
   {
     name: "get_exercise_history",
     description:
-      "Історія вправи користувача (останні сесії) і наступне призначення від рушія прогресії (next_prescription) для слота програми. Вагу на наступне заняття називай лише звідси.",
+      "Історія вправи користувача (останні сесії) і наступне призначення від рушія прогресії (next_prescription) для слота програми. Вагу на наступне заняття називай лише звідси. weight_unit = kg_per_dumbbell — вага ОДНІЄЇ гантелі (не сума двох); reps_unit = per_side — повтори на кожну сторону.",
     input_schema: {
       type: "object",
       properties: {
@@ -194,7 +195,11 @@ async function exerciseHistory(c: ToolContext, input: unknown): Promise<ToolResu
     const p = await prescribeSlot(c.repo, c.userId, found.slot.exercise, found.slot);
     next = { weight_kg: p.weightKg, reps: p.targetReps, reason: p.reason };
   }
-  return ok({ name: exercise.nameUk, sessions, slot, next_prescription: next }, "sessions");
+  // Одиниці чисел (decisions.md, «Одиниці»): без них модель не відрізнить вагу однієї гантелі від суми двох.
+  const u = unitsOf(exercise);
+  const weightUnit = u.dumbbell ? "kg_per_dumbbell" : "kg";
+  const repsUnit = u.side ? "per_side" : "total";
+  return ok({ name: exercise.nameUk, weight_unit: weightUnit, reps_unit: repsUnit, sessions, slot, next_prescription: next }, "sessions");
 }
 
 async function weightTrend(c: ToolContext, input: unknown): Promise<ToolResult> {

@@ -8,6 +8,13 @@
 import type { Exercise, ProfileRow, ProgramDay, StartWeight } from "../db/repo";
 // `.ts` — бо scripts/set-webhook.ts і set-bot-profile.ts запускає голий node (зняття типів не дописує розширень): значення з src — лише з розширенням.
 import { GOAL_LABELS, type Goal, type Plan } from "../domain/plan.ts";
+import { NO_UNITS, kgUnit, repsTail, unitsNote, unitsOf, type ExerciseUnits } from "../domain/units.ts";
+
+/** Пояснення одиниць із великої літери: «Вага — однієї гантелі · повтори — на кожну ногу»; null — звичайна вправа. */
+function unitsHint(u: ExerciseUnits): string | null {
+  const n = unitsNote(u);
+  return n === null ? null : n.charAt(0).toUpperCase() + n.slice(1);
+}
 
 // --- Форматування ---
 
@@ -166,7 +173,7 @@ export interface ScreenTextModel {
   dayName: string;
   slotIndex: number;
   slotCount: number;
-  exercise: Pick<Exercise, "nameUk" | "equipment" | "cues">;
+  exercise: Pick<Exercise, "nameUk" | "equipment" | "cues" | "muscleGroup" | "unilateral">;
   setNo: number;
   sets: number;
   weightKg: number;
@@ -179,11 +186,12 @@ export interface ScreenTextModel {
 const isBodyweight = (e: Pick<Exercise, "equipment">): boolean => e.equipment === "bodyweight";
 
 export function screenText(m: ScreenTextModel): string {
-  const load = isBodyweight(m.exercise) ? "власна вага" : `${fmtKg(m.weightKg)} кг`;
+  const u = unitsOf(m.exercise);
+  const load = isBodyweight(m.exercise) ? "власна вага" : `${fmtKg(m.weightKg)} ${kgUnit(u)}`;
   const lines = [
     `🏋️ <i>${esc(m.dayName)} · вправа ${m.slotIndex + 1}/${m.slotCount}</i>`,
     `<b>${esc(m.exercise.nameUk)}</b>`,
-    `Підхід ${m.setNo}/${m.sets} · ціль <b>${load} × ${m.reps}</b>`,
+    `Підхід ${m.setNo}/${m.sets} · ціль <b>${load} × ${m.reps}${repsTail(u)}</b>`,
   ];
   if (m.calibration && m.setNo === 1 && !isBodyweight(m.exercise)) {
     lines.push("<i>Калібрування: підбери робочу вагу кнопкою ⚖️</i>");
@@ -215,14 +223,17 @@ const weightHint = (e: Pick<Exercise, "weightStepKg" | "minWeightKg">): string =
   `Крок ${fmtKg(e.weightStepKg)} кг, від ${fmtKg(e.minWeightKg)} кг`;
 const weightExample = (e: Pick<Exercise, "weightStepKg" | "minWeightKg">): string => fmtKg(e.minWeightKg + e.weightStepKg * 5);
 
-export const weightPromptText = (e: Pick<Exercise, "nameUk" | "weightStepKg" | "minWeightKg">): string =>
-  `⚖️ Яка вага для <b>${esc(e.nameUk)}</b>, кг?\n${weightHint(e)}. Наприклад: <code>${weightExample(e)}</code>`;
+/** Гантельна вправа: нагадування, що йдеться про вагу однієї гантелі. */
+const DUMBBELL_NOTE = "Вага однієї гантелі, не сума двох.";
 
-export const badWeightText = (e: Pick<Exercise, "weightStepKg" | "minWeightKg">): string =>
-  `❌ Не схоже на вагу. ${weightHint(e)}. Наприклад: <code>${weightExample(e)}</code>`;
+export const weightPromptText = (e: Pick<Exercise, "nameUk" | "weightStepKg" | "minWeightKg" | "equipment">): string =>
+  `⚖️ Яка вага ${e.equipment === "dumbbell" ? "<b>однієї гантелі</b> " : ""}для <b>${esc(e.nameUk)}</b>, кг?\n${weightHint(e)}. Наприклад: <code>${weightExample(e)}</code>${e.equipment === "dumbbell" ? `\n${DUMBBELL_NOTE}` : ""}`;
+
+export const badWeightText = (e: Pick<Exercise, "weightStepKg" | "minWeightKg" | "equipment">): string =>
+  `❌ Не схоже на вагу. ${weightHint(e)}. Наприклад: <code>${weightExample(e)}</code>${e.equipment === "dumbbell" ? `. ${DUMBBELL_NOTE}` : ""}`;
 
 /** Підтвердження на місці запиту ваги після того, як вагу введено. */
-export const weightEcho = (kg: number): string => `⚖️ <b>${fmtKg(kg)} кг</b>`;
+export const weightEcho = (kg: number, u: ExerciseUnits = NO_UNITS): string => `⚖️ <b>${fmtKg(kg)} ${kgUnit(u)}</b>`;
 
 // --- Тренування: підсумок ---
 
@@ -239,8 +250,9 @@ export interface SummaryTextModel {
   nextDayName: string;
 }
 
-export const recordReps = (name: string, reps: number): string => `${esc(name)} — <b>${reps} повт.</b>`;
-export const recordWeight = (name: string, kg: number, reps: number): string => `${esc(name)} — <b>${fmtKg(kg)} кг × ${reps}</b>`;
+export const recordReps = (name: string, reps: number, u: ExerciseUnits = NO_UNITS): string => `${esc(name)} — <b>${reps} повт.${repsTail(u)}</b>`;
+export const recordWeight = (name: string, kg: number, reps: number, u: ExerciseUnits = NO_UNITS): string =>
+  `${esc(name)} — <b>${fmtKg(kg)} ${kgUnit(u)} × ${reps}${repsTail(u)}</b>`;
 
 export function summaryText(m: SummaryTextModel): string {
   const lines = [
@@ -320,6 +332,7 @@ export function weightBlock(m: WeightBlockModel): string {
 export interface ExerciseBlockModel {
   name: string;
   bodyweight: boolean;
+  units: ExerciseUnits;
   start: { weightKg: number; reps: number };
   now: { weightKg: number; reps: number };
   record: { weightKg: number; reps: number; date: string };
@@ -329,7 +342,8 @@ export interface ExerciseBlockModel {
 /** Блок вправи: «Старт 40 × 8 → зараз 60 × 8 · рекорд 62,5 × 6 (23.10)» + e1RM; для ваги тіла — лише повтори. */
 export function exerciseBlock(m: ExerciseBlockModel): string {
   const fmt = (x: { weightKg: number; reps: number }): string => (m.bodyweight ? `${x.reps} повт.` : `${fmtKg(x.weightKg)} × ${x.reps}`);
-  const lines = [`<b>${esc(m.name)}</b>`, `   Старт ${fmt(m.start)} → зараз ${fmt(m.now)} · рекорд ${fmt(m.record)} (${m.record.date})`];
+  const note = unitsNote(m.units);
+  const lines = [`<b>${esc(m.name)}</b>${note ? ` <i>(${note})</i>` : ""}`, `   Старт ${fmt(m.start)} → зараз ${fmt(m.now)} · рекорд ${fmt(m.record)} (${m.record.date})`];
   if (m.e1rm !== null) lines.push(`   e1RM ≈ ${fmtKg(m.e1rm)} кг`);
   return lines.join("\n");
 }
@@ -337,6 +351,7 @@ export function exerciseBlock(m: ExerciseBlockModel): string {
 export interface NextSlotLine {
   nameUk: string;
   bodyweight: boolean;
+  units: ExerciseUnits;
   weightKg: number;
   targetReps: number;
 }
@@ -352,12 +367,12 @@ export interface ProgramTextModel {
 export function programText(m: ProgramTextModel): string {
   const parts: string[] = [`📋 <b>${esc(m.name)}</b>`];
   for (const d of m.days) {
-    const slots = d.slots.map((s, i) => `${i + 1}. ${esc(s.exercise.nameUk)} — ${s.sets} × ${s.repMin}–${s.repMax}`);
+    const slots = d.slots.map((s, i) => `${i + 1}. ${esc(s.exercise.nameUk)} — ${s.sets} × ${s.repMin}–${s.repMax}${repsTail(unitsOf(s.exercise))}`);
     const hint = dayHint(d.slots);
     parts.push([`<b>${esc(dayName(d))}</b>${hint ? ` · ${hint}` : ""}`, ...slots].join("\n"));
   }
   const next = m.next.lines.map(
-    (l) => `${esc(l.nameUk)} — ${l.bodyweight ? "власна вага" : `${fmtKg(l.weightKg)} кг`} × ${l.targetReps}`,
+    (l) => `${esc(l.nameUk)} — ${l.bodyweight ? "власна вага" : `${fmtKg(l.weightKg)} ${kgUnit(l.units)}`} × ${l.targetReps}${repsTail(l.units)}`,
   );
   parts.push([`➡️ <b>${NEXT_WORKOUT}: ${esc(m.next.dayName)}</b>`, ...next].join("\n"));
   if (m.activeDayName) parts.push(`🏋️ Зараз триває: <b>${esc(m.activeDayName)}</b> — /trening, щоб продовжити`);
@@ -533,12 +548,15 @@ export function numberText(step: keyof typeof NUMBER_SPECS, current: number | nu
   return `${head(spec.n, spec.title)}\nНапиши число, наприклад <code>${spec.example}</code>.${cur}`;
 }
 
-export function liftText(ex: Pick<Exercise, "nameUk" | "weightStepKg">, sub: number, total: number, current: StartWeight | null, prompt: boolean): string {
-  const cur = current ? `\nЗараз: <b>${fmtKg(current.weightKg)} кг × ${current.reps}</b> ✅` : "";
+export function liftText(ex: Pick<Exercise, "nameUk" | "weightStepKg" | "equipment" | "muscleGroup" | "unilateral">, sub: number, total: number, current: StartWeight | null, prompt: boolean): string {
+  const u = unitsOf(ex);
+  const hint = unitsHint(u);
+  const note = hint ? `\n<i>${hint}.</i>` : "";
+  const cur = current ? `\nЗараз: <b>${fmtKg(current.weightKg)} ${kgUnit(u)} × ${current.reps}${repsTail(u)}</b> ✅` : "";
   const head7 = `⚖️ <b>Робочі ваги</b>\n<i>Питання 7 з ${SURVEY_TOTAL} · вправа ${sub + 1} з ${total}</i>`;
   return prompt
-    ? `${head7}\n<b>${esc(ex.nameUk)}</b>\nНапиши вагу й повтори: <code>60x8</code> або <code>42,5x10</code>. Крок ваги — ${fmtKg(ex.weightStepKg)} кг.${cur}`
-    : `${head7}\nЗнаєш свою вагу у вправі <b>${esc(ex.nameUk)}</b>? Вона стане стартовою. Можеш одразу написати, наприклад, <code>60x8</code>.${cur}`;
+    ? `${head7}\n<b>${esc(ex.nameUk)}</b>\nНапиши вагу й повтори: <code>60x8</code> або <code>42,5x10</code>. Крок ваги — ${fmtKg(ex.weightStepKg)} кг.${note}${cur}`
+    : `${head7}\nЗнаєш свою вагу у вправі <b>${esc(ex.nameUk)}</b>? Вона стане стартовою. Можеш одразу написати, наприклад, <code>60x8</code>.${note}${cur}`;
 }
 
 // --- Анкета: відповіді на ввід ---
@@ -556,8 +574,9 @@ export const MSG = {
   noText: "Зараз обери відповідь кнопкою.",
 };
 
-export function badLift(error: "format" | "weight" | "reps" | "min", ex: Pick<Exercise, "minWeightKg" | "weightStepKg">): string {
-  const base = `Напиши вагу й повтори, наприклад <code>${fmtKg(ex.minWeightKg + ex.weightStepKg * 5)}x8</code>.`;
+export function badLift(error: "format" | "weight" | "reps" | "min", ex: Pick<Exercise, "minWeightKg" | "weightStepKg" | "equipment" | "muscleGroup" | "unilateral">): string {
+  const hint = unitsHint(unitsOf(ex));
+  const base = `Напиши вагу й повтори, наприклад <code>${fmtKg(ex.minWeightKg + ex.weightStepKg * 5)}x8</code>.${hint ? ` ${hint}.` : ""}`;
   switch (error) {
     case "weight":
       return `❌ Вага має бути більшою за 0 і не більшою за 400 кг. ${base}`;
@@ -713,6 +732,7 @@ export function trendAppliedText(n: { validFrom: string; kcal: number; proteinG:
 export interface TrainReminderLine {
   nameUk: string;
   bodyweight: boolean;
+  units: ExerciseUnits;
   weightKg: number;
   targetReps: number;
   /** Вправа без історії: показується «калібрування, старт ≈ N кг». */
@@ -720,10 +740,10 @@ export interface TrainReminderLine {
 }
 
 function trainLine(l: TrainReminderLine): string {
-  if (l.bodyweight) return `${esc(l.nameUk)} — власна вага × ${l.targetReps}`;
-  return l.calibration
-    ? `${esc(l.nameUk)} — калібрування, старт ≈ ${fmtKg(l.weightKg)} кг × ${l.targetReps}`
-    : `${esc(l.nameUk)} — ${fmtKg(l.weightKg)} кг × ${l.targetReps}`;
+  const reps = `${l.targetReps}${repsTail(l.units)}`;
+  if (l.bodyweight) return `${esc(l.nameUk)} — власна вага × ${reps}`;
+  const kg = `${fmtKg(l.weightKg)} ${kgUnit(l.units)}`;
+  return l.calibration ? `${esc(l.nameUk)} — калібрування, старт ≈ ${kg} × ${reps}` : `${esc(l.nameUk)} — ${kg} × ${reps}`;
 }
 
 /** Нагадування про тренування. Не влізло в 4096 — список різався з кінця (N6), «Почати» лишається. */
@@ -1031,9 +1051,10 @@ export function proposalCardText(summary: string, reason: string, extra: string 
 export const proposalDecidedText = (mark: string, summary: string): string => `${mark}: ${esc(summary)}`;
 
 /** «60 × 8» · «власна вага × 12» · «калібрування» — призначення в картці пропозиції. */
-export function prescriptionText(p: { weightKg: number; targetReps: number; reason: string }, bodyweight: boolean): string {
+export function prescriptionText(p: { weightKg: number; targetReps: number; reason: string }, bodyweight: boolean, u: ExerciseUnits = NO_UNITS): string {
   if (p.reason === "calibration") return "калібрування";
-  return bodyweight ? `власна вага × ${p.targetReps}` : `${fmtKg(p.weightKg)} × ${p.targetReps}`;
+  const reps = `${p.targetReps}${repsTail(u)}`;
+  return bodyweight ? `власна вага × ${reps}` : `${fmtKg(p.weightKg)}${u.dumbbell ? " кг на гантель" : ""} × ${reps}`;
 }
 /** Рядок про наслідок зміни діапазону для ваг: прогресія міряє минулу сесію проти поточного слота. */
 export const proposalWeightsLine = (was: string, will: string): string => `Наступне призначення: було ${was} → стане ${will}`;

@@ -11,6 +11,7 @@ import { nextDayCode } from "./domain/progression";
 import { formatPace, trendProposal, type Goal, type TrendProposal } from "./domain/nutrition";
 import { dueReminders, parseTrainingDays } from "./domain/reminders";
 import { addDays, localDate, localDayStartUtc, localTimeUtc } from "./domain/time";
+import { unitsOf } from "./domain/units";
 import { buildWeeklyReport } from "./domain/week-report";
 import { formatChange, formatKg } from "./domain/weight";
 
@@ -100,7 +101,7 @@ async function buildTrain(repo: Repo, userId: number, program: ActiveProgram | n
   const lines: TrainReminderLine[] = await Promise.all(
     day.slots.map(async (slot) => {
       const p = await prescribeSlot(repo, userId, slot.exercise, slot);
-      return { nameUk: slot.exercise.nameUk, bodyweight: slot.exercise.equipment === "bodyweight", weightKg: p.weightKg, targetReps: p.targetReps, calibration: p.reason === "calibration" };
+      return { nameUk: slot.exercise.nameUk, bodyweight: slot.exercise.equipment === "bodyweight", units: unitsOf(slot.exercise), weightKg: p.weightKg, targetReps: p.targetReps, calibration: p.reason === "calibration" };
     }),
   );
   return trainReminderText({ dayLabel: dayLabel(day), lines });
@@ -135,7 +136,7 @@ async function reportModel(repo: Repo, user: UserRow, date: string, program: Act
     planned: r.planned,
     sets: r.sets,
     volumeKg: r.volumeKg,
-    records: r.records.map((x) => (x.bodyweight ? recordReps(x.nameUk, x.reps) : recordWeight(x.nameUk, x.weightKg, x.reps))),
+    records: r.records.map((x) => (x.bodyweight ? recordReps(x.nameUk, x.reps, x.units) : recordWeight(x.nameUk, x.weightKg, x.reps, x.units))),
     weight: r.weight ? { avg: formatKg(r.weight.avgDg), n: r.weight.n, change: r.weight.changeDg === null ? null : formatChange(r.weight.changeDg) } : null,
     next: r.next,
   };

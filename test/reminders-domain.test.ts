@@ -1,3 +1,4 @@
+import { NO_UNITS } from "../src/domain/units";
 import { describe, expect, it } from "vitest";
 import { dueReminders, parseReminderTime, parseTrainingDays, type ReminderKind, type ReminderUser } from "../src/domain/reminders";
 import { isoWeekday, localDayStartUtc, localParts, localTimeUtc, usableTz } from "../src/domain/time";
@@ -167,6 +168,7 @@ describe("weekRecords: нові рекорди тижня", () => {
     exerciseId,
     nameUk,
     bodyweight,
+    units: NO_UNITS,
     workoutId,
     startedAt: T0 + day * DAY,
     weightKg,
@@ -180,7 +182,7 @@ describe("weekRecords: нові рекорди тижня", () => {
   });
   it("вага вища за все до тижня — рекорд, повтори — найбільші на цій вазі; приріст у gain", () => {
     const r = weekRecords([row(1, "Присідання", 1, -7, 60, 8), row(1, "Присідання", 2, 1, 62.5, 5), row(1, "Присідання", 2, 1, 62.5, 6)], from, to);
-    expect(r).toEqual([{ nameUk: "Присідання", bodyweight: false, weightKg: 62.5, reps: 6, gain: 2.5 }]);
+    expect(r).toEqual([{ nameUk: "Присідання", bodyweight: false, units: NO_UNITS, weightKg: 62.5, reps: 6, gain: 2.5 }]);
   });
   it("рівна вага — не рекорд; сесія після тижня не впливає", () => {
     const rows = [row(1, "Присідання", 1, -7, 60, 8), row(1, "Присідання", 2, 1, 60, 10), row(1, "Присідання", 3, 9, 70, 5)];
@@ -196,7 +198,7 @@ describe("weekRecords: нові рекорди тижня", () => {
   });
   it("вага тіла — рекорд за повторами", () => {
     const r = weekRecords([row(2, "Віджимання", 1, -7, 0, 10, true), row(2, "Віджимання", 2, 1, 0, 12, true)], from, to);
-    expect(r).toEqual([{ nameUk: "Віджимання", bodyweight: true, weightKg: 0, reps: 12, gain: 2 }]);
+    expect(r).toEqual([{ nameUk: "Віджимання", bodyweight: true, units: NO_UNITS, weightKg: 0, reps: 12, gain: 2 }]);
   });
   it("≤ 3: за приростом спадно, за рівності — за назвою", () => {
     const rows = [

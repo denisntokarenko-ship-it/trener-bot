@@ -7,6 +7,7 @@ import { MAX_WEIGHT_KG, parseCb, type Cb } from "./callbacks";
 import { prescribeSlot } from "./prescribe";
 import { buildProgress } from "../domain/records";
 import { addDays, localDate } from "../domain/time";
+import { unitsOf } from "../domain/units";
 import { PROGRESS_BACK_CB, PROGRESS_RECENT_CB, fullProgressText, programText, progressKeyboard, progressText, recentKeyboard, weightModel } from "./progress-view";
 import { PROGRESS_EMPTY, recordReps, recordWeight, weightEcho } from "./texts";
 import {
@@ -190,12 +191,12 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       if (mine.length === 0) continue;
       if (exercise.equipment === "bodyweight") {
         const cur = Math.max(...mine.map((x) => x.reps ?? 0));
-        if (cur > Math.max(-1, ...prev.map((x) => x.reps ?? 0))) records.push(recordReps(exercise.nameUk, cur));
+        if (cur > Math.max(-1, ...prev.map((x) => x.reps ?? 0))) records.push(recordReps(exercise.nameUk, cur, unitsOf(exercise)));
       } else {
         const cur = Math.max(...mine.map((x) => x.weightKg ?? 0));
         if (cur > Math.max(-1, ...prev.map((x) => x.weightKg ?? 0))) {
           const reps = Math.max(...mine.filter((x) => x.weightKg === cur).map((x) => x.reps ?? 0));
-          records.push(recordWeight(exercise.nameUk, cur, reps));
+          records.push(recordWeight(exercise.nameUk, cur, reps, unitsOf(exercise)));
         }
       }
     }
@@ -433,7 +434,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       const lines = [];
       for (const slot of nextDay.slots) {
         const p = await prescribe(userId, slot.exercise, slot);
-        lines.push({ nameUk: slot.exercise.nameUk, bodyweight: slot.exercise.equipment === "bodyweight", weightKg: p.weightKg, targetReps: p.targetReps });
+        lines.push({ nameUk: slot.exercise.nameUk, bodyweight: slot.exercise.equipment === "bodyweight", units: unitsOf(slot.exercise), weightKg: p.weightKg, targetReps: p.targetReps });
       }
       const active = await repo.getActiveWorkout(userId);
       const activeDay = active ? days.find((d) => d.code === active.dayCode) : undefined;
@@ -545,7 +546,7 @@ export function createWorkoutFlow(repo: Repo, now: () => number) {
       await repo.setAwaitInput(userId, workout.id, null);
       const kg = grams / 1000;
       try {
-        await ctx.api.editMessageText(ctx.chat!.id, state.m, weightEcho(kg));
+        await ctx.api.editMessageText(ctx.chat!.id, state.m, weightEcho(kg, unitsOf(v.exercise)));
       } catch (err) {
         if (!isNotModified(err)) throw err;
       }

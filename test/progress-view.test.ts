@@ -1,3 +1,4 @@
+import { NO_UNITS } from "../src/domain/units";
 import { describe, expect, it } from "vitest";
 import { fmtLocalDate, fmtSets, NO_WORKOUTS, programText, progressText } from "../src/bot/progress-view";
 import { dayName } from "../src/bot/workout-view";
@@ -94,8 +95,8 @@ describe("programText", () => {
     next: {
       dayName: "День B",
       lines: [
-        { nameUk: "Румунська тяга зі штангою", bodyweight: false, weightKg: 50, targetReps: 7 },
-        { nameUk: "Підтягування", bodyweight: true, weightKg: 0, targetReps: 5 },
+        { nameUk: "Румунська тяга зі штангою", bodyweight: false, units: NO_UNITS, weightKg: 50, targetReps: 7 },
+        { nameUk: "Підтягування", bodyweight: true, units: NO_UNITS, weightKg: 0, targetReps: 5 },
       ],
     },
     activeDayName,
